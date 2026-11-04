@@ -1,0 +1,130 @@
+# Each matrix job compiles, packages and uploads its own asset. There is deliberately no
+# aggregate job: a failed target must not block or remove the assets the others built.
+name: Build Beat
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: "Where the binaries go: nightly or release."
+        required: true
+        type: string
+      tag:
+        description: "Release tag to upload to."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: linux-x86-64
+            outfile: beat
+            archive: beat-linux-x86-64.zip
+          - os: ubuntu-22.04-arm
+            target: linux-aarch64
+            outfile: beat
+            archive: beat-linux-aarch64.zip
+          - os: windows-latest
+            target: windows-x86-64
+            outfile: beat.exe
+            archive: beat-windows-x86-64.zip
+          - os: windows-11-arm
+            target: windows-aarch64
+            outfile: beat.exe
+            archive: beat-windows-aarch64.zip
+          - os: macos-15-intel
+            target: macos-x86-64
+            outfile: beat
+            archive: beat-macos-x86-64.zip
+          - os: macos-15
+            target: macos-aarch64
+            outfile: beat
+            archive: beat-macos-aarch64.zip
+
+    env:
+      OUTFILE: ${{ matrix.outfile }}
+      ARCHIVE: ${{ matrix.archive }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: lde-org/setup-lde@v2
+        with:
+          version: nightly
+
+      - name: Cache Windows native toolchain
+        if: runner.os == 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: ~/.lde/mingw
+          key: lde-mingw-${{ runner.arch }}
+
+      - name: Install Windows native toolchain
+        if: runner.os == 'Windows'
+        run: lde --ensure-mingw
+
+      - name: Install dependencies
+        run: lde sync -C packages/beat
+
+      - name: Build ${{ matrix.target }}
+        shell: bash
+        run: lde compile -C packages/beat --outfile "$OUTFILE"
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          rm -rf packages/beat/dist
+          mkdir -p packages/beat/dist
+          cp "packages/beat/$OUTFILE" packages/beat/dist/
+          cp -R packages/beat/assets packages/beat/dist/assets
+          cd packages/beat/dist
+          zip -qr "../$ARCHIVE" *
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dist = "packages/beat/dist"
+          Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $dist | Out-Null
+          Copy-Item "packages/beat/$env:OUTFILE" (Join-Path $dist "beat.exe")
+          Copy-Item -Recurse "packages/beat/assets" (Join-Path $dist "assets")
+          Compress-Archive -Path (Join-Path $dist "*") -DestinationPath "packages/beat/$env:ARCHIVE" -Force
+
+      - name: Upload nightly release
+        if: inputs.channel == 'nightly'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          overwrite_files: true
+          body: |
+            Automated nightly build from `${{ github.ref_name }}`.
+            Commit: `${{ github.sha }}`
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: packages/beat/${{ matrix.archive }}
+          fail_on_unmatched_files: true
+
+      - name: Upload release asset
+        if: inputs.channel == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: packages/beat/${{ matrix.archive }}
+          fail_on_unmatched_files: true

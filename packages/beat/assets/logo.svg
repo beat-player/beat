@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180" role="img" aria-label="beat">
+  <defs>
+    <linearGradient id="bars" x1="32" y1="34" x2="152" y2="146" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dcff72"/>
+      <stop offset="1" stop-color="#9fdb35"/>
+    </linearGradient>
+  </defs>
+  <g fill="url(#bars)">
+    <rect x="32" y="62" width="32" height="72" rx="16"/>
+    <rect x="80" y="30" width="32" height="136" rx="16"/>
+    <rect x="128" y="50" width="32" height="96" rx="16"/>
+  </g>
+  <text x="192" y="124" fill="#f4f6f9" font-family="Inter, Segoe UI, Noto Sans, sans-serif" font-size="104" font-weight="700" letter-spacing="-4">beat</text>
+</svg>

@@ -1,0 +1,36 @@
+{
+	"dependencies": {
+		"fs": {
+			"commit": "e03acd98e0704fc09819d17deee05c9b418bf4e1",
+			"exclude": [
+				"raw/bsd",
+				"raw/kqueue",
+				"raw/macos",
+				"raw/windows"
+			],
+			"git": "https://github.com/lde-org/fs.git"
+		},
+		"image": {
+			"commit": "4279b54c71d78e833cfd6f72a87c601e0922886d",
+			"git": "https://github.com/lde-org/image.git"
+		},
+		"json": {
+			"commit": "2fea69eede30788e33a436c60784c4790eb74105",
+			"git": "https://github.com/lde-org/json.git"
+		},
+		"lde-test": {
+			"commit": "e92b8f338bda9230b19df4514387bf1b98c760c7",
+			"git": "https://github.com/lde-org/lde"
+		},
+		"path": {
+			"commit": "72c972d5818a2b496666e00103f4d1b582c728fa",
+			"git": "https://github.com/lde-org/path.git"
+		},
+		"treble": {
+			"commit": "970dff2f9d9fde6bdff92c1a3d3503c9ca5b7ded",
+			"git": "https://github.com/bycruz/treble.git"
+		}
+	},
+	"manifestHash": "0022413fc06df6cb",
+	"version": "1"
+}

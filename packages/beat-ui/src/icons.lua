@@ -1,0 +1,132 @@
+-- Icons are glyphs from a font built from the Ionicons SVGs under `assets/ionicons`. A font is a
+-- vector at every size, is anti-aliased by the same text renderer as the rest of the screen, and
+-- takes the theme colour from the element's foreground; the SVG sources are kept beside the
+-- generated face so the artwork can be checked or regenerated.
+local wonderland = require("wonderland")
+
+local div, sty = wonderland.div, wonderland.sty
+
+---@class beat.ui.icons
+---@field element fun(name: string, size: number, colour: string): wonderland.Element
+local icons = {}
+
+local ICON_FONT = "assets/fonts/Ionicons.ttf"
+
+--- Whether a path is a file this process can open.
+---@param value string
+---@return boolean
+local function exists(value)
+	local file = io.open(value, "rb")
+	if file == nil then return false end
+	file:close()
+	return true
+end
+
+-- A compiled build sits beside its assets, wherever the working directory is. Ask the executable
+-- first; source runs fall back to the package-relative path below, or to the working directory.
+local executable = arg ~= nil and arg[0] or nil
+local executableDir = executable ~= nil and executable:match("^(.*)[/\\][^/\\]+$") or nil
+if executableDir ~= nil then
+	local beside = executableDir .. "/assets/fonts/Ionicons.ttf"
+	if exists(beside) then ICON_FONT = beside end
+end
+
+local iconSource = debug.getinfo(1, "S").source:gsub("^@", "")
+local iconDir = iconSource:match("^(.*)[/\\]")
+if iconDir ~= nil then
+	local project = iconDir:match("^(.-)[/\\]target[/\\]beat%-ui$")
+	or iconDir:match("^(.-)[/\\]packages[/\\]beat%-ui[/\\]src$")
+	if project ~= nil and exists(project .. "/assets/fonts/Ionicons.ttf") then
+		ICON_FONT = project .. "/assets/fonts/Ionicons.ttf"
+	end
+end
+
+-- Private-use points assigned when the face is generated from the SVGs. Keep these in step with
+-- `tools/build-icon-font.cjs` if an icon is added.
+local GLYPHS = {
+play = 0xE000,
+pause = 0xE001,
+previous = 0xE002,
+next = 0xE003,
+shuffle = 0xE004,
+["repeat"] = 0xE005,
+repeatOne = 0xE006,
+volume = 0xE007,
+mute = 0xE008,
+search = 0xE009,
+home = 0xE00A,
+library = 0xE00B,
+folder = 0xE00C,
+chevronLeft = 0xE00D,
+chevronRight = 0xE00E,
+chevronDown = 0xE00F,
+chevronUp = 0xE010,
+close = 0xE011,
+check = 0xE012,
+settings = 0xE013,
+github = 0xE015,
+tag = 0xE016,
+playlists = 0xE017,
+hand = 0xE018,
+edit = 0xE019,
+add = 0xE01A,
+}
+
+---@param codepoint number
+---@return string
+local function utf8Char(codepoint)
+	if codepoint < 0x80 then
+		return string.char(codepoint)
+	elseif codepoint < 0x800 then
+		return string.char(0xC0 + math.floor(codepoint / 0x40), 0x80 + codepoint % 0x40)
+	elseif codepoint < 0x10000 then
+		return string.char(0xE0 + math.floor(codepoint / 0x1000),
+		0x80 + math.floor(codepoint / 0x40) % 0x40, 0x80 + codepoint % 0x40)
+	end
+	return string.char(0xF0 + math.floor(codepoint / 0x40000),
+	0x80 + math.floor(codepoint / 0x1000) % 0x40,
+	0x80 + math.floor(codepoint / 0x40) % 0x40, 0x80 + codepoint % 0x40)
+end
+
+local UTF8_GLYPHS = {}
+for name, codepoint in pairs(GLYPHS) do UTF8_GLYPHS[name] = utf8Char(codepoint) end
+
+--- The beat brand mark is its own five bars, not an Ionicons glyph. It is drawn rather than
+--- taken from the icon font so the shell's logo stays the artwork the app was designed around.
+---@param size number
+---@param colour string
+---@return wonderland.Element
+local function logo(size, colour)
+	-- The five bars of the original beat mark, in the 512-unit space of the icon that was used
+	-- before the rest of the set moved to Ionicons.
+	return div():style(sty():size(size, size)):canvas(function(canvas)
+		local unit = math.min(canvas.width, canvas.height) / 512
+		local function x(value) return value * unit end
+		local function bar(left, top, height)
+			local width = x(43)
+			canvas:rect(x(left), x(top), width, x(height), colour, width / 2)
+		end
+
+		bar(64, 213, 86)
+		bar(149, 128, 256)
+		bar(235, 43, 426)
+		bar(320, 128, 256)
+		bar(405, 213, 86)
+	end)
+end
+
+---@param name string
+---@param size number
+---@param colour string
+---@return wonderland.Element
+function icons.element(name, size, colour)
+	if name == "logo" then return logo(size, colour) end
+
+	local glyph = UTF8_GLYPHS[name] or UTF8_GLYPHS.github
+	local textElement = wonderland.text(glyph):style(sty():font(ICON_FONT):text(size):fg(colour))
+
+	return div():style(sty():size(size, size):row():align("center"):justify("center"))
+	:children(textElement)
+end
+
+return icons

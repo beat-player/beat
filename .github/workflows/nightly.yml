@@ -1,0 +1,19 @@
+name: Nightly
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "packages/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/_build.yml
+    with:
+      channel: nightly
+      tag: nightly

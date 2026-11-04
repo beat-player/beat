@@ -1,0 +1,137 @@
+{
+	"dependencies": {
+		"archive": {
+			"commit": "fffd1657ec146b136f4416a297faa6af59ebeeaa",
+			"git": "https://github.com/lde-org/archive.git"
+		},
+		"beat-core": {
+			"path": "../beat-core"
+		},
+		"beat-ui": {
+			"path": "../beat-ui"
+		},
+		"curl-sys": {
+			"commit": "5308c3d3f8e5689f19526f84ea671baae9cf0f41",
+			"git": "https://github.com/lde-org/curl-sys.git"
+		},
+		"deflate-sys": {
+			"commit": "100d96ff4e1f78eb604903a239766910a78d9c1f",
+			"git": "https://github.com/lde-org/deflate-sys"
+		},
+		"fs": {
+			"commit": "e03acd98e0704fc09819d17deee05c9b418bf4e1",
+			"exclude": [
+				"raw/bsd",
+				"raw/kqueue",
+				"raw/macos",
+				"raw/windows"
+			],
+			"git": "https://github.com/lde-org/fs.git"
+		},
+		"glapi": {
+			"commit": "ff6ede48745236b3840d53647c22dfebd72fd22c",
+			"git": "https://github.com/bycruz/glapi.git"
+		},
+		"hood": {
+			"commit": "30c6963a983267593bdd829bb9c462a7af45ea1b",
+			"features": [
+				"vk",
+				"gl"
+			],
+			"git": "https://github.com/bycruz/hood.git"
+		},
+		"hood-core": {
+			"path": "../hood-core"
+		},
+		"hood-gl": {
+			"optional": true,
+			"path": "../hood-gl"
+		},
+		"hood-vk": {
+			"optional": true,
+			"path": "../hood-vk"
+		},
+		"image": {
+			"commit": "4279b54c71d78e833cfd6f72a87c601e0922886d",
+			"git": "https://github.com/lde-org/image.git"
+		},
+		"json": {
+			"commit": "2fea69eede30788e33a436c60784c4790eb74105",
+			"git": "https://github.com/lde-org/json.git"
+		},
+		"lde-build": {
+			"commit": "e92b8f338bda9230b19df4514387bf1b98c760c7",
+			"git": "https://github.com/lde-org/lde"
+		},
+		"lde-test": {
+			"commit": "e92b8f338bda9230b19df4514387bf1b98c760c7",
+			"git": "https://github.com/lde-org/lde"
+		},
+		"path": {
+			"commit": "72c972d5818a2b496666e00103f4d1b582c728fa",
+			"git": "https://github.com/lde-org/path.git"
+		},
+		"process": {
+			"commit": "f904b26919ad0d09adacb839a2803848d997ee92",
+			"git": "https://github.com/lde-org/process.git"
+		},
+		"texter": {
+			"commit": "5bbe03ec134501ed91c55ee561bf3565523dbad7",
+			"git": "https://github.com/bycruz/texter.git"
+		},
+		"texter-common": {
+			"path": "../texter-common"
+		},
+		"texter-coretext": {
+			"optional": true,
+			"path": "../texter-coretext"
+		},
+		"texter-freetype": {
+			"optional": true,
+			"path": "../texter-freetype"
+		},
+		"texter-win32": {
+			"optional": true,
+			"path": "../texter-win32"
+		},
+		"treble": {
+			"commit": "970dff2f9d9fde6bdff92c1a3d3503c9ca5b7ded",
+			"git": "https://github.com/bycruz/treble.git"
+		},
+		"vkapi": {
+			"commit": "e28887253153f64da406fd17b4786aa5eb1cc500",
+			"git": "https://github.com/bycruz/vkapi.git"
+		},
+		"winapi": {
+			"commit": "805e120b96c68f326b73d3214f344645397c672a",
+			"git": "https://github.com/bycruz/winapi.git",
+			"optional": true
+		},
+		"winit": {
+			"commit": "ac14546e20e6368ee982f9912df5b2003fb648db",
+			"git": "https://github.com/bycruz/winit.git"
+		},
+		"winit-macos": {
+			"optional": true,
+			"path": "../winit-macos"
+		},
+		"winit-win32": {
+			"optional": true,
+			"path": "../winit-win32"
+		},
+		"winit-x11": {
+			"optional": true,
+			"path": "../winit-x11"
+		},
+		"wonderland": {
+			"commit": "5c57c7787d79a598c6c5ed80f9c53874d239d850",
+			"git": "https://github.com/bycruz/wonderland.git"
+		},
+		"x11api": {
+			"commit": "edb608607a20d7fa985e0c75d87e9c3966eb525f",
+			"git": "https://github.com/bycruz/x11api.git"
+		}
+	},
+	"manifestHash": "3aceace50e1d6626",
+	"version": "1"
+}

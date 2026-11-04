@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="beat">
+  <defs>
+    <linearGradient id="bg" x1="72" y1="48" x2="440" y2="472" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1b211a"/>
+      <stop offset=".52" stop-color="#10130f"/>
+      <stop offset="1" stop-color="#07090a"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="150" y1="132" x2="362" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dcff72"/>
+      <stop offset="1" stop-color="#9fdb35"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(262 250) rotate(90) scale(206)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#c9f45b" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#c9f45b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
+  <rect x="17" y="17" width="478" height="478" rx="111" fill="none" stroke="#ffffff" stroke-opacity=".08"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#glow)"/>
+  <g fill="url(#bars)">
+    <rect x="142" y="198" width="56" height="116" rx="28"/>
+    <rect x="228" y="140" width="56" height="232" rx="28"/>
+    <rect x="314" y="176" width="56" height="160" rx="28"/>
+  </g>
+</svg>

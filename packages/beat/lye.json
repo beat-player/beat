@@ -1,0 +1,7 @@
+{
+	"$schema": "https://raw.githubusercontent.com/lde-org/lye/master/schemas/lye.schema.json",
+	"requirePaths": [
+		"target/?.lua",
+		"target/?/init.lua"
+	]
+}
