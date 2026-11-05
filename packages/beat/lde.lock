@@ -76,7 +76,7 @@
 			"git": "https://github.com/lde-org/process.git"
 		},
 		"texter": {
-			"commit": "5bbe03ec134501ed91c55ee561bf3565523dbad7",
+			"commit": "f8534d20e049beb5a9f8276942c5bd259ddf29d5",
 			"git": "https://github.com/bycruz/texter.git"
 		},
 		"texter-common": {
@@ -124,7 +124,7 @@
 			"path": "../winit-x11"
 		},
 		"wonderland": {
-			"commit": "5c57c7787d79a598c6c5ed80f9c53874d239d850",
+			"commit": "2f9997be8ca33e4c11a6241c68c7efec5e161799",
 			"git": "https://github.com/bycruz/wonderland.git"
 		},
 		"x11api": {

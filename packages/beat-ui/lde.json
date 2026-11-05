@@ -2,9 +2,7 @@
 	"name": "beat-ui",
 	"version": "0.1.0",
 	"dependencies": {
-		"wonderland": {
-			"version": "^0.1.5"
-		}
+		"wonderland": { "version": "^0.1.6" }
 	},
 	"devDependencies": {
 		"lde-test": {

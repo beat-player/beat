@@ -19,16 +19,18 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
 | `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
 | `packages/beat/tools/build-icon-font.cjs` | Rebuilds the bundled Ionicons face from `packages/beat/assets/ionicons/` |
-| `packages/beat/assets/fonts/` | Ionicons (MIT), used as vector glyphs |
+| `packages/beat-ui/src/assets/fonts/` | Ionicons (MIT), embedded into the UI package as vector glyphs |
 | `packages/beat/assets/ionicons/` | Ionicons 7.4 SVG sources and licence, used to build the bundled face |
 | `packages/beat/docs/` | Visual QA notes and rendered screenshots |
 | `packages/beat/docs/mobile.md` | Phone layout, winit input audit and the touch-bridge plan |
 
-`beat-core` and `beat-ui` are sibling path dependencies. Every external dependency comes from
-the registry: `wonderland 0.1.5` brings `texter 0.1.3` and `winit 0.1.8`, while `beat-core` uses
-`treble 0.2.0` plus the registry image/JSON/path/fs packages. There is no local wonderland symlink
-or checkout. The app depends on winit through wonderland, so the window-icon implementation comes
-from the registry release as well.
+`beat-core` and `beat-ui` are sibling path dependencies. `wonderland 0.1.6` and `texter 0.1.4`
+add faces read from bytes, which is what lets the icon font travel inside the executable. While
+those releases are being prepared, the UI package and wonderland point at the sibling wonderland
+and texter checkouts; the published versions replace those path dependencies. The rest of the
+external dependencies come from the registry: `winit 0.1.8`, and `treble 0.2.0` plus the registry
+image/JSON/path/fs packages for `beat-core`. The app depends on winit through wonderland, so the
+window-icon implementation comes from that release as well.
 
 ## Run
 
@@ -132,8 +134,10 @@ own runner through `lde-org/setup-lde@v2`:
 Nightly builds run on pushes to `master` that touch `packages/**`, and from manual dispatch. They
 publish to the rolling `nightly` prerelease. Release builds run when a GitHub release is created and
 upload each target asset directly to that release. Every matrix job is independent: if one target
-fails, the release receives the assets the other targets built. Each archive contains the binary
-and `assets/`, because the icon font is loaded from beside the executable.
+fails, the release receives the assets the other targets built. Each archive contains only the
+executable: the window icon and the icon face are embedded as Lua modules. The CI jobs install
+`glslang-tools`, Homebrew `glslang`, or the official Windows `glslang.exe` before syncing, because
+wonderland compiles its Vulkan shaders with one of those tools.
 
 ```sh
 git tag v0.2.0

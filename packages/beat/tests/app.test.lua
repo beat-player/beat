@@ -16,6 +16,21 @@ local canRender = true
 	canRender = ok
 end
 
+-- The app writes settings, tags and the library cache through `core.settings.directory`. A test
+-- that finishes a scan would otherwise replace the user's library cache with its fixtures -- and
+-- the next real launch, whose root no longer matched, would scan the whole folder again.
+local configDirectory = os.tmpname() .. "-beat-config"
+os.remove(configDirectory)
+fs.mkdirAll(configDirectory)
+
+local realDirectory = core.settings.directory
+core.settings.directory = function() return configDirectory end
+
+test.afterAll(function()
+	core.settings.directory = realDirectory
+	fs.rmdir(configDirectory)
+end)
+
 local function fixture()
 	local library = core.Library.new("/beat-fixtures")
 	for albumAt = 1, 3 do
@@ -183,6 +198,7 @@ end)
 
 test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	App:init({ scan = false})
+	App.settings.root = "/beat-fixtures"
 	App.taxonomy = core.Taxonomy.new()
 	App.page = { kind = "playlists"}
 	App.search = ""

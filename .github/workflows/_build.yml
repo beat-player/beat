@@ -112,24 +112,14 @@ jobs:
       - name: Package (Unix)
         if: runner.os != 'Windows'
         shell: bash
-        run: |
-          rm -rf packages/beat/dist
-          mkdir -p packages/beat/dist
-          cp "packages/beat/$OUTFILE" packages/beat/dist/
-          cp -R packages/beat/assets packages/beat/dist/assets
-          cd packages/beat/dist
-          zip -qr "../$ARCHIVE" *
+        run: zip -q -j "packages/beat/$ARCHIVE" "packages/beat/$OUTFILE"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $dist = "packages/beat/dist"
-          Remove-Item -Recurse -Force $dist -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $dist | Out-Null
-          Copy-Item "packages/beat/$env:OUTFILE" (Join-Path $dist "beat.exe")
-          Copy-Item -Recurse "packages/beat/assets" (Join-Path $dist "assets")
-          Compress-Archive -Path (Join-Path $dist "*") -DestinationPath "packages/beat/$env:ARCHIVE" -Force
+          Remove-Item "packages/beat/$env:ARCHIVE" -Force -ErrorAction SilentlyContinue
+          Compress-Archive -Path "packages/beat/$env:OUTFILE" -DestinationPath "packages/beat/$env:ARCHIVE"
 
       - name: Upload nightly release
         if: inputs.channel == 'nightly'
