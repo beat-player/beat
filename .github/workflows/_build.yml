@@ -77,6 +77,31 @@ jobs:
         if: runner.os == 'Windows'
         run: lde --ensure-mingw
 
+      - name: Cache glslang (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v5
+        with:
+          path: glslang
+          key: glslang-16.6.0-windows-x86_64
+
+      - name: Install shader compiler (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+
+      - name: Install shader compiler (macOS)
+        if: runner.os == 'macOS'
+        run: brew install glslang
+
+      - name: Install shader compiler (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "glslang\bin\glslang.exe")) {
+            Invoke-WebRequest -Uri "https://github.com/KhronosGroup/glslang/releases/download/16.6.0/glslang-16.6.0-windows-x86_64-release.zip" -OutFile glslang.zip
+            Expand-Archive -Path glslang.zip -DestinationPath glslang
+          }
+          "$env:GITHUB_WORKSPACE\glslang\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Install dependencies
         run: lde sync -C packages/beat
 
