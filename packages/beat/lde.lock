@@ -18,6 +18,15 @@
 			"commit": "100d96ff4e1f78eb604903a239766910a78d9c1f",
 			"git": "https://github.com/lde-org/deflate-sys"
 		},
+		"env": {
+			"commit": "674156b3a0f5c21f234f71b0c397cd3c7185253e",
+			"exclude": [
+				"raw/bsd",
+				"raw/macos",
+				"raw/windows"
+			],
+			"git": "https://github.com/lde-org/env.git"
+		},
 		"fs": {
 			"commit": "e03acd98e0704fc09819d17deee05c9b418bf4e1",
 			"exclude": [
@@ -129,9 +138,10 @@
 		},
 		"x11api": {
 			"commit": "edb608607a20d7fa985e0c75d87e9c3966eb525f",
-			"git": "https://github.com/bycruz/x11api.git"
+			"git": "https://github.com/bycruz/x11api.git",
+			"optional": true
 		}
 	},
-	"manifestHash": "3aceace50e1d6626",
+	"manifestHash": "42d4b0f82443909d",
 	"version": "1"
 }

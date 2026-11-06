@@ -4,8 +4,10 @@
 -- has arrived since the last tick and hands the app the tracks. The window keeps drawing, playing
 -- and searching while the worker waits on a slow filesystem. Nothing here is persisted: the two
 -- files live in the temporary directory and are removed when the job ends.
+local env = require("env")
 local fs = require("fs")
 local json = require("json")
+local process = require("process")
 local jit = require("jit")
 
 -- How much of the worker's output one tick may read, and how many decoded tracks may wait.
@@ -14,6 +16,10 @@ local jit = require("jit")
 -- nearly empty.
 local READ_CHUNK = 32 * 1024
 local QUEUE_LIMIT = 256
+
+-- A source run passes the script's path as `arg[0]`; a compiled executable passes its own. That is
+-- what says whether the tools are on disk or the program has to start its worker from itself.
+local compiled = arg == nil or (arg[0] ~= nil and arg[0]:match("%.lua$") == nil)
 
 local ScanJob = {}
 ScanJob.__index = ScanJob
@@ -30,6 +36,7 @@ ScanJob.__index = ScanJob
 ---@field cancelled boolean
 ---@field error string?
 ---@field changed boolean
+---@field child process.Child? # The worker this process started, where the executable runs itself
 
 ---@param value string
 ---@return string
@@ -92,8 +99,34 @@ function ScanJob.start(root)
 	fs.delete(output)
 	fs.delete(cancelFile)
 
-	os.execute(commandFor(root, output, cancelFile))
-	return ScanJob.new(root, output, cancelFile)
+	local job = ScanJob.new(root, output, cancelFile)
+	-- A compiled executable has no `lde` or `tools/` beside it: it starts its worker by running
+	-- itself again with the paths in the environment. A source run keeps using the tools, where
+	-- `lde run` is the thing that already exists.
+	if compiled then
+		local child, err = process.spawn(assert(env.execPath()), {}, {
+			env = {
+				BEAT_WORKER = "scan",
+				BEAT_SCAN_ROOT = root,
+				BEAT_SCAN_OUTPUT = output,
+				BEAT_SCAN_CANCEL = cancelFile,
+			},
+			stdout = "null",
+			stderr = "null",
+		})
+
+		if child == nil then
+			job.done = true
+			job.error = "could not start the scan: " .. tostring(err)
+			return job
+		end
+
+		job.child = child
+	else
+		os.execute(commandFor(root, output, cancelFile))
+	end
+
+	return job
 end
 
 --- Reads what the worker wrote since the last poll, keeping a partial last line for the next one.
@@ -157,6 +190,11 @@ end
 ---@return boolean changed
 function ScanJob:poll(limit)
 	limit = limit or 32
+
+	if self.child ~= nil and self.child:poll() ~= nil then
+		self.child = nil
+	end
+
 	self:read()
 
 	local events = {}
@@ -199,6 +237,13 @@ end
 ---@return boolean
 function ScanJob:cancel()
 	fs.write(self.cancelFile, "1")
+
+	if self.child ~= nil then
+		self.child:kill(true)
+		self.child:poll()
+		self.child = nil
+	end
+
 	self.changed = true
 	return true
 end

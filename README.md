@@ -14,7 +14,8 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat-core` | Scanning, library grouping, tags and playlists, search, cover caching/downscaling, queue, playback, Last.fm signing |
 | `packages/beat-ui` | Theme tokens, motion, icons and shared drawing primitives |
 | `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width |
-| `packages/beat/tools/scan-worker.lua` | The background scanner process |
+| `packages/beat/tools/scan-worker.lua` | Source entry point for the background scanner; a compiled binary runs its bundled copy |
+| `packages/beat/src/app/scan_worker.lua` | The bundled scanner coordinator and its inspector entry |
 | `packages/beat/tools/shots.lua` | Renders the screenshot matrix into `packages/beat/docs/screens/` |
 | `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
 | `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
@@ -24,7 +25,7 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat/docs/` | Visual QA notes and rendered screenshots |
 | `packages/beat/docs/mobile.md` | Phone layout, winit input audit and the touch-bridge plan |
 
-`beat-core` and `beat-ui` are sibling path dependencies. `wonderland 0.1.6` and `texter 0.1.4`
+`beat-core` and `beat-ui` are sibling path dependencies. `wonderland 0.1.7` and `texter 0.1.4`
 add faces read from bytes, which is what lets the icon font travel inside the executable. While
 those releases are being prepared, the UI package and wonderland point at the sibling wonderland
 and texter checkouts; the published versions replace those path dependencies. The rest of the
@@ -44,9 +45,11 @@ separate window — zenity or kdialog on Linux, the Finder chooser on macOS. The
 while the dialog is open, polls its result, and starts the scan when a folder is chosen. **Browse**
 is the in-app fallback, and dropping a folder on the window also starts a scan.
 
-Scanning runs in `packages/beat/tools/scan-worker.lua` as a separate coordinator process. It walks the folder
-once, then starts a small pool of inspector processes (`BEAT_SCAN_WORKERS`, four by default) so a
-high-latency mount keeps several file reads in flight. The library grows as tracks report, so albums,
+Scanning runs as a separate coordinator process. A source checkout starts it from
+`packages/beat/tools/scan-worker.lua`; a compiled executable runs itself again, so the release needs
+no `lde` or tools directory. It walks the folder once, then starts a small pool of inspector
+processes (`BEAT_SCAN_WORKERS`, four by default) so a high-latency mount keeps several file reads in
+flight. The library grows as tracks report, so albums,
 search and playback are usable before the scan finishes. The inspectors also write one downscaled
 JPEG per album into the local cover cache, so the window never reads artwork from the remote folder
 and covers fill in as albums arrive. A floating progress island can be collapsed into the progress

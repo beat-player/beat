@@ -9,10 +9,11 @@ local function resultFile(value)
 end
 
 test.it("reads a chosen folder and removes the result", function()
-	local handle = resultFile("/tmp\n")
+	local directory = os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"
+	local handle = resultFile(directory .. "\n")
 	local path, status = picker.poll(handle)
 
-	test.equal(path, "/tmp")
+	test.equal(path, directory)
 	test.falsy(status)
 	test.falsy(fs.isfile(handle.file))
 end)
