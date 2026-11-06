@@ -2,6 +2,7 @@
 	"name": "beat",
 	"version": "0.1.0",
 	"dependencies": {
+		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
 		"beat-core": {
 			"path": "../beat-core"
 		},

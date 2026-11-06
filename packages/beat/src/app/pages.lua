@@ -1,7 +1,7 @@
 -- What the app draws. Pages are functions of state and window; they return elements and actions,
 -- never mutate the app themselves.
 local wonderland = require("wonderland")
-local utf8 = require("wonderland.font.utf8")
+local utf8 = require("utf8")
 local wonderlandElement = require("wonderland.element")
 local path = require("path")
 local ui = require("beat-ui")

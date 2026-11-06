@@ -2,6 +2,7 @@
 -- vector at every size, is anti-aliased by the same text renderer as the rest of the screen, and
 -- takes the theme colour from the element's foreground; the SVG sources are kept beside the
 -- generated face so the artwork can be checked or regenerated.
+local utf8 = require("utf8")
 local wonderland = require("wonderland")
 
 local div, sty = wonderland.div, wonderland.sty
@@ -45,24 +46,8 @@ edit = 0xE019,
 add = 0xE01A,
 }
 
----@param codepoint number
----@return string
-local function utf8Char(codepoint)
-	if codepoint < 0x80 then
-		return string.char(codepoint)
-	elseif codepoint < 0x800 then
-		return string.char(0xC0 + math.floor(codepoint / 0x40), 0x80 + codepoint % 0x40)
-	elseif codepoint < 0x10000 then
-		return string.char(0xE0 + math.floor(codepoint / 0x1000),
-		0x80 + math.floor(codepoint / 0x40) % 0x40, 0x80 + codepoint % 0x40)
-	end
-	return string.char(0xF0 + math.floor(codepoint / 0x40000),
-	0x80 + math.floor(codepoint / 0x1000) % 0x40,
-	0x80 + math.floor(codepoint / 0x40) % 0x40, 0x80 + codepoint % 0x40)
-end
-
 local UTF8_GLYPHS = {}
-for name, codepoint in pairs(GLYPHS) do UTF8_GLYPHS[name] = utf8Char(codepoint) end
+for name, codepoint in pairs(GLYPHS) do UTF8_GLYPHS[name] = utf8.char(codepoint) end
 
 --- The beat brand mark is its own five bars, not an Ionicons glyph. It is drawn rather than
 --- taken from the icon font so the shell's logo stays the artwork the app was designed around.
