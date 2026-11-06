@@ -29,7 +29,7 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 add faces read from bytes, which is what lets the icon font travel inside the executable. While
 those releases are being prepared, the UI package and wonderland point at the sibling wonderland
 and texter checkouts; the published versions replace those path dependencies. The rest of the
-external dependencies come from the registry: `winit 0.1.8`, and `treble 0.2.0` plus the registry
+external dependencies come from the registry: `winit 0.1.9`, and `treble 0.2.0` plus the registry
 image/JSON/path/fs packages for `beat-core`. The app depends on winit through wonderland, so the
 window-icon implementation comes from that release as well.
 
@@ -56,7 +56,9 @@ and covers fill in as albums arrive. A floating progress island can be collapsed
 bar in the sidebar; the sidebar bar reopens it.
 
 Settings live at `$XDG_CONFIG_HOME/beat/settings.json` or `~/.config/beat/settings.json`; tags and
-playlists live beside them in `tags.json`. Settings hold the root folder, theme, accent, volume,
+playlists live beside them in `tags.json`. Errors shown in the window and fatal startup errors are
+appended to `beat.log` in the same folder, rotated after a megabyte. Settings hold the root folder,
+theme, accent, volume,
 mute, sort order, sidebar width and collapsed state, UI scale, reduced-motion preference, and the
 connected Last.fm account's username and session key. The tag file holds track paths, their tags,
 and the smart and manual playlist definitions. No media data is persisted. The file is kept private to the account that runs beat because the Last.fm

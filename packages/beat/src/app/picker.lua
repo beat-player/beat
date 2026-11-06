@@ -1,11 +1,9 @@
--- A native folder dialog, in a process of its own.
---
--- The dialog is a window the desktop owns rather than a screen wonderland draws: zenity or kdialog
--- on Linux, the Finder's chooser on macOS. The command writes one line into a temporary file and
--- the app polls that file from its ticker, so the window stays responsive while the chooser is up.
--- Where neither dialog exists the result says so and the app can open its own folder browser.
+-- A native folder dialog, through winit. The call is modal: the window waits in the system's own
+-- chooser and the chosen path is written into a file the ticker polls, so the rest of the app has
+-- one place to read a result whether the dialog was shown on Windows, macOS or Linux.
 local fs = require("fs")
 local jit = require("jit")
+local winit = require("winit")
 
 local picker = {}
 
@@ -13,52 +11,31 @@ local picker = {}
 ---@field file string
 ---@field platform string
 
----@param value string
----@return string
-local function quote(value)
-	return "'" .. value:gsub("'", "'\\''") .. "'"
-end
-
----@return string
-local function linuxCommand(file)
-	local target = quote(file)
-	return "{ "
-	.. "if command -v zenity >/dev/null 2>&1; then "
-	.. "p=$(zenity --file-selection --directory --title='Choose music folder' 2>/dev/null); "
-	.. "if [ -n \"$p\" ]; then printf '%s' \"$p\"; else printf '__CANCEL__'; fi; "
-	.. "elif command -v kdialog >/dev/null 2>&1; then "
-	.. "p=$(kdialog --getexistingdirectory \"$HOME\" --title 'Choose music folder' 2>/dev/null); "
-	.. "if [ -n \"$p\" ]; then printf '%s' \"$p\"; else printf '__CANCEL__'; fi; "
-	.. "else printf '__NO_PICKER__'; fi; } > " .. target .. " 2>/dev/null &"
-end
-
----@return string
-local function macCommand(file)
-	local target = quote(file)
-	return "{ p=$(osascript -e 'POSIX path of (choose folder with prompt \"Choose music folder\")' "
-	.. "2>/dev/null); if [ -n \"$p\" ]; then printf '%s' \"$p\"; else printf '__CANCEL__'; fi; } > "
-	.. target .. " 2>/dev/null &"
-end
-
 --- Starts the dialog. A file is returned even when no native picker exists; `poll` says which.
+---@param window winit.Window?
 ---@return beat.FolderPick
-function picker.start()
+function picker.start(window)
 	local file = os.tmpname() .. "-beat-folder"
+	local osName = jit.os or ""
+	local dialog = winit.FileDialog
+
 	fs.delete(file)
 
-	local osName = jit.os or ""
-	local command
-	if osName == "Linux" then
-		command = linuxCommand(file)
-	elseif osName == "OSX" then
-		command = macCommand(file)
-	else
-		-- Windows has no portable shell dialog here; leave it to the in-app browser.
-		assert(fs.write(file, "__NO_PICKER__"))
+	if dialog == nil then
+		fs.write(file, "__NO_PICKER__")
 		return { file = file, platform = osName}
 	end
 
-	os.execute(command)
+	local ok, path = pcall(dialog.pickFolder, window, { title = "Choose music folder" })
+
+	if not ok then
+		fs.write(file, "__NO_PICKER__")
+	elseif path == nil or path == "" then
+		fs.write(file, "__CANCEL__")
+	else
+		fs.write(file, path)
+	end
+
 	return { file = file, platform = osName}
 end
 
@@ -80,8 +57,8 @@ function picker.poll(pick)
 	return nil, "cancelled"
 end
 
---- Drops a dialog that is no longer wanted. The child keeps running until it is closed; what it
---- writes to a file nobody reads is harmless.
+--- Drops a dialog that is no longer wanted. The modal dialog has already returned by the time the
+--- app can cancel it; what is left is the answer file nobody will poll.
 ---@param pick beat.FolderPick?
 function picker.cancel(pick)
 	if pick ~= nil then fs.delete(pick.file) end

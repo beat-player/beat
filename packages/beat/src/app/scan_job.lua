@@ -8,6 +8,7 @@ local env = require("env")
 local fs = require("fs")
 local json = require("json")
 local process = require("process")
+local Log = require("beat.app.log")
 local jit = require("jit")
 
 -- How much of the worker's output one tick may read, and how many decoded tracks may wait.
@@ -37,6 +38,7 @@ ScanJob.__index = ScanJob
 ---@field error string?
 ---@field changed boolean
 ---@field child process.Child? # The worker this process started, where the executable runs itself
+---@field decodeErrors number # Lines the worker wrote that were not JSON this could read
 
 ---@param value string
 ---@return string
@@ -152,7 +154,12 @@ function ScanJob:read()
 
 		if line ~= "" then
 			local ok, event = pcall(function() return json.decode(line):unpack() end)
-			if ok and type(event) == "table" then
+			if not ok then
+				self.decodeErrors = self.decodeErrors + 1
+				if self.decodeErrors <= 3 then
+					Log.write("error", "scan output could not be read: " .. tostring(event))
+				end
+			elseif type(event) == "table" then
 				---@cast event table
 				if event.type == "progress" then
 					self.latest = event
@@ -191,8 +198,16 @@ end
 function ScanJob:poll(limit)
 	limit = limit or 32
 
-	if self.child ~= nil and self.child:poll() ~= nil then
-		self.child = nil
+	if self.child ~= nil then
+		local code = self.child:poll()
+
+		if code ~= nil then
+			if code ~= 0 then
+				Log.write("error", "scan worker exited with code " .. tostring(code))
+			end
+
+			self.child = nil
+		end
 	end
 
 	self:read()

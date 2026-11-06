@@ -196,6 +196,41 @@ test.it("opens the About link through the platform opener", function()
 	test.equal(opened, "https://github.com/bycruz/beat", "the GitHub button asks the desktop to open its URL")
 end)
 
+test.it("logs an error toast where the app keeps its files", function()
+	App:init({ scan = false })
+	App:toast("a test failure", "error")
+
+	local logFile = core.settings.directory() .. "/beat.log"
+	local contents = fs.read(logFile)
+
+	test.truthy(contents ~= nil, "the error is written to beat.log")
+	test.truthy(contents and contents:find("a test failure", 1, true) ~= nil,
+		"and it names the error")
+end)
+
+test.it("keeps an error toast under the pointer", function()
+	App:init({ scan = false })
+	local now = wonderland.time.now()
+
+	App:toast("still here", "error")
+	local toast = App.toasts[#App.toasts]
+	toast.rect = { x = 100, y = 100, width = 320, height = 48 }
+	toast.expires = now - 1
+
+	local oldWindow, oldLayout = App.window, App.layoutPlugin
+	App.window = { width = 1200, height = 720 }
+	App.layoutPlugin = {
+		contexts = {
+			[App.window] = { pointer = { x = 110, y = 110, pressed = false } },
+		},
+	}
+	App:tick(now, App.window)
+	App.window, App.layoutPlugin = oldWindow, oldLayout
+
+	test.equal(#App.toasts, 1, "the toast was not removed")
+	test.greater(App.toasts[1].expires, now, "its expiry moved forward")
+end)
+
 test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	App:init({ scan = false})
 	App.settings.root = "/beat-fixtures"

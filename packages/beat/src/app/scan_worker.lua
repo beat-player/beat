@@ -13,6 +13,7 @@ local fs = require("fs")
 local json = require("json")
 local core = require("beat-core")
 local process = require("process")
+local Log = require("beat.app.log")
 local time = require("wonderland.time")
 local ffi = require("ffi")
 
@@ -186,7 +187,9 @@ local function readWorker(worker)
 
 		if line ~= "" then
 			local ok, event = pcall(function() return json.decode(line):unpack() end)
-			if ok and type(event) == "table" then
+			if not ok then
+				Log.write("error", "scan inspector output could not be read: " .. tostring(event))
+			elseif type(event) == "table" then
 				---@cast event table
 				if event.type == "track" then
 					forwarded = forwarded + 1

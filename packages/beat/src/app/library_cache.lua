@@ -6,6 +6,7 @@ local fs = require("fs")
 local json = require("json")
 local path = require("path")
 local core = require("beat-core")
+local Log = require("beat.app.log")
 
 local LibraryCache = {}
 
@@ -60,7 +61,12 @@ function LibraryCache.save(library)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end
 	end
 
-	return fs.write(cacheFile(), encoded) == true
+	if not fs.write(cacheFile(), encoded) then
+		Log.write("error", "library cache could not be written to " .. cacheFile())
+		return false
+	end
+
+	return true
 end
 
 ---@param root string
@@ -70,7 +76,13 @@ function LibraryCache.load(root)
 	if bytes == nil then return nil end
 
 	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
-	if not ok or type(decoded) ~= "table" or decoded.version ~= VERSION or decoded.root ~= root
+
+	if not ok then
+		Log.write("error", "library cache could not be read: " .. tostring(decoded))
+		return nil
+	end
+
+	if type(decoded) ~= "table" or decoded.version ~= VERSION or decoded.root ~= root
 	or type(decoded.tracks) ~= "table" then
 		return nil
 	end

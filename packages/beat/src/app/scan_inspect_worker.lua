@@ -8,6 +8,7 @@ local env = require("env")
 local fs = require("fs")
 local json = require("json")
 local core = require("beat-core")
+local Log = require("beat.app.log")
 local audio = require("treble.audio")
 local time = require("wonderland.time")
 
@@ -20,6 +21,14 @@ local file = assert(io.open(outputPath, "w"))
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()
+end
+
+-- Error text travels through JSON, which is UTF-8: a malformed tag byte or an ANSI Windows path
+-- must not make the report of a failure fail too.
+---@param value any
+---@return string
+local function clean(value)
+	return (tostring(value):gsub("[%z\1-\31\127-\255]", "?"))
 end
 
 local COVER_SIZE = 512
@@ -38,7 +47,9 @@ local current = nil
 ---@param message string
 local function recordError(path, message)
 	skipped = skipped + 1
-	if #errors < 100 then errors[#errors + 1] = { path = path, message = message} end
+	if #errors < 100 then
+		errors[#errors + 1] = { path = clean(path), message = clean(message)}
+	end
 end
 
 ---@param entry beat.ScanEntry
@@ -110,14 +121,16 @@ local ok, err = pcall(function()
 		local now = time.now()
 		if inspected % PROGRESS_EVERY == 0 or now - lastProgress >= PROGRESS_SECONDS then
 			emit({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped,
-				current = current})
+				current = current ~= nil and clean(current) or nil})
 			lastProgress = now
 		end
 	end
 end)
 
 if not ok then
-	emit({ type = "error", message = tostring(err) })
+	Log.write("error", "scan inspector failed on " .. tostring(current) .. ": " .. tostring(err))
+	emit({ type = "error",
+		message = "Could not read " .. clean(current or "a track") .. ": " .. clean(err) })
 else
 	emit({ type = "done", inspected = inspected, tracks = tracks, skipped = skipped, errors = errors})
 end

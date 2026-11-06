@@ -4,6 +4,7 @@ local fs = require("fs")
 local json = require("json")
 local path = require("path")
 local core = require("beat-core")
+local Log = require("beat.app.log")
 
 local TagStore = {}
 
@@ -23,7 +24,13 @@ function TagStore.load(dir)
 	if bytes == nil then return core.Taxonomy.new() end
 
 	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
-	if not ok or type(decoded) ~= "table" or decoded.version ~= VERSION then
+
+	if not ok then
+		Log.write("error", "tags could not be read: " .. tostring(decoded))
+		return core.Taxonomy.new()
+	end
+
+	if type(decoded) ~= "table" or decoded.version ~= VERSION then
 		return core.Taxonomy.new()
 	end
 
@@ -44,8 +51,14 @@ function TagStore.save(taxonomy, dir)
 	end
 
 	local ok, encoded = pcall(json.encode, taxonomy:pack())
-	if not ok then return false, tostring(encoded) end
-	if not fs.write(storeFile(folder), encoded) then return false, "cannot write tags.json" end
+	if not ok then
+		Log.write("error", "tags could not be encoded: " .. tostring(encoded))
+		return false, tostring(encoded)
+	end
+	if not fs.write(storeFile(folder), encoded) then
+		Log.write("error", "tags could not be written to " .. storeFile(folder))
+		return false, "cannot write tags.json"
+	end
 	return true
 end
 

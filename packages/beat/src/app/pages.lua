@@ -2768,8 +2768,9 @@ function pages.toasts(app, window)
 			local enter = app.motion.reduce and 1
 			or ui.motion.progress(toast.at, 0.18, now, ui.motion.ease.outCubic)
 			local life = toast.tone == "error" and 8 or 4.5
+			local expires = toast.expires or (toast.at + life)
 			local exit = app.motion.reduce and 1
-			or 1 - ui.motion.progress(toast.at + life - 0.3, 0.3, now, ui.motion.ease.inCubic)
+			or 1 - ui.motion.progress(expires - 0.3, 0.3, now, ui.motion.ease.inCubic)
 			-- Both the fade and the lift are quantised so they reuse styles instead of interning
 			-- one per frame.
 			local enterStep = math.floor(enter * 16 + 0.5) / 16
@@ -2778,13 +2779,18 @@ function pages.toasts(app, window)
 			local lift = (1 - enterStep) * theme:px(8) - (1 - exitStep) * theme:px(8)
 			local tone = toast.tone == "error" and theme:color("danger", alpha)
 			or theme:color("accent", alpha)
+			local width = 320
+			local height = theme:px(48)
+			local x = math.max(theme:space(8), window.width - width - theme:space(24))
+			local y = top + (index - 1) * (height + theme:px(8))
+
+			toast.rect = { x = x, y = y, width = width, height = height }
 
 			children[#children + 1] = div()
-			:style(sty():w(320):h(theme:px(48)):row():pad(theme:px(12), theme:px(14), theme:px(12), theme:px(14))
+			:style(sty():w(width):h(height):row():pad(theme:px(12), theme:px(14), theme:px(12), theme:px(14))
 			:gap(theme:px(10)):align("center"):radius(theme:radius("sm"))
 			:bg(theme:color("elevated", alpha))
-			:offset(math.max(theme:space(8), window.width - 320 - theme:space(24)),
-			top + (index - 1) * (theme:px(48) + theme:px(8)) + lift)
+			:offset(x, y + lift)
 			:shadow(0, theme:px(8), theme:px(24), "#00000040"))
 			:onClick({ type = "dismissToast", at = toast.at})
 			:children({

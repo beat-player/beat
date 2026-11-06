@@ -10,6 +10,7 @@ local pages = require("beat.app.pages")
 local Picker = require("beat.app.picker")
 local ScanJob = require("beat.app.scan_job")
 local LibraryCache = require("beat.app.library_cache")
+local Log = require("beat.app.log")
 local LastfmClient = require("beat.app.lastfm")
 local TagStore = require("beat.app.tag_store")
 local links = require("beat.app.links")
@@ -77,7 +78,7 @@ local util = core.util
 ---@field equalizerEdit string?
 ---@field equalizerEditDraft string
 ---@field transition { start: number, direction: number? }?
----@field toasts { text: string, tone: string, at: number }[]
+---@field toasts { text: string, tone: string, at: number, expires: number, rect: { x: number, y: number, width: number, height: number }? }[]
 ---@field themeFade { start: number }?
 ---@field sortedAlbums beat.Album[]?
 ---@field sortedFor string?
@@ -378,7 +379,10 @@ function App:startScan(root)
 end
 
 function App:saveSettings()
-	core.settings.save(self.settings, nil)
+	local ok, err = core.settings.save(self.settings, nil)
+
+	if not ok then Log.write("error", "settings could not be saved: " .. tostring(err)) end
+
 	self.dirtyAt = nil
 end
 
@@ -389,8 +393,19 @@ end
 ---@param text string
 ---@param tone string?
 function App:toast(text, tone)
-	self.toasts[#self.toasts + 1] = { text = text, tone = tone or "info", at = time.now()}
+	local now = time.now()
+	tone = tone or "info"
+
+	self.toasts[#self.toasts + 1] = {
+		text = text,
+		tone = tone,
+		at = now,
+		expires = now + (tone == "error" and 8 or 4.5),
+	}
 	if #self.toasts > 3 then table.remove(self.toasts, 1) end
+
+	if tone == "error" then Log.write("error", text) end
+
 	self:wake()
 end
 
@@ -1045,7 +1060,7 @@ function App:act(message)
 		self.expanded and ui.motion.ease.outBack or ui.motion.ease.inCubic)
 	elseif kind == "chooseFolder" then
 		if self.folderPick == nil then
-			self.folderPick = Picker.start()
+			self.folderPick = Picker.start(self.window)
 		end
 	elseif kind == "folderOpen" then
 		self:readFolder(message.path)
@@ -1719,13 +1734,37 @@ function App:tick(now, window)
 		changed = true
 	end
 
+	-- A toast under the pointer stays there. Its box is recorded by the view that drew it, so the
+	-- expiry clock can be moved before the next frame removes it; moving the pointer off starts the
+	-- full life again rather than resuming a stale countdown.
+	local pointer
+	if self.window ~= nil and self.layoutPlugin ~= nil then
+		if self.layoutPlugin.pointer ~= nil then
+			pointer = self.layoutPlugin:pointer(self.window)
+		else
+			-- Older wonderland releases keep the pointer on the layout context itself.
+			local contexts = self.layoutPlugin.contexts
+			local context = contexts and contexts[self.window]
+			pointer = context and context.pointer or nil
+		end
+	end
+
 	local kept = {}
 	for _, toast in ipairs(self.toasts) do
 			local life = toast.tone == "error" and 8 or 4.5
-			local age = now - toast.at
-			if age < life then
+			local expires = toast.expires or (toast.at + life)
+			local box = toast.rect
+
+			if pointer ~= nil and box ~= nil and pointer.x >= box.x and pointer.x <= box.x + box.width
+			and pointer.y >= box.y and pointer.y <= box.y + box.height then
+				expires = now + life
+			end
+
+			toast.expires = expires
+
+			if now < expires then
 				kept[#kept + 1] = toast
-				if age < 0.18 or age > life - 0.3 then changed = true end
+				if now - toast.at < 0.18 or expires - now < 0.3 then changed = true end
 			else
 				changed = true
 			end
