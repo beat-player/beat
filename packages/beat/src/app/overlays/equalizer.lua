@@ -2,7 +2,7 @@
 -- is deliberately a panel rather than a permanent row of faders: the controls are a deliberate
 -- adjustment, not something that should compete with the transport every frame.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local equalizerBands = require("beat.app.services.playback.equalizer")
 local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -15,7 +15,7 @@ local equalizer = { light = true}
 ---@return beat.EqualizerPreset[]
 function equalizer.presets(app)
 	local list = {}
-	for _, preset in ipairs(core.equalizer.presets) do list[#list + 1] = preset end
+	for _, preset in ipairs(equalizerBands.presets) do list[#list + 1] = preset end
 	for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
 			list[#list + 1] = {
 			id = preset.name,
@@ -82,8 +82,8 @@ function equalizer.update(app, overlay, message)
 		local preset = equalizer.find(app, message.id)
 		if preset ~= nil then
 			app.services.settings.values.equalizerPreset = preset.id
-			app.services.settings.values.equalizerGains = core.equalizer.copyGains(preset.gains)
-			app.services.playback.player:setEqualizer(core.equalizer.bands(app.services.settings.values.equalizerGains))
+			app.services.settings.values.equalizerGains = equalizerBands.copyGains(preset.gains)
+			app.services.playback.player:setEqualizer(equalizerBands.bands(app.services.settings.values.equalizerGains))
 			app.services.settings:changed()
 			app:refresh()
 		end
@@ -92,13 +92,13 @@ function equalizer.update(app, overlay, message)
 			app.services.toasts:show("That is enough custom presets for now", "error")
 		else
 			local name = equalizer.nextName(app)
-			local gains = core.equalizer.copyGains(app.services.settings.values.equalizerGains)
+			local gains = equalizerBands.copyGains(app.services.settings.values.equalizerGains)
 			app.services.settings.values.equalizerCustomPresets[#app.services.settings.values.equalizerCustomPresets + 1] = {
 			name = name,
 			gains = gains,
 			}
 			app.services.settings.values.equalizerPreset = name
-			app.services.playback.player:setEqualizer(core.equalizer.bands(gains))
+			app.services.playback.player:setEqualizer(equalizerBands.bands(gains))
 			app.services.settings:changed()
 			app:refresh()
 		end
@@ -107,19 +107,19 @@ function equalizer.update(app, overlay, message)
 		if preset ~= nil and preset.custom then app:open("equalizer_rename", { name = preset.name}) end
 	elseif kind == "equalizerGain" then
 		local band = message.band
-		if type(band) == "number" and band >= 1 and band <= #core.equalizer.frequencies then
-			local gains = core.equalizer.sanitize(app.services.settings.values.equalizerGains)
-			gains[band] = core.equalizer.clamp(message.value or 0)
+		if type(band) == "number" and band >= 1 and band <= #equalizerBands.frequencies then
+			local gains = equalizerBands.sanitize(app.services.settings.values.equalizerGains)
+			gains[band] = equalizerBands.clamp(message.value or 0)
 			local selected = equalizer.find(app, app.services.settings.values.equalizerPreset)
 			if selected ~= nil and selected.custom then
 				for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
-						if preset.name == selected.id then preset.gains = core.equalizer.copyGains(gains) end
+						if preset.name == selected.id then preset.gains = equalizerBands.copyGains(gains) end
 					end
 			else
 				app.services.settings.values.equalizerPreset = "custom"
 			end
 			app.services.settings.values.equalizerGains = gains
-			app.services.playback.player:setEqualizer(core.equalizer.bands(gains))
+			app.services.playback.player:setEqualizer(equalizerBands.bands(gains))
 			app.services.settings:changed()
 			app:refresh()
 		end
@@ -173,8 +173,8 @@ function equalizer.view(app, _overlay, window)
 	local presetHeight = presetRows * chipHeight + (presetRows - 1) * gap
 	local rowHeight = compact and theme:px(26) or theme:px(30)
 	local bandGap = theme:px(3)
-	local bandsHeight = #core.equalizer.frequencies * rowHeight
-	+(#core.equalizer.frequencies - 1) * bandGap
+	local bandsHeight = #equalizerBands.frequencies * rowHeight
+	+(#equalizerBands.frequencies - 1) * bandGap
 	local headerHeight = compact and theme:px(22) or theme:px(24)
 	local height = padding * 2 + headerHeight + gap + presetHeight + gap + bandsHeight
 	local panels = {}
@@ -208,20 +208,20 @@ function equalizer.view(app, _overlay, window)
 	local labelWidth = theme:px(60)
 	local valueWidth = theme:px(44)
 	local sliderWidth = content - labelWidth - valueWidth - gap * 2
-	for at = 1, #core.equalizer.frequencies do
+	for at = 1, #equalizerBands.frequencies do
 			local band = at
 			local gain = app.services.settings.values.equalizerGains[at] or 0
 			local shown = math.floor(gain + 0.5)
 			local value = shown == 0 and "0 dB" or string.format("%+d dB", shown)
 			panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)
 			:align("center")):children({
-			text(core.equalizer.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
+			text(equalizerBands.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
 			:fg(theme:color("muted"))),
 			render.slider(app, {
 			width = sliderWidth,
 			value = gain,
-			min = core.equalizer.minimum,
-			max = core.equalizer.maximum,
+			min = equalizerBands.minimum,
+			max = equalizerBands.maximum,
 			origin = 0.5,
 			onchange = function(value_) return { type = "equalizerGain", band = band, value = value_} end,
 			trackColour = theme:color("text", 0.12),

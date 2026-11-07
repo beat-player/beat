@@ -1,8 +1,8 @@
 -- The player's own edges: a manual start ramps the device volume, while the queue and repeat
--- rules stay in core. The audio device is a stand-in; treble has tests for its own side.
+-- rules stay in the player. The audio device is a stand-in; treble has tests for its own side.
 local test = require("lde-test")
-local Player = require("beat-core.player")
-local Queue = require("beat-core.queue")
+local Player = require("beat.app.services.playback.player")
+local Queue = require("beat.app.services.playback.queue")
 
 local function standIn(player)
 	local volumes = {}

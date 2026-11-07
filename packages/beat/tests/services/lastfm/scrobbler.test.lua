@@ -1,5 +1,5 @@
 local test = require("lde-test")
-local core = require("beat-core")
+local Scrobbler = require("beat.app.services.lastfm.scrobbler")
 
 local function track(id, duration)
 	return {
@@ -12,7 +12,7 @@ local function track(id, duration)
 end
 
 test.it("queues a scrobble once the track has been heard halfway", function()
-	local scrobbler = core.Scrobbler.new()
+	local scrobbler = Scrobbler.new()
 	local song = track(1, 100)
 
 	scrobbler:update(song, 0, true, 10)
@@ -25,7 +25,7 @@ test.it("queues a scrobble once the track has been heard halfway", function()
 end)
 
 test.it("does not queue a track under thirty seconds", function()
-	local scrobbler = core.Scrobbler.new()
+	local scrobbler = Scrobbler.new()
 	local song = track(2, 20)
 
 	for position = 1, 20 do scrobbler:update(song, position, true, position) end
@@ -34,7 +34,7 @@ test.it("does not queue a track under thirty seconds", function()
 end)
 
 test.it("does not count a seek as listening", function()
-	local scrobbler = core.Scrobbler.new()
+	local scrobbler = Scrobbler.new()
 	local song = track(3, 100)
 
 	scrobbler:update(song, 0, true, 0)
@@ -44,7 +44,7 @@ test.it("does not count a seek as listening", function()
 end)
 
 test.it("queues a track that reached the threshold after a normal step", function()
-	local scrobbler = core.Scrobbler.new()
+	local scrobbler = Scrobbler.new()
 	local song = track(4, 100)
 
 	for position = 1, 50 do scrobbler:update(song, position, true, position) end

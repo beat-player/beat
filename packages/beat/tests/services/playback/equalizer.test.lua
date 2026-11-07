@@ -1,5 +1,5 @@
 local test = require("lde-test")
-local equalizer = require("beat-core.equalizer")
+local equalizer = require("beat.app.services.playback.equalizer")
 
 test.it("ships five named bands and a flat default", function()
 	test.equal(#equalizer.frequencies, 5)

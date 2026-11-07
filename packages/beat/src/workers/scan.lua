@@ -10,7 +10,8 @@
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
-local core = require("beat-core")
+local Scanner = require("beat.music.scan")
+local artworkCache = require("beat.music.artwork_cache")
 local Log = require("beat.log")
 local workerProcess = require("beat.workers.process")
 local time = require("wonderland.time")
@@ -263,7 +264,7 @@ local ok, err = pcall(function()
 	emit({ type = "progress", phase = "enumerate", files = 0, inspected = 0, tracks = 0, skipped = 0,
 		errors = {}, current = printable(root)})
 
-	local scanner = core.Scanner.new(root, { library = false })
+	local scanner = Scanner.new(root, { library = false })
 	local lastProgress = time.now()
 	while scanner.phase == "enumerate" do
 		if fs.isfile(cancelFile) then
@@ -391,7 +392,7 @@ local ok, err = pcall(function()
 	emit({ type = "progress", phase = "inspect", files = #entries, inspected = inspected,
 		tracks = forwarded, skipped = skipped, errors = {}, current = nil})
 	emit({ type = "done", skipped = skipped, errors = errors})
-	core.cover_cache.prune(root, usedCovers)
+	artworkCache.prune(root, usedCovers)
 end)
 
 if not ok then

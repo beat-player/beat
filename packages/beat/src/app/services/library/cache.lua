@@ -5,7 +5,8 @@
 local fs = require("fs")
 local json = require("json")
 local path = require("path")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
+local Library = require("beat.music.library")
 local Log = require("beat.log")
 
 local LibraryCache = {}
@@ -14,7 +15,7 @@ local VERSION = 4
 
 ---@return string
 local function cacheFile()
-	return path.join(core.settings.directory(), "library.json")
+	return path.join(settingsModel.directory(), "library.json")
 end
 
 ---@param track beat.Track
@@ -60,7 +61,7 @@ function LibraryCache.save(library)
 	})
 	if not ok then return false, tostring(encoded) end
 
-	local folder = core.settings.directory()
+	local folder = settingsModel.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end
@@ -92,7 +93,7 @@ function LibraryCache.load(root)
 		return nil
 	end
 
-	local library = core.Library.new(root)
+	local library = Library.new(root)
 	for _, item in ipairs(decoded.tracks) do
 			if type(item) ~= "table" or type(item.path) ~= "string" then return nil end
 

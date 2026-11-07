@@ -3,7 +3,7 @@
 -- every tick, so a scrobble is the track actually playing rather than what a control asked for.
 -- Its connection state is in settings and its only way of speaking is a toast (and a request that
 -- settings be saved), so a library change or a new queue cannot leave it holding stale state.
-local core = require("beat-core")
+local Scrobbler = require("beat.app.services.lastfm.scrobbler")
 local LastfmClient = require("beat.app.services.lastfm.client")
 
 ---@class beat.LastfmService
@@ -33,7 +33,7 @@ function Lastfm.new(deps)
 		toasts = deps.toasts,
 		playback = deps.playback,
 		system = deps.system,
-		scrobbler = core.Scrobbler.new(),
+		scrobbler = Scrobbler.new(),
 	}, Lastfm)
 
 	-- Last.fm keeps its own authorisation state, so the handlers are the only way it says anything

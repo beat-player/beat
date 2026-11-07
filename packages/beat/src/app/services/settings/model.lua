@@ -4,7 +4,7 @@
 local fs = require("fs")
 local path = require("path")
 local json = require("json")
-local equalizer = require("beat-core.equalizer")
+local equalizer = require("beat.app.services.playback.equalizer")
 
 local settings = {}
 

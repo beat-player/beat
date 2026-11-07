@@ -1,14 +1,13 @@
 -- The playlist screen: the collection view with its own cover, its kind, and the control
 -- that adds more to it.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local ui = require("beat-ui")
 local render = require("beat.app.components.ui")
 local PlaylistArt = require("beat.app.components.playlist_art")
 local collection = require("beat.app.components.collection_view")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@type beat.PageSurface
 local playlistPage = {}
@@ -69,8 +68,8 @@ function playlistPage.view(app, page, window)
 	cover = function(size) return PlaylistArt.art(app, tracks, size, app.services.appearance.theme:radius("lg"), playlist.name) end,
 	title = playlist.name,
 	subtitle = subtitle,
-	meta = util.count(#tracks, "track")
-	.. (duration > 0 and (" · " .. util.duration(duration)) or "")
+	meta = names.count(#tracks, "track")
+	.. (duration > 0 and (" · " .. names.duration(duration)) or "")
 	.. " · " .. PlaylistArt.editedLabel(playlist.updatedAt),
 	playAction = thisPlaylist and { type = "togglePlay"}
 	or { type = "playPlaylist", id = playlist.id},

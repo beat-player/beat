@@ -1,6 +1,6 @@
 -- The playback order: what is playing, what comes next, and how the two ends of the queue behave.
--- It is state, not a player; `beat-core.player` is what hands this order to treble.
-local util = require("beat-core.util")
+-- It is state, not a player; `beat.app.services.playback.player` is what hands this order to treble.
+local names = require("beat.music.names")
 
 ---@class beat.Queue
 ---@field tracks beat.Track[]
@@ -231,7 +231,7 @@ end
 
 ---@return string
 function Queue:label()
-	return util.count(#self.tracks, "track") .. " · " .. self.source
+	return names.count(#self.tracks, "track") .. " · " .. self.source
 end
 
 return Queue

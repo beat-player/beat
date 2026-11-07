@@ -1,8 +1,6 @@
 local test = require("lde-test")
-local core = require("beat-core")
-local md5 = require("beat-core.md5")
-
-local lastfm = core.Lastfm
+local md5 = require("beat.music.md5")
+local lastfm = require("beat.app.services.lastfm.protocol")
 
 test.it("hashes the RFC 1321 vectors", function()
 	test.equal(md5.sumhexa(""), "d41d8cd98f00b204e9800998ecf8427e")

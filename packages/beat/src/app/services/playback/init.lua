@@ -4,9 +4,10 @@
 -- `spectrum` to draw the bar; nothing outside changes them, so every control that moves playback
 -- arrives here as a message. Last.fm is deliberately not here: it watches what this plays from
 -- its own service, and nothing about playing depends on it.
-local core = require("beat-core")
-
-local util = core.util
+local names = require("beat.music.names")
+local Player = require("beat.app.services.playback.player")
+local Spectrum = require("beat.app.services.playback.spectrum")
+local equalizer = require("beat.app.services.playback.equalizer")
 
 ---@class beat.PlaybackService
 ---@field player beat.Player
@@ -37,8 +38,8 @@ function Playback.new(deps)
 		library = deps.library,
 		collections = deps.collections,
 		toasts = deps.toasts,
-		player = core.Player.new(),
-		spectrum = core.Spectrum.new(),
+		player = Player.new(),
+		spectrum = Spectrum.new(),
 		lastListenedTrackId = nil,
 	}, Playback)
 
@@ -51,7 +52,7 @@ function Playback.new(deps)
 	local values = self.settings.values
 	self.player:setVolume(values.volume)
 	self.player.isMuted = values.isMuted
-	self.player:setEqualizer(core.equalizer.bands(values.equalizerGains))
+	self.player:setEqualizer(equalizer.bands(values.equalizerGains))
 
 	return self
 end
@@ -164,7 +165,7 @@ end
 ---@param value number?
 function Playback:setVolume(value)
 	local values = self.settings.values
-	values.volume = util.clamp(value or 0, 0, 1)
+	values.volume = names.clamp(value or 0, 0, 1)
 	values.isMuted = false
 	self.player.isMuted = false
 	self.player:setVolume(values.volume)

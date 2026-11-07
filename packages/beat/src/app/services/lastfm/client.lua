@@ -4,13 +4,13 @@
 -- and several calls can be in flight while the screen keeps drawing. The app's API account is
 -- compiled in; what the settings it is handed own is the per-listener session key, so a save from
 -- here is the same save the settings screen makes.
-local core = require("beat-core")
+local protocol = require("beat.app.services.lastfm.protocol")
 local credentials = require("beat.app.services.lastfm.credentials")
 
 local curlOk, curl = pcall(require, "curl-sys")
 
-local API_ROOT = core.Lastfm.API_ROOT
-local AUTH_PAGE = core.Lastfm.AUTH_PAGE
+local API_ROOT = protocol.API_ROOT
+local AUTH_PAGE = protocol.AUTH_PAGE
 local USER_AGENT = "beat/0.1.0"
 local REQUEST_TIMEOUT = 15
 local AUTH_POLL = 3
@@ -194,7 +194,7 @@ function Client:send(kind, params, onDone)
 
 	local ok, index = pcall(self.batch.add, self.batch, self.apiRoot, {
 	method = "POST",
-	body = core.Lastfm.encode(params),
+	body = protocol.encode(params),
 	timeout = REQUEST_TIMEOUT,
 	useragent = USER_AGENT,
 	headers = { ["Content-Type"] = "application/x-www-form-urlencoded"},
@@ -219,7 +219,7 @@ local function resultOf(result)
 
 	local body = result.body
 	if type(body) ~= "string" then body = "" end
-	local value, err, code = core.Lastfm.response(body)
+	local value, err, code = protocol.response(body)
 	---@cast value table?
 	---@cast err string?
 	---@cast code number?
@@ -316,7 +316,7 @@ function Client:connect()
 	self.authStartedAt = self.now()
 	self.state = "token"
 
-	local ok, err = self:send("token", core.Lastfm.tokenParams(apiKey, secret),
+	local ok, err = self:send("token", protocol.tokenParams(apiKey, secret),
 	function(value, message)
 		if epoch ~= self.authEpoch then return end
 		if message ~= nil then
@@ -331,7 +331,7 @@ function Client:connect()
 		end
 
 		self.token = token
-		self.authUrl = core.Lastfm.authUrl(apiKey, token, self.authPage)
+		self.authUrl = protocol.authUrl(apiKey, token, self.authPage)
 		self.state = "waiting"
 		self.nextAuthPoll = self.now() + 2
 
@@ -377,7 +377,7 @@ function Client:poll(now)
 	self.authInFlight = true
 	local epoch = self.authEpoch
 
-	local ok, err = self:send("session", core.Lastfm.sessionParams(apiKey, secret, self.token),
+	local ok, err = self:send("session", protocol.sessionParams(apiKey, secret, self.token),
 	function(value, message, code)
 		self.authInFlight = false
 		if epoch ~= self.authEpoch then return end
@@ -463,7 +463,7 @@ function Client:flush()
 
 	self.scrobbling = true
 	local ok, err = self:send("scrobble",
-	core.Lastfm.scrobbleParams(apiKey, secret, sessionKey, chunk),
+	protocol.scrobbleParams(apiKey, secret, sessionKey, chunk),
 	function(value, message, code)
 		self.scrobbling = false
 
@@ -526,7 +526,7 @@ function Client:sendNowPlaying(track)
 		return
 	end
 
-	self:send("nowPlaying", core.Lastfm.nowPlayingParams(apiKey, secret, sessionKey, track),
+	self:send("nowPlaying", protocol.nowPlayingParams(apiKey, secret, sessionKey, track),
 	function(_, message, code)
 		if message ~= nil and code == 9 then self:expireSession() end
 	end)

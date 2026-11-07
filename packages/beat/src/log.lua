@@ -3,7 +3,7 @@
 -- directory must still draw, so nothing here is allowed to raise.
 local fs = require("fs")
 local path = require("path")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
 
 local log = {}
 
@@ -11,7 +11,7 @@ local LIMIT = 1024 * 1024
 
 ---@return string
 local function file()
-	return path.join(core.settings.directory(), "beat.log")
+	return path.join(settingsModel.directory(), "beat.log")
 end
 
 local function rotate()
@@ -31,7 +31,7 @@ end
 ---@return boolean
 function log.write(level, message)
 	return pcall(function()
-		local directory = core.settings.directory()
+		local directory = settingsModel.directory()
 
 		if not fs.isdir(directory) then
 			fs.mkdirAll(directory)

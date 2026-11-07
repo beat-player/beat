@@ -1,7 +1,7 @@
 -- Tags and playlists. Tags belong to tracks and are what both smart playlists and the search
 -- filters are built from; a manual playlist is a hidden tag of its own, so membership has one
 -- representation whether the person tagged a song or dragged it into a playlist.
-local util = require("beat-core.util")
+local names = require("beat.music.names")
 
 ---@class beat.Tag
 ---@field id number
@@ -62,7 +62,7 @@ end
 ---@param value string
 ---@return string
 local function nameKey(value)
-	return util.fold(cleanName(value))
+	return names.fold(cleanName(value))
 end
 
 ---@param tag beat.Tag

@@ -7,8 +7,8 @@
 -- folder never blocks a frame.
 local fs = require("fs")
 local path = require("path")
-local util = require("beat-core.util")
-local Library = require("beat-core.library")
+local names = require("beat.music.names")
+local Library = require("beat.music.library")
 local audio = require("treble.audio")
 
 local AUDIO = {
@@ -136,13 +136,13 @@ local function enumerateOne(self)
 	end
 
 	local cover = nil
-	local names = {}
+	local entries = {}
 
 	for entry in iterator do
-			names[#names + 1] = entry
+			entries[#entries + 1] = entry
 		end
 
-	for _, entry in ipairs(names) do
+	for _, entry in ipairs(entries) do
 			local name = entry.name
 			if not isJunk(name) then
 				local kind = entry.type
@@ -155,7 +155,7 @@ local function enumerateOne(self)
 					if ext ~= nil and AUDIO[ext] then
 						self.files[#self.files + 1] = path.join(dir, name)
 					elseif ext ~= nil and IMAGES[ext] then
-						local base = util.stripExtension(name):lower()
+						local base = names.stripExtension(name):lower()
 						if COVER_NAMES[base] and cover == nil then
 							cover = path.join(dir, name)
 						end

@@ -1,12 +1,11 @@
 -- The artist screen: a hero of their first cover, their top tracks, and every album.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local ui = require("beat-ui")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@type beat.PageSurface
 local artistPage = {}
@@ -64,7 +63,7 @@ function artistPage.view(app, page, window)
 	text("ARTIST"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
 	text(artist.name):style(theme:s():text(theme:type("hero")):weight("bold")
 	:fg(theme:color("text"))),
-	text(util.count(#artist.albums, "album") .. " · " .. util.count(#artist.tracks, "track")):style(
+	text(names.count(#artist.albums, "album") .. " · " .. names.count(#artist.tracks, "track")):style(
 	theme:s():text(theme:type("sm")):fg(theme:color("muted"))
 	),
 	div():style(sty():row():h(theme:px(38)):gap(theme:px(10)):align("center")):children({

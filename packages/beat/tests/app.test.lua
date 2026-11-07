@@ -1,8 +1,11 @@
--- The app builds and draws every page with no window. The core has its own tests; this is the
--- smoke test that says the screens the core feeds still come out as elements.
+-- The app builds and draws every page with no window. The music rules have their own tests; this is
+-- the smoke test that says the screens they feed still come out as elements.
 local test = require("lde-test")
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
+local Library = require("beat.music.library")
+local Queue = require("beat.app.services.playback.queue")
+local Taxonomy = require("beat.app.services.collections.taxonomy")
 local App = require("beat.app")
 local TagStore = require("beat.app.services.collections.store")
 local fs = require("fs")
@@ -16,23 +19,23 @@ local canRender = true
 	canRender = ok
 end
 
--- The app writes settings, tags and the library cache through `core.settings.directory`. A test
+-- The app writes settings, tags and the library cache through `settingsModel.directory`. A test
 -- that finishes a scan would otherwise replace the user's library cache with its fixtures -- and
 -- the next real launch, whose root no longer matched, would scan the whole folder again.
 local configDirectory = os.tmpname() .. "-beat-config"
 os.remove(configDirectory)
 fs.mkdirAll(configDirectory)
 
-local realDirectory = core.settings.directory
-core.settings.directory = function() return configDirectory end
+local realDirectory = settingsModel.directory
+settingsModel.directory = function() return configDirectory end
 
 test.afterAll(function()
-	core.settings.directory = realDirectory
+	settingsModel.directory = realDirectory
 	fs.rmdir(configDirectory)
 end)
 
 local function fixture()
-	local library = core.Library.new("/beat-fixtures")
+	local library = Library.new("/beat-fixtures")
 	for albumAt = 1, 3 do
 			local artist = "Artist " .. albumAt
 			local dir = "/beat-fixtures/" .. artist .. "/Album " .. albumAt
@@ -68,7 +71,7 @@ test.skipIf(not canRender)("draws every page the app has", function()
 	local library = fixture()
 	App.services.library.current = library
 	App.services.scan.job = nil
-	App.services.playback.player.queue = core.Queue.new(library.albums[1].tracks, 1, { repeatMode = "all"})
+	App.services.playback.player.queue = Queue.new(library.albums[1].tracks, 1, { repeatMode = "all"})
 	App.services.playback.player.loaded = true
 	local playhead = 12
 	App.services.playback.player.player = {
@@ -201,7 +204,7 @@ test.it("logs an error toast where the app keeps its files", function()
 	App:init({ scan = false })
 	App.services.toasts:show("a test failure", "error")
 
-	local logFile = core.settings.directory() .. "/beat.log"
+	local logFile = settingsModel.directory() .. "/beat.log"
 	local contents = fs.read(logFile)
 
 	test.truthy(contents ~= nil, "the error is written to beat.log")
@@ -235,7 +238,7 @@ end)
 test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	App:init({ scan = false})
 	App.services.settings.values.root = "/beat-fixtures"
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.page = { kind = "playlists"}
 	App.services.search.query = ""
 	local previousLayout = App.layoutPlugin
@@ -353,7 +356,7 @@ test.skipIf(not canRender)("opens an empty playlist and adds an album", function
 		App.services.covers:use(assets)
 		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	App.services.library.current = library
 	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Empty", false))
@@ -377,7 +380,7 @@ test.it("starts a playlist from its page with shuffle", function()
 	App:init({ scan = false})
 	local library = fixture()
 	App.services.library.current = library
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Mix", false))
 	App.services.collections.taxonomy:setPlaylistAlbum(playlist, library.albums[1])
@@ -405,10 +408,10 @@ test.it("records a listen when playback starts a track", function()
 	App:init({ scan = false})
 	local library = fixture()
 	App.services.library.current = library
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	App.services.playback.lastListenedTrackId = nil
-	App.services.playback.player.queue = core.Queue.new(library.albums[1].tracks, 1, { source = "playlist:9"})
+	App.services.playback.player.queue = Queue.new(library.albums[1].tracks, 1, { source = "playlist:9"})
 	App.services.playback.player.loaded = true
 	App.services.playback.player.player = {
 	isPlaying = function() return true end,
@@ -432,7 +435,7 @@ end)
 
 test.it("renames and deletes tags without changing their ids", function()
 	App:init({ scan = false})
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	local tag = assert(App.services.collections.taxonomy:addTag("Focus"))
 	local auto = App.services.collections.taxonomy.playlists[1]
@@ -451,7 +454,7 @@ end)
 
 test.it("deletes a playlist from its row menu", function()
 	App:init({ scan = false})
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Temporary", false))
 	App:act({ type = "open", overlay = "playlist_menu", id = playlist.id, x = 20, y = 20})
@@ -463,7 +466,7 @@ end)
 
 test.it("confirms deleting a tag only when it has been applied", function()
 	App:init({ scan = false})
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 
 	local unused = assert(App.services.collections.taxonomy:addTag("Unused"))
@@ -495,7 +498,7 @@ test.it("filters search results with selected tags", function()
 	App:init({ scan = false})
 	local library = fixture()
 	App.services.library.current = library
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	local high = assert(App.services.collections.taxonomy:addTag("High Energy"))
 	App.services.collections.taxonomy:setTag(library.albums[1].tracks[1].path, high.id, true)
 	local search = App.services.search
@@ -526,7 +529,7 @@ end)
 
 test.it("drops tags that no longer exist from the search filter", function()
 	App:init({ scan = false})
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	App.services.collections.taxonomy = taxonomy
 	local gone = assert(taxonomy:addTag("Gone"))
 	local kept = assert(taxonomy:addTag("Kept"))
@@ -576,7 +579,7 @@ end)
 test.it("persists tags and playlists beside settings", function()
 	local dir = os.tmpname() .. "-beat-tags"
 	fs.mkdirAll(dir)
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local high = assert(taxonomy:addTag("High Energy"))
 	local smart = assert(taxonomy:addPlaylist("High", true, { high.id}, "all"))
 	local manual = assert(taxonomy:addPlaylist("Manual", false))
@@ -599,7 +602,7 @@ test.it("creates tags and playlists from the app actions", function()
 	App:init({ scan = false})
 	local library = fixture()
 	App.services.library.current = library
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 
 	App:act({ type = "open", overlay = "tag_dialog"})
@@ -694,7 +697,7 @@ end)
 test.skipIf(not canRender)("windows the library as it scrolls", function()
 	App:init({ scan = false})
 	App.services.settings.values.root = "/beat-fixtures"
-	local library = core.Library.new("/beat-fixtures")
+	local library = Library.new("/beat-fixtures")
 	for albumAt = 1, 40 do
 			local name = string.format("Album %03d", albumAt)
 			for trackAt = 1, 2 do
@@ -785,7 +788,7 @@ test.it("switches to the phone shell at narrow widths", function()
 	test.equal(metrics.pad(App, 390), App.services.appearance.theme:space(16))
 	test.equal(metrics.bottomHeight(App, 390), App.services.appearance.theme:px(58), "the bottom tabs fit")
 
-	App.services.playback.player.queue = core.Queue.new(fixture().albums[1].tracks, 1)
+	App.services.playback.player.queue = Queue.new(fixture().albums[1].tracks, 1)
 	test.equal(metrics.bottomHeight(App, 390), App.services.appearance.theme:px(64 + 58),
 	"a track adds the mini player above the tabs")
 end)
@@ -830,7 +833,7 @@ test.it("orders sidebar playlists by their latest play", function()
 	App:init({ scan = false})
 	local library = fixture()
 	App.services.library.current = library
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	local first = assert(App.services.collections.taxonomy:addPlaylist("First", false))
 	local second = assert(App.services.collections.taxonomy:addPlaylist("Second", false))
 	local third = assert(App.services.collections.taxonomy:addPlaylist("Third", false))
@@ -869,7 +872,7 @@ test.skipIf(not canRender)("shows a sidebar playlist name only in its hover tool
 	App.services.library.current = library
 	App.services.scan.job = nil
 	App.page = { kind = "home"}
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Night Mix", false))
 
 	local screen = wonderland.headless.new(function(window, assets)
@@ -950,7 +953,7 @@ test.skipIf(not canRender)("opens the playlist dialog from the sidebar tile", fu
 	App.services.library.current = fixture()
 	App.services.scan.job = nil
 	App.page = { kind = "home"}
-	App.services.collections.taxonomy = core.Taxonomy.new()
+	App.services.collections.taxonomy = Taxonomy.new()
 
 	local screen = wonderland.headless.new(function(window, assets)
 		App.window = window
@@ -1037,7 +1040,7 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 	App.services.settings.values.root = "/beat-fixtures"
 	App.services.settings.values.sidebarWidth = 264
 	App.services.settings.values.sidebarCollapsed = false
-	local library = core.Library.new("/beat-fixtures")
+	local library = Library.new("/beat-fixtures")
 	for trackAt = 1, 100 do
 			library:add({
 			format = "WAV",
@@ -1102,7 +1105,7 @@ end)
 test.it("adds tracks from a background scan as they arrive", function()
 	App:init({ scan = false})
 	App.services.settings.values.root = "/beat-fixtures"
-	App.services.library.current = core.Library.new("/beat-fixtures")
+	App.services.library.current = Library.new("/beat-fixtures")
 	App.page = { kind = "home"}
 
 	local queued = {
@@ -1192,7 +1195,7 @@ end)
 
 test.it("sorts albums by the newest file they contain", function()
 	App:init({ scan = false})
-	local library = core.Library.new("/modified-fixtures")
+	local library = Library.new("/modified-fixtures")
 	local function add(album, modified)
 		library:add({
 		format = "FLAC",

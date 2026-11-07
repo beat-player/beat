@@ -2,13 +2,12 @@
 -- name a row gives back while the pointer is on it.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local metrics = require("beat.app.components.metrics")
 local measure = require("beat.app.components.measure")
 local PlaylistArt = require("beat.app.components.playlist_art")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 local sidebar = {}
 
@@ -101,7 +100,7 @@ function sidebar.view(app, width, height)
 			:children(PlaylistArt.art(app, tracks, artSize, nil, playlist.name))
 
 			if not collapsed then
-				row:children(text(util.count(#tracks, "track")):style(theme:s():text(theme:type("xs"))
+				row:children(text(names.count(#tracks, "track")):style(theme:s():text(theme:type("xs"))
 				:fg(theme:color("faint"))))
 			end
 

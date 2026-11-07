@@ -1,6 +1,6 @@
 local ffi = require("ffi")
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local artwork = require("beat.music.artwork")
 local fs = require("fs")
 
 local shell = require("beat.app.shell")
@@ -147,7 +147,7 @@ end
 function App:setIcon(window)
 	if self.iconSet or window.setIcon == nil then return end
 
-	local icon = core.art.decodePNG(iconData)
+	local icon = artwork.decodePNG(iconData)
 	if icon == nil then return end
 
 	window:setIcon(icon.width, icon.height, ffi.string(icon.pixels, icon.width * icon.height * 4))

@@ -2,12 +2,11 @@
 -- still being read.
 local wonderland = require("wonderland")
 local path = require("path")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@type beat.PageSurface
 local home = {}
@@ -32,7 +31,7 @@ function home.view(app, page, window)
 			text(progress.phase == "enumerate" and "Finding your music" or "Reading your music"):style(
 			theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))
 			),
-			text(util.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / "
+			text(names.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / "
 			.. progress.files):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 			render.meter(theme:px(420), theme:px(4), render.scanFraction(progress),
 			theme:color("text", 0.1), theme:color("accent")),
@@ -43,7 +42,7 @@ function home.view(app, page, window)
 				)
 			end
 			if progress.skipped > 0 then
-				scanning[#scanning + 1] = text(util.count(progress.skipped, "file") .. " skipped"):style(
+				scanning[#scanning + 1] = text(names.count(progress.skipped, "file") .. " skipped"):style(
 				theme:s():text(theme:type("xs")):fg(theme:color("danger"))
 				)
 			end

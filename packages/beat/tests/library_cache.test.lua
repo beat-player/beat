@@ -3,7 +3,8 @@
 -- album it belongs to -- a track credited "Kanye West, Jay-Z" in a folder of one album -- is the
 -- case that only the scan's own answer can be right about.
 local test = require("lde-test")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
+local Library = require("beat.music.library")
 local LibraryCache = require("beat.app.services.library.cache")
 local fs = require("fs")
 
@@ -11,11 +12,11 @@ local configDirectory = os.tmpname() .. "-beat-cache-config"
 os.remove(configDirectory)
 fs.mkdirAll(configDirectory)
 
-local realDirectory = core.settings.directory
-core.settings.directory = function() return configDirectory end
+local realDirectory = settingsModel.directory
+settingsModel.directory = function() return configDirectory end
 
 test.afterAll(function()
-	core.settings.directory = realDirectory
+	settingsModel.directory = realDirectory
 	fs.rmdir(configDirectory)
 end)
 
@@ -38,7 +39,7 @@ local function file(name, artist)
 end
 
 test.it("loads a scan's albums back as the scan made them", function()
-	local library = core.Library.new(ROOT)
+	local library = Library.new(ROOT)
 	library:add(file("01 - Heard Em Say", "Kanye West, Adam Levine"))
 	library:add(file("02 - Gold Digger", "Kanye West, Jamie Foxx"))
 	library:add(file("03 - Touch The Sky", "Kanye West, Lupe Fiasco"))
@@ -65,7 +66,7 @@ test.it("loads a scan's albums back as the scan made them", function()
 end)
 
 test.it("keeps an album an album-artist tag names, across folders", function()
-	local library = core.Library.new(ROOT)
+	local library = Library.new(ROOT)
 	for _, disc in ipairs({ "CD1", "CD2" }) do
 		local info = {
 			format = "FLAC", duration = 100, sampleRate = 44100, channels = 2, hasPicture = false,

@@ -1,7 +1,8 @@
 local test = require("lde-test")
 local ffi = require("ffi")
 local image = require("image")
-local core = require("beat-core")
+local Library = require("beat.music.library")
+local artwork = require("beat.music.artwork")
 
 local function solid(width, height, r, g, b)
 	local picture = image.new(width, height, 4)
@@ -11,12 +12,12 @@ end
 
 test.it("fits a cover to a square by cropping its long side", function()
 	local source = solid(200, 100, 255, 0, 0)
-	local fitted = core.art.fit(source, 64)
+	local fitted = artwork.fit(source, 64)
 
 	test.equal(fitted.width, 64)
 	test.equal(fitted.height, 64)
 
-	local r, g, b = core.art.dominant(fitted)
+	local r, g, b = artwork.dominant(fitted)
 	test.truthy(r > 0.95, "the redness survives the downscale")
 	test.truthy(g < 0.05)
 	test.truthy(b < 0.05)
@@ -35,7 +36,7 @@ test.it("copies a cropped square one row at a time", function()
 				end
 		end
 
-	local fitted = core.art.fit(source, 2)
+	local fitted = artwork.fit(source, 2)
 	local out = ffi.cast("uint8_t*", fitted.pixels)
 
 	-- The crop starts at x=1, so the second output row starts at the source's x=1 again. A
@@ -49,7 +50,7 @@ end)
 
 test.it("never upscales a small cover", function()
 	local source = solid(32, 48, 0, 200, 0)
-	local fitted = core.art.fit(source, 512)
+	local fitted = artwork.fit(source, 512)
 
 	test.equal(fitted.width, 32, "the short side is the square")
 	test.equal(fitted.height, 32)
@@ -60,7 +61,7 @@ end)
 
 test.it("returns a dominant colour from the pixels, not the average of black borders", function()
 	local source = solid(80, 80, 20, 40, 200)
-	local r, g, b = core.art.dominant(source)
+	local r, g, b = artwork.dominant(source)
 
 	test.truthy(r < 0.15)
 	test.truthy(g > 0.1 and g < 0.25)
@@ -73,24 +74,24 @@ test.it("uses the picture inside a track for its album cover", function()
 	local audio = require("treble.audio")
 	local path = require("path")
 	local here = (debug.getinfo(1, "S").source:sub(2):match("^(.*)[/\\]") or ".")
-	local file = path.join(here, "fixtures", "tagged.flac")
+	local file = path.join(here, "..", "fixtures", "tagged.flac")
 	local info = assert(audio.inspect(file))
 	test.truthy(info.hasPicture)
 
-	local library = core.Library.new("/tmp")
+	local library = Library.new("/tmp")
 	library:add(info, { path = file, dir = here, name = "tagged.flac", ext = "flac"})
 	library:finish()
 	local album = library.albums[1]
 	test.equal(album.coverTrack.path, file)
 
-	local cache = assert(core.art.cacheCover({
+	local cache = assert(artwork.cacheCover({
 	path = file,
 	hasPicture = true,
 	modified = 1,
 	}, 128, "/beat-art-test"))
 	album.coverCache = cache
 
-	local fitted, colour = core.art.forAlbum(album, 128)
+	local fitted, colour = artwork.forAlbum(album, 128)
 	test.truthy(fitted ~= nil)
 	test.truthy(colour ~= nil)
 	if fitted ~= nil then
@@ -107,14 +108,14 @@ test.it("does not read the music folder when an album has no cached cover", func
 	tracks = {},
 	}
 
-	local fitted, colour, err = core.art.forAlbum(album, 128)
+	local fitted, colour, err = artwork.forAlbum(album, 128)
 	test.equal(fitted, nil)
 	test.equal(colour, nil)
 	test.equal(err, "cover has not been cached yet")
 end)
 
 test.it("reports when an album gains its first cached cover", function()
-	local library = core.Library.new("/tmp/cache-test")
+	local library = Library.new("/tmp/cache-test")
 	local info = { format = "WAV", duration = 10, hasPicture = false,
 	tags = { title = "One", artist = "Artist", album = "Album", albumArtist = "Artist"}}
 
