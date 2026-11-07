@@ -48,6 +48,36 @@ local function emit(value)
 	file:flush()
 end
 
+-- What travels between the scan's processes is JSON, which only carries UTF-8. lde's `fs` reads
+-- Windows names through the ANSI calls, so a name outside ASCII arrives in the system code page
+-- ("Antônio" as "Ant\xF4nio") and cannot be sent. Such files are left out and reported until
+-- names arrive as UTF-8.
+local NOT_UTF8 = "skipped: its name is not UTF-8"
+
+---@param value string
+---@return boolean
+local function sendable(value)
+	return (pcall(json.encode, value))
+end
+
+--- A name that can be shown and sent, with every byte that kept it from being UTF-8 replaced.
+---@param value string?
+---@return string?
+local function printable(value)
+	if value == nil or sendable(value) then return value end
+	return (value:gsub("[\128-\255]", "\239\191\189"))
+end
+
+---@param failures { path: string, message: string }[]
+---@return { path: string, message: string }[]
+local function printableFailures(failures)
+	local out = {}
+	for at, failure in ipairs(failures) do
+			out[at] = { path = printable(failure.path), message = printable(failure.message)}
+		end
+	return out
+end
+
 local temps = {}
 local activeChildren = {}
 local exitedChildren = {}
@@ -231,7 +261,7 @@ end
 
 local ok, err = pcall(function()
 	emit({ type = "progress", phase = "enumerate", files = 0, inspected = 0, tracks = 0, skipped = 0,
-		errors = {}, current = root})
+		errors = {}, current = printable(root)})
 
 	local scanner = core.Scanner.new(root, { library = false })
 	local lastProgress = time.now()
@@ -246,14 +276,22 @@ local ok, err = pcall(function()
 		if now - lastProgress >= 0.1 then
 			local progress = scanner:progress()
 			emit({ type = "progress", phase = "enumerate", files = progress.files, inspected = 0,
-				tracks = 0, skipped = 0, errors = {}, current = progress.current})
+				tracks = 0, skipped = 0, errors = {}, current = printable(progress.current)})
 			lastProgress = now
 		end
 	end
 
-	local entries = scanner:entries()
+	local entries = {}
 	local enumSkipped = scanner.skipped
-	local enumErrors = scanner.errors
+	local enumErrors = printableFailures(scanner.errors)
+	for _, entry in ipairs(scanner:entries()) do
+			if sendable(entry.path) then
+				entries[#entries + 1] = entry
+			else
+				enumSkipped = enumSkipped + 1
+				enumErrors[#enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8}
+			end
+		end
 	emit({ type = "progress", phase = "inspect", files = #entries, inspected = 0, tracks = 0,
 		skipped = enumSkipped, errors = {}, current = nil})
 
@@ -357,7 +395,7 @@ local ok, err = pcall(function()
 end)
 
 if not ok then
-	emit({ type = "error", message = tostring(err)})
+	emit({ type = "error", message = printable(tostring(err))})
 end
 
 cleanup()

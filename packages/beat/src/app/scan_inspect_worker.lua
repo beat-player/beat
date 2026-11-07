@@ -31,6 +31,19 @@ local function clean(value)
 	return (tostring(value):gsub("[%z\1-\31\127-\255]", "?"))
 end
 
+-- A tag value that is not UTF-8 cannot travel as JSON. treble decodes ID3 text to UTF-8, but a
+-- WAV's RIFF INFO chunk and a Vorbis comment are handed over as the bytes the file stores, and a
+-- tagger can write those in any code page. Such a value is dropped, and the track falls back to
+-- its file name for it, rather than the event taking the whole shard down.
+---@param info table
+local function dropUnsendableTags(info)
+	local tags = info.tags
+	if type(tags) ~= "table" then return end
+	for key, value in pairs(tags) do
+		if type(value) == "string" and not pcall(json.encode, value) then tags[key] = nil end
+	end
+end
+
 local COVER_SIZE = 512
 local PROGRESS_EVERY = 32
 local PROGRESS_SECONDS = 0.25
@@ -94,8 +107,17 @@ local function inspect(entry)
 		if coverCache ~= nil then cached[key] = coverCache end
 	end
 
+	dropUnsendableTags(info)
+	local sent, encoded = pcall(json.encode,
+		{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	if not sent then
+		recordError(entry.path, "skipped: its tags are not UTF-8")
+		return
+	end
+
 	tracks = tracks + 1
-	emit({ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	file:write(encoded, "\n")
+	file:flush()
 end
 
 local started = time.now()
