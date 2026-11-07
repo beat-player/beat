@@ -12,12 +12,18 @@ local util = core.util
 ---@type beat.PageSurface
 local home = {}
 
+-- Home is where Escape stops: there is nothing behind it to go back to.
+function home.update(_, _, message)
+	return message.type == "escape"
+end
+
 function home.view(app, page, window)
-	local theme = app.theme
-	local library = app.library
-	if library == nil or (app.scan ~= nil and #library.tracks == 0) then
-		if app.scan ~= nil then
-			local progress = app.scan:progress()
+	local theme = app.services.appearance.theme
+	local library = app.services.library.current
+	local scan = app.services.scan
+	if library == nil or (scan.job ~= nil and #library.tracks == 0) then
+		if scan.job ~= nil then
+			local progress = scan.job:progress()
 			local current = progress.current
 			local currentName = nil
 			if type(current) == "string" then currentName = path.basename(current) end
@@ -71,7 +77,7 @@ function home.view(app, page, window)
 		return div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(children)
 	end
 
-	local listened = app.taxonomy:recentAlbums(library, columns)
+	local listened = app.services.collections.taxonomy:recentAlbums(library, columns)
 	local children = {}
 	local height = 0
 	if #listened > 0 then

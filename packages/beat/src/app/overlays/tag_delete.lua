@@ -16,7 +16,7 @@ local tagDelete = {}
 
 ---@param params { id: number }
 function tagDelete.new(app, params)
-	local tag = params.id ~= nil and app.taxonomy.tagById[params.id] or nil
+	local tag = params.id ~= nil and app.services.collections.taxonomy.tagById[params.id] or nil
 	if tag == nil then return nil end
 	---@type beat.TagDeleteState
 	return { id = tag.id}
@@ -26,7 +26,20 @@ function tagDelete.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.TagDeleteState]]
 	local kind = message.type
 	if kind == "confirmDeleteTag" then
-		app:deleteTag(state.id)
+		-- The page that asked clears what it was keeping about the tag: its row's hover and the
+		-- name field if it was being edited. The search service drops the tag from its filter
+		-- when collections announce the change.
+		local page = app.page
+		if page ~= nil and page.kind == "playlists" then
+			page = app:currentPage()
+			if page.state.tagEditId == state.id then
+				page.state.tagEditId = nil
+				page.state.tagEditDraft = ""
+				app:focusField(nil)
+			end
+			if page.state.hoverTagId == state.id then page.state.hoverTagId = nil end
+		end
+		app.services.collections:deleteTag(state.id)
 		app:close(overlay)
 		app:refresh()
 		return true
@@ -40,10 +53,10 @@ end
 
 function tagDelete.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.TagDeleteState]]
-	local tag = app.taxonomy.tagById[state.id]
+	local tag = app.services.collections.taxonomy.tagById[state.id]
 	if tag == nil then return nil end
 
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local panelWidth = metrics.panelWidth(app, window, 380)
 	local pad = theme:px(18)
 	local panelHeight = theme:px(154)

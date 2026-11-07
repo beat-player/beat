@@ -46,8 +46,8 @@ local accentPicker = {}
 --- Opens on the accent settings hold now -- its colour when it is a custom one, the colour of its
 --- name otherwise -- so the grid starts where the app already is.
 function accentPicker.new(app)
-	local draft = app.settings.accent:match("#") and app.settings.accent
-	or ui.theme.accentColour(app.settings.accent)
+	local draft = app.services.settings.values.accent:match("#") and app.services.settings.values.accent
+	or ui.theme.accentColour(app.services.settings.values.accent)
 	---@type beat.AccentPickerState
 	return { draft = draft}
 end
@@ -63,8 +63,8 @@ function accentPicker.update(app, overlay, message)
 		end
 	elseif kind == "confirmAccent" then
 		if state.draft ~= nil and state.draft:match("^#%x%x%x%x%x%x$") then
-			app.settings.accent = state.draft
-			app:themeChanged(false)
+			app.services.settings.values.accent = state.draft
+			app.services.appearance:change(false)
 		end
 		app:close(overlay)
 	else
@@ -79,7 +79,7 @@ end
 ---@return wonderland.Element
 function accentPicker.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.AccentPickerState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local draft = state.draft
 	local narrow = window.width < 560
 	local columns = narrow and 6 or 12

@@ -67,15 +67,15 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function shell.view(app, window)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local assets = app.assets
-	if assets ~= nil then app.covers:use(assets) end
-	app.covers:beginFrame()
+	if assets ~= nil then app.services.covers:use(assets) end
+	app.services.covers:beginFrame()
 
 	local width = window.width
 	local height = window.height
 	local mobile = metrics.mobile(app, width)
-	local bar = app:currentTrack() ~= nil and theme:px(mobile and 64 or 88) or 0
+	local bar = app.services.playback:current() ~= nil and theme:px(mobile and 64 or 88) or 0
 	local page = app:currentPage()
 
 	-- A full-screen overlay is the screen, not a panel over one: the page, the sidebar and the bar
@@ -89,12 +89,12 @@ function shell.view(app, window)
 				-- bare wrapper keeps their fill and offsets measured from the window.
 				local frame = div():style(sty():fill()):children({ surface.view(app, overlay, window)})
 				for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element}) end
-				app.covers:sweep()
+				app.services.covers:sweep()
 				return frame
 			end
 		end
 
-	if app:needsFolder() then
+	if app.services.scan:needsFolder() then
 		-- The first launch is the folder browser and nothing else; it is the page, too, so its
 		-- messages reach it.
 		if page.kind ~= "folders" then
@@ -125,14 +125,14 @@ function shell.view(app, window)
 	local pageHeight = height - bottomHeight
 	local topbarHeight = metrics.topbarHeight(app, width)
 	local bodyHeight = pageHeight - topbarHeight
-	local scroll = app:scrollOffset(app:pageKey())
+	local scroll = app.services.scroll:offset(app:pageKey())
 
-	local transition = app.transition
+	local motion = app.services.motion
 	local transitionStyle
-	if transition ~= nil and not app.motion.reduce then
-		local t = ui.motion.progress(transition.start, 0.28, wonderland.time.now(), ui.motion.ease.outCubic)
+	local t = motion:slideProgress(wonderland.time.now())
+	if t ~= nil and not motion.clock.reduce then
 		local transitionSet = transitionStyles(theme)
-		local direction = (transition.direction or 1) < 0 and transitionSet.back or transitionSet.forward
+		local direction = (motion.pageSlide.direction or 1) < 0 and transitionSet.back or transitionSet.forward
 		transitionStyle = direction[math.floor(t * 16 + 0.5)]
 	end
 
@@ -140,7 +140,7 @@ function shell.view(app, window)
 	:style(sty():column():wrel(1.0):h(bodyHeight):pad(theme:space(20), metrics.pad(app, width), 0,
 	metrics.pad(app, width)):gap(theme:space(18)):bar(theme:px(8), theme:px(40), theme:color("faint")))
 	:scroll(scroll)
-	:onScroll(function(by, to) return { type = "scroll", by = by, to = to} end)
+	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
 	:children({ content})
 
 	-- The page is moved by a wrapper whose styles are made once per scale, not by a style that
@@ -151,14 +151,14 @@ function shell.view(app, window)
 
 	-- Clipped so a page arriving from the side cannot draw over the sidebar during its travel.
 	local pageClip = div():style(sty():column():wrel(1.0):h(bodyHeight)):scroll(0)
-	:onScroll(function(by, to) return { type = "scroll", by = by, to = to} end)
+	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
 	:children({ moving})
 
 	local rightWidth = width - metrics.sidebarWidth(app, width)
 	local main = div():style(sty():column():w(rightWidth):h(pageHeight))
 	if not mobile then
 		main:onMouseMove(function()
-			if app.hoverPlaylist ~= nil then return { type = "hoverPlaylist", id = nil} end
+			if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil} end
 			return nil
 		end)
 	end
@@ -199,7 +199,7 @@ function shell.view(app, window)
 
 	-- Everything this view asked for is kept; covers a changing page no longer asks for are
 	-- given back before the next frame, so a scan cannot accumulate one texture per album.
-	app.covers:sweep()
+	app.services.covers:sweep()
 
 	return root
 end

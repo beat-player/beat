@@ -17,15 +17,6 @@ function artistPage.key(page)
 	return "artist:" .. tostring(page.id)
 end
 
-function artistPage.update(app, page, message)
-	if message.type == "playArtist" then
-		local artist = app.library and app.library:artist(message.id --[[@as number]])
-		if artist ~= nil then app.player:playArtist(artist, message.trackId) end
-		return true
-	end
-	return false
-end
-
 --- Read from the library each frame: a page kept in the history outlives the scan that made
 --- it, and says so rather than showing an artist that is gone.
 ---@param app beat.App
@@ -33,13 +24,13 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function artistPage.view(app, page, window)
-	local artist = app.library ~= nil and app.library:artist(page.id) or nil
+	local artist = app.services.library.current ~= nil and app.services.library.current:artist(page.id) or nil
 	if artist == nil then
 		return render.empty(app, "Artist not found", "The scan no longer has them.", "Library",
 		{ type = "navigate", page = { kind = "library"}})
 	end
 	---@cast artist beat.Artist
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local content = metrics.contentWidth(app, window.width)
 	local heroSize = math.min(theme:px(160), math.floor(content * 0.24))
 	local heroHeight = heroSize + theme:space(24)
@@ -56,9 +47,10 @@ function artistPage.view(app, page, window)
 	local albumStart = heroHeight + topHeight + theme:space(144)
 	local contentHeight = albumStart + albumsHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.scrollMax = math.max(0, contentHeight - viewport)
-	local scroll = app:scrollOffset(app:pageKey())
-	local first, last, sliceTop = app:slices(#artist.albums, columns, rowHeight,
+	app.services.scroll:setLimit(app:pageKey(),
+	math.max(0, contentHeight - viewport))
+	local scroll = app.services.scroll:offset(app:pageKey())
+	local first, last, sliceTop = app.services.scroll.slices(#artist.albums, columns, rowHeight,
 	math.max(0, scroll - albumStart), viewport)
 	---@cast first number
 	---@cast last number
@@ -90,7 +82,7 @@ function artistPage.view(app, page, window)
 	for index, track in ipairs(artist.tracks) do
 			if index > 6 then break end
 			top[#top + 1] = render.trackRow(app, track, index,
-			app:currentTrack() ~= nil and app:currentTrack().id == track.id, app.player:isPlaying(),
+			app.services.playback:current() ~= nil and app.services.playback:current().id == track.id, app.services.playback.player:isPlaying(),
 			{ type = "playTrack", trackId = track.id, artistId = artist.id}, content, true)
 		end
 

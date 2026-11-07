@@ -14,7 +14,7 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param height number
 ---@return wonderland.Element
 local function nowPlayingEntry(app, label, action, width, height)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	return div()
 	:style(sty():row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12))
 	:align("center"):radius(theme:radius("sm")))
@@ -58,13 +58,13 @@ function more.view(app, overlay, _window)
 	local state = overlay.state --[[@as beat.MoreState]]
 	local anchor = state.anchor
 	if anchor == nil then return nil end
-	local track = app:currentTrack()
+	local track = app.services.playback:current()
 	if track == nil then return nil end
 	local rowWidth = anchor.rowWidth
 	local room = anchor.room
 	local x = anchor.x
-	local theme = app.theme
-	local album = app.library and app.library:album(track.albumId) or nil
+	local theme = app.services.appearance.theme
+	local album = app.services.library.current and app.services.library.current:album(track.albumId) or nil
 	local entries = {
 	{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id}},
 	{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track",

@@ -28,7 +28,7 @@ local function read(app, state, pathname)
 	state.path = path.normalize(pathname)
 	state.entries = {}
 	state.error = nil
-	app.scroll.folders = 0
+	app.services.scroll:reset("folders")
 
 	local iterator = fs.readdir(state.path)
 	if iterator == nil then
@@ -47,7 +47,7 @@ end
 function folders.new(app)
 	---@type beat.FoldersState
 	local state = { path = HOME, entries = {}}
-	read(app, state, app.settings.root or HOME)
+	read(app, state, app.services.settings.values.root or HOME)
 	return state
 end
 
@@ -62,7 +62,7 @@ function folders.update(app, page, message)
 	elseif kind == "folderUp" then
 		read(app, state, path.dirname(state.path))
 	elseif kind == "folderSelect" then
-		app:startScan(message.path or state.path)
+		app:act({ type = "startScan", root = message.path or state.path})
 		return true
 	elseif kind == "cancelFolders" then
 		app:back()
@@ -76,7 +76,7 @@ end
 
 function folders.view(app, page, window)
 	local state = page.state --[[@as beat.FoldersState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, window.width)
 	local pad = metrics.pad(app, window.width)
 	local rows = {}
@@ -87,7 +87,7 @@ function folders.view(app, page, window)
 	{ height = theme:px(30), width = theme:px(48)})
 	local select = render.button(app, "Select this folder", { type = "folderSelect", path = state.path},
 	{ height = theme:px(30), width = theme:px(150)})
-	local cancel = app.library ~= nil and render.button(app, "Cancel", { type = "cancelFolders"},
+	local cancel = app.services.library.current ~= nil and render.button(app, "Cancel", { type = "cancelFolders"},
 	{ height = theme:px(30), width = theme:px(80)}) or nil
 
 	if mobile then
@@ -141,9 +141,9 @@ function folders.view(app, page, window)
 	end
 	content:children(div():style(sty():column():wrel(1.0):h(theme:px(320)):pad(0, 0, 0, 0)
 	:bar(theme:px(8), theme:px(40), theme:color("faint")))
-	:scroll(app:scrollOffset("folders"))
+	:scroll(app.services.scroll:offset("folders"))
 	:onScroll(function(by, to)
-		return { type = "scroll", by = by, to = to}
+		return { type = "scroll", key = app:pageKey(), by = by, to = to}
 	end):children(rows))
 
 	return div():style(sty():column():wrel(1.0):h(theme:px(540)):pad(theme:space(20), pad, theme:space(20), pad)

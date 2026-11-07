@@ -10,22 +10,11 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local searchPage = {}
 
 function searchPage.update(app, page, message)
-	local kind = message.type
-	if kind == "clearSearch" then
-		app.search = ""
-		app:refresh()
-		return true
-	elseif kind == "toggleTagFilter" then
-		if app.tagFilter[message.id] then app.tagFilter[message.id] = nil
-		else app.tagFilter[message.id] = true end
-		app:refresh()
-		return true
-	elseif kind == "tagFilterMatch" then
-		app.tagFilterMatch = message.value == "any" and "any" or "all"
-		app:refresh()
-		return true
-	elseif kind == "clearTagFilter" then
-		app.tagFilter = {}
+	-- Escape clears what was typed before it leaves the page. The field belongs to the search
+	-- service; the page only decides that Escape means the field first.
+	local search = app.services.search
+	if message.type == "escape" and search.query ~= "" then
+		search:clear()
 		app:refresh()
 		return true
 	end
@@ -39,22 +28,23 @@ end
 ---@return wonderland.Element?
 ---@return number
 local function searchTagFilter(app, width)
-	local tags = app.taxonomy:visibleTags()
+	local tags = app.services.collections.taxonomy:visibleTags()
 	if #tags == 0 then return nil, 0 end
-	local theme = app.theme
+	local theme = app.services.appearance.theme
+	local search = app.services.search
 	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
-	local pills = render.tagPills(app, tags, app.tagFilter, function(tag)
+	local pills = render.tagPills(app, tags, search.tagFilter, function(tag)
 		return { type = "toggleTagFilter", id = tag.id}
 	end, width, columns)
 	if pills == nil then return nil, 0 end
 
 	local headerActions = {}
-	if next(app.tagFilter) ~= nil then
+	if next(search.tagFilter) ~= nil then
 		headerActions[#headerActions + 1] = text("All"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(app.tagFilterMatch == "all" and theme:color("accent")
+		:weight("semibold"):fg(search.match == "all" and theme:color("accent")
 		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "all"})
 		headerActions[#headerActions + 1] = text("Any"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(app.tagFilterMatch == "any" and theme:color("accent")
+		:weight("semibold"):fg(search.match == "any" and theme:color("accent")
 		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "any"})
 		headerActions[#headerActions + 1] = text("Clear"):style(theme:s():text(theme:type("xs"))
 		:weight("semibold"):fg(theme:color("accent"))):onClick({ type = "clearTagFilter"})
@@ -77,8 +67,9 @@ local function searchTagFilter(app, width)
 end
 
 function searchPage.view(app, page, window)
-	local theme = app.theme
-	local library = app.library
+	local theme = app.services.appearance.theme
+	local search = app.services.search
+	local library = app.services.library.current
 	if library == nil then
 		return render.empty(app, "Search your library", "Choose a folder first.", "Choose a folder",
 		{ type = "chooseFolder"})
@@ -91,15 +82,16 @@ function searchPage.view(app, page, window)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local cardHeight = render.albumCardHeight(app, cardWidth)
 
-	if app.search == "" then
+	if search.query == "" then
 		local recent = library:recentlyAdded(columns)
-		local filterIds = app:tagFilterIds()
+		local filterIds = search:filterIds()
 		if #filterIds > 0 then
+			local taxonomy = app.services.collections.taxonomy
 			local matching = {}
 			for _, album in ipairs(recent) do
-					local keep = false
-					for _, track in ipairs(album.tracks) do
-							if app.taxonomy:matches(track.path, filterIds, app.tagFilterMatch) then keep = true; break end
+				local keep = false
+				for _, track in ipairs(album.tracks) do
+					if taxonomy:matches(track.path, filterIds, search.match) then keep = true; break end
 						end
 					if keep then matching[#matching + 1] = album end
 				end
@@ -123,7 +115,7 @@ function searchPage.view(app, page, window)
 		})
 	end
 
-	local albums, artists, tracks = app:searchResults(app.search)
+	local albums, artists, tracks = search:results()
 	local albumLimit = math.min(#albums, columns * 2)
 	local artistLimit = math.min(#artists, 10)
 	local trackLimit = math.min(#tracks, 100)
@@ -144,7 +136,7 @@ function searchPage.view(app, page, window)
 	end
 
 	local children = {
-	text("Results for \"" .. app.search .. "\""):style(theme:s():wrel(1.0):text(theme:type("xxl"))
+	text("Results for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("xxl"))
 	:weight("bold"):fg(theme:color("text")):ellipsis()),
 	}
 	if filter ~= nil then children[#children + 1] = filter end
@@ -196,7 +188,7 @@ function searchPage.view(app, page, window)
 		for at, track in ipairs(tracks) do
 				if at > trackLimit then break end
 				children[#children + 1] = render.trackRow(app, track, at,
-				app:currentTrack() ~= nil and app:currentTrack().id == track.id, app.player:isPlaying(),
+				app.services.playback:current() ~= nil and app.services.playback:current().id == track.id, app.services.playback.player:isPlaying(),
 				{ type = "playTrack", trackId = track.id}, content, true)
 			end
 	end

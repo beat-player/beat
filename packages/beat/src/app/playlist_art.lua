@@ -13,8 +13,7 @@ local PlaylistArt = {}
 ---@param playlist beat.Playlist
 ---@return beat.Track[]
 function PlaylistArt.tracks(app, playlist)
-	if app.library == nil then return {} end
-	return app.taxonomy:playlistTracks(playlist, app.library)
+	return app.services.collections:playlistTracks(playlist)
 end
 
 --- One grapheme from a byte offset: a letter, or the whole picture of an emoji -- its variation
@@ -118,7 +117,7 @@ end
 ---@param name string
 ---@return wonderland.Element
 function PlaylistArt.art(app, tracks, size, radius, name)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local artRadius = radius or theme:radius("sm")
 	local picked = PlaylistArt.mosaicTracks(tracks)
 	local initials = PlaylistArt.initials(name)
@@ -133,9 +132,10 @@ function PlaylistArt.art(app, tracks, size, radius, name)
 	local root = div():style(sty():column():size(size, size):radius(artRadius):bg("#000000"))
 	:clip()
 
+	local library = app.services.library.current
 	if #picked <= 1 then
 		local track = picked[1]
-		local album = track ~= nil and app.library ~= nil and app.library:album(track.albumId) or nil
+		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
 		if album ~= nil then
 			---@cast album beat.Album
 			root:children({ render.cover(app, album, size, 0)})
@@ -147,7 +147,7 @@ function PlaylistArt.art(app, tracks, size, radius, name)
 	local cell = math.floor(size / 2)
 	local function cellAt(slot)
 		local track = picked[slot]
-		local album = track ~= nil and app.library ~= nil and app.library:album(track.albumId) or nil
+		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
 		if album ~= nil then
 			---@cast album beat.Album
 			return render.cover(app, album, cell, 0)
@@ -167,7 +167,7 @@ end
 ---@param playlist beat.Playlist
 ---@return wonderland.Element
 function PlaylistArt.icons(app, playlist)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local children = {}
 	if playlist.smart and #playlist.tagIds > 0 then
 		children[#children + 1] = ui.icons.element("tag", theme:px(13), theme:color("accent"))

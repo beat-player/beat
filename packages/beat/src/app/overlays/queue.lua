@@ -1,7 +1,6 @@
 -- The queue, as a panel opened from the now-playing screen's queue button.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local actions = require("beat.app.actions")
 local nowPlaying = require("beat.app.overlays.now_playing")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -19,8 +18,7 @@ local queuePanel = { light = true, anchored = true}
 
 function queuePanel.new(app)
 	-- A queue opens at its next track, not where it was last scrolled to.
-	app.scroll.queue = 0
-	app.scrollTargets.queue = nil
+	app.services.scroll:reset("queue")
 	---@type beat.QueueState
 	return {}
 end
@@ -29,12 +27,10 @@ function queuePanel.update(app, overlay, message)
 	local kind = message.type
 	if kind == "scroll" and message.key == "queue" then
 		-- The list scrolls by itself. A light overlay closes on a message it does not take, and
-		-- scrolling the queue is not a press elsewhere.
-		actions.scroll(app, message)
-		return true
-	elseif kind == "jumpTrack" then
-		app.player:jump(message.trackId)
-		app:close(overlay)
+		-- scrolling the queue is not a press elsewhere. It takes the message here, so the redraw
+		-- a service update gets from the message pump has to be asked for.
+		app.services.scroll:update(message)
+		app:refresh()
 		return true
 	elseif kind == "toggleQueue" then
 		-- The queue button closes what it opened rather than opening a second one.
@@ -57,8 +53,8 @@ function queuePanel.view(app, overlay, _window)
 	if anchor == nil then return nil end
 	local toolWidth = anchor.toolWidth
 	local room = anchor.room
-	local theme = app.theme
-	local queue = app.player.queue
+	local theme = app.services.appearance.theme
+	local queue = app.services.playback.player.queue
 	local upcoming = queue and queue:upcoming() or {}
 	local rowHeight = theme:px(48)
 	local padding = theme:px(10)
@@ -73,7 +69,7 @@ function queuePanel.view(app, overlay, _window)
 	local listHeight = math.max(rowHeight, math.min(fullHeight, space - fixed))
 	local height = fixed + listHeight
 	local scrollMax = math.max(0, fullHeight - listHeight)
-	local offset = math.min(app:scrollOffset("queue"), scrollMax)
+	local offset = math.min(app.services.scroll:offset("queue"), scrollMax)
 	-- The bar takes its strip from the rows, so they are narrowed by it rather than run under it.
 	local barWidth = theme:px(6)
 	local listWidth = scrollMax > 0 and (inner - barWidth) or inner
@@ -96,7 +92,7 @@ function queuePanel.view(app, overlay, _window)
 	else
 		-- Only the rows in view are built, between spacers that keep the list its full height: a
 		-- queue can be a whole library.
-		local first, last, top = app:slices(#upcoming, 1, rowHeight, offset, listHeight)
+		local first, last, top = app.services.scroll.slices(#upcoming, 1, rowHeight, offset, listHeight)
 		local list = {}
 		if top > 0 then list[#list + 1] = div():style(sty():w(listWidth):h(top)) end
 		for at = first, last do

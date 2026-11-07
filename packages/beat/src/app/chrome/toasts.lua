@@ -12,8 +12,8 @@ local toasts = {}
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element? overlay
 function toasts.view(app, window)
-	if #app.toasts == 0 then return nil end
-	local theme = app.theme
+	if #app.services.toasts.list == 0 then return nil end
+	local theme = app.services.appearance.theme
 	local now = wonderland.time.now()
 	local children = {}
 	local width = math.min(320, window.width - theme:space(16))
@@ -22,17 +22,18 @@ function toasts.view(app, window)
 	-- The padding either side, the icon and the gap after it.
 	local lineWidth = width - theme:px(14) * 2 - theme:px(18) - theme:px(10)
 	local top = theme:px(76)
-	local scanCard = (app.scan ~= nil and app.scanIslandOpen and app.library ~= nil
-	and #app.library.tracks > 0) or app.scanSummary ~= nil
+	local scan = app.services.scan
+	local scanCard = (scan.job ~= nil and scan.islandOpen and app.services.library.current ~= nil
+	and #app.services.library.current.tracks > 0) or scan.summary ~= nil
 	if scanCard then top = top + theme:px(112) + theme:space(12) end
 
 	local y = top
-	for _, toast in ipairs(app.toasts) do
-			local enter = app.motion.reduce and 1
+	for _, toast in ipairs(app.services.toasts.list) do
+			local enter = app.services.motion.clock.reduce and 1
 			or ui.motion.progress(toast.at, 0.18, now, ui.motion.ease.outCubic)
 			local life = toast.tone == "error" and 8 or 4.5
 			local expires = toast.expires or (toast.at + life)
-			local exit = app.motion.reduce and 1
+			local exit = app.services.motion.clock.reduce and 1
 			or 1 - ui.motion.progress(expires - 0.3, 0.3, now, ui.motion.ease.inCubic)
 			-- Both the fade and the lift are quantised so they reuse styles instead of interning
 			-- one per frame.

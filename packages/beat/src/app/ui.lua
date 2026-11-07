@@ -16,7 +16,7 @@ local render = {}
 ---@param content wonderland.Element
 ---@return wonderland.Element
 function render.iconSurface(app, size, onClick, isActive, content)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 
 	return div()
 	:style(sty():size(size, size):radius(theme:radius("full")):align("center"):justify("center"))
@@ -33,7 +33,7 @@ end
 ---@param isActive boolean?
 ---@return wonderland.Element
 function render.iconButton(app, name, size, onClick, isActive)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local colour = isActive and theme:color("text") or theme:color("muted")
 
 	local glyphSize = math.max(18, math.floor(size * 0.8 + 0.5))
@@ -49,7 +49,7 @@ end
 ---@param isActive boolean?
 ---@return wonderland.Element
 function render.moreButton(app, size, onClick, isActive)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local colour = isActive and theme:color("text") or theme:color("muted")
 
 	return render.iconSurface(app, size, onClick, isActive,
@@ -71,7 +71,7 @@ end
 ---@param isActive boolean?
 ---@return wonderland.Element
 function render.equalizerButton(app, size, onClick, isActive)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local colour = isActive and theme:color("text") or theme:color("muted")
 	local inner = math.max(12, math.floor(size * 0.72 + 0.5))
 
@@ -95,7 +95,7 @@ end
 ---@return wonderland.Element
 function render.button(app, label, onClick, opts)
 	opts = opts or {}
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local height = opts.height or theme:px(36)
 	local colour = opts.primary and theme.accentInk or theme:color("text")
 	local background = opts.primary and theme:color("accent") or theme:color("elevated")
@@ -137,17 +137,17 @@ end
 ---@param glow boolean? # A soft halo in the picture's dominant colour
 ---@return wonderland.Element
 function render.cover(app, album, size, radius, glow)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	-- The scan worker writes each cover into the local cache before its track events arrive, so
 	-- decoding these files while the rest of the library is still being scanned is cheap. Covers
 	-- fill in as albums appear instead of waiting for the scan to finish.
-	local asset = app.covers:request(album, size)
+	local asset = app.services.covers:request(album, size)
 	local style = sty():size(size, size):radius(radius or 8)
 
 	if glow then
 		-- The dominant colour is known once the picture has been decoded into the cache. On the
 		-- first frame the cover is a placeholder, so the halo appears with the art.
-		local colour = app.covers:colourOf(album)
+		local colour = app.services.covers:colourOf(album)
 		if colour ~= nil then
 			local alpha = 0x66
 			style:shadow(0, 0, math.max(12, math.floor(size * 0.24)), string.format("#%02x%02x%02x%02x",
@@ -176,7 +176,7 @@ end
 ---@param width number
 ---@return number
 function render.albumCardHeight(app, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	return width + theme:px(11) + theme:type("base") + theme:px(2) + theme:type("sm")
 end
 
@@ -187,10 +187,10 @@ end
 ---@param onPlay any
 ---@return wonderland.Element
 function render.albumCard(app, album, width, onOpen, onPlay)
-	local theme = app.theme
-	local current = app:currentTrack()
+	local theme = app.services.appearance.theme
+	local current = app.services.playback:current()
 	local thisAlbum = current ~= nil and current.albumId == album.id
-	local playing = thisAlbum and app.player:isPlaying()
+	local playing = thisAlbum and app.services.playback.player:isPlaying()
 	if thisAlbum then onPlay = { type = "togglePlay"} end
 
 	local titleStyle = theme:s():w(width):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()
@@ -225,7 +225,7 @@ end
 ---@param playing boolean?
 ---@return wonderland.Element
 function render.equalizer(app, playing)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local colour = theme:color("accent")
 	local now = wonderland.time.now()
 
@@ -255,7 +255,7 @@ end
 ---@param titleOnly boolean? # The album page's table shows titles only; the header names the artist
 ---@return wonderland.Element
 function render.trackRow(app, track, index, current, playing, onClick, width, showAlbum, titleOnly)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	if current then onClick = { type = "togglePlay"} end
 	local titleColour = current and theme:color("accent") or theme:color("text")
 	local muted = theme:color("muted")
@@ -316,7 +316,7 @@ end
 ---@param action any?
 ---@return wonderland.Element
 function render.section(app, title, action)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local children = {
 	text(title):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
 	}
@@ -338,7 +338,7 @@ end
 ---@param icon string? # An emoji or glyph instead of the drawn record
 ---@return wonderland.Element
 function render.empty(app, title, copy, actionLabel, action, icon)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 
 	local children = {}
 	if icon ~= nil then
@@ -387,8 +387,8 @@ end
 ---@param bands number?
 ---@return wonderland.Element
 function render.spectrum(app, width, height, bands)
-	local theme = app.theme
-	local levels = app.spectrum and app.spectrum:values() or {}
+	local theme = app.services.appearance.theme
+	local levels = app.services.playback.spectrum and app.services.playback.spectrum:values() or {}
 	local count = math.min(bands or 32, #levels)
 	local gap = theme:px(1)
 	local barWidth = math.max(1, (width - gap * (count - 1)) / count)
@@ -429,7 +429,7 @@ end
 ---@param opts beat.ui.SliderOpts
 ---@return wonderland.Element
 function render.slider(app, opts)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local height = opts.height or theme:px(18)
 	local trackHeight = opts.trackHeight or theme:px(4)
 	local thumbSize = opts.thumbSize or theme:px(14)
@@ -484,8 +484,8 @@ function render.spectrumBackground(app, canvas, opts)
 	opts = opts or {}
 	local intensity = opts.intensity or 1
 	local reach = opts.reach or 0.82
-	local theme = app.theme
-	local levels = app.spectrum and app.spectrum:values() or {}
+	local theme = app.services.appearance.theme
+	local levels = app.services.playback.spectrum and app.services.playback.spectrum:values() or {}
 	if #levels == 0 then return end
 
 	local count = 72
@@ -687,7 +687,7 @@ end
 ---@param width number?
 ---@return wonderland.Element
 function render.field(app, name, value, placeholder, oninput, onsubmit, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local focused = app.layoutPlugin ~= nil and app.window ~= nil
 	and app.layoutPlugin:getFocusedId(app.window) == name
 	local shown = value ~= "" and value or (focused and " " or placeholder)
@@ -720,7 +720,7 @@ end
 ---@return wonderland.Element?
 function render.tagPills(app, tags, selected, action, width, columns, limit)
 	if #tags == 0 then return nil end
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local gap = theme:px(8)
 	local pillWidth = math.max(theme:px(80), math.floor((width - gap * (columns - 1)) / columns))
 	local rows = {}
@@ -773,7 +773,7 @@ end
 ---@param width number
 ---@return wonderland.Element
 function render.progress(app, track, player, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local duration = track.duration > 0 and track.duration or player:duration()
 	local position = player:position()
 	local clockWidth = theme:px(34)
@@ -807,14 +807,14 @@ end
 ---@param trackWidth number? # The slider track, when it should line up with another slider's track
 ---@return wonderland.Element
 function render.volume(app, width, trackWidth)
-	local theme = app.theme
-	local volume = app.settings.isMuted and 0 or app.settings.volume
+	local theme = app.services.appearance.theme
+	local volume = app.services.settings.values.isMuted and 0 or app.services.settings.values.volume
 	local iconSlot = trackWidth ~= nil and theme:px(34) or theme:px(22)
 	local sliderWidth = trackWidth or (width - theme:px(30))
 
 	return div():style(sty():w(width):h(theme:px(22)):row():align("center"):gap(theme:px(8))):children({
 	div():style(sty():w(iconSlot):h(theme:px(22)):row():align("center"):justify("center")):children(
-	render.iconButton(app, app.settings.isMuted and "mute" or "volume", theme:px(22),
+	render.iconButton(app, app.services.settings.values.isMuted and "mute" or "volume", theme:px(22),
 	{ type = "mute"})
 	),
 	render.slider(app, {

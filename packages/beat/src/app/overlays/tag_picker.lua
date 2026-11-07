@@ -14,8 +14,8 @@ local tagPicker = {}
 
 ---@param params { id: number? }
 function tagPicker.new(app, params)
-	local track = params.id ~= nil and app.library ~= nil
-	and app.library:track(params.id) or app:currentTrack()
+	local track = params.id ~= nil and app.services.library.current ~= nil
+	and app.services.library.current:track(params.id) or app.services.playback:current()
 	if track == nil then return nil end
 	---@type beat.TagPickerState
 	return { trackId = track.id}
@@ -24,10 +24,11 @@ end
 function tagPicker.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.TagPickerState]]
 	if message.type == "toggleTrackTag" then
-		local track = app.library ~= nil and app.library:track(state.trackId) or app:currentTrack()
+		local track = app.services.library.current ~= nil
+		and app.services.library.current:track(state.trackId) or app.services.playback:current()
 		if track ~= nil then
-			app.taxonomy:toggleTag(track.path, message.id)
-			app:saveTaxonomy()
+			app.services.collections.taxonomy:toggleTag(track.path, message.id)
+			app.services.collections:save()
 			app:refresh()
 		end
 		return true
@@ -37,12 +38,13 @@ end
 
 function tagPicker.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.TagPickerState]]
-	local track = app.library ~= nil and app.library:track(state.trackId) or app:currentTrack()
+	local track = app.services.library.current ~= nil
+	and app.services.library.current:track(state.trackId) or app.services.playback:current()
 	if track == nil then return nil end
-	local theme = app.theme
-	local tags = app.taxonomy:visibleTags()
+	local theme = app.services.appearance.theme
+	local tags = app.services.collections.taxonomy:visibleTags()
 	local selected = {}
-	local assigned = app.taxonomy.byPath[track.path]
+	local assigned = app.services.collections.taxonomy.byPath[track.path]
 	if assigned ~= nil then
 		for id in pairs(assigned) do selected[id] = true end
 	end

@@ -13,7 +13,7 @@ local albumMenu = { light = true}
 
 ---@param params { id: number, x: number?, y: number? }
 function albumMenu.new(app, params)
-	local album = app.library ~= nil and app.library:album(params.id) or nil
+	local album = app.services.library.current ~= nil and app.services.library.current:album(params.id) or nil
 	if album == nil then return nil end
 	---@type beat.AlbumMenuState
 	return { id = album.id, x = params.x or 0, y = params.y or 0}
@@ -23,17 +23,17 @@ function albumMenu.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.AlbumMenuState]]
 	local kind = message.type
 	if kind == "albumMenuPlay" or kind == "albumMenuNext" or kind == "albumMenuQueue" then
-		local album = app.library and app.library:album(state.id)
+		local album = app.services.library.current and app.services.library.current:album(state.id)
 		app:close(overlay)
 		if album ~= nil then
 			if kind == "albumMenuPlay" then
-				app.player:playAlbum(album)
+				app.services.playback.player:playAlbum(album)
 			elseif kind == "albumMenuNext" then
-				app.player:playNext(album.tracks)
-				app:toast("Playing next · " .. album.title)
+				app.services.playback.player:playNext(album.tracks)
+				app.services.toasts:show("Playing next · " .. album.title)
 			else
-				app.player:addToQueue(album.tracks)
-				app:toast("Added to queue · " .. album.title)
+				app.services.playback.player:addToQueue(album.tracks)
+				app.services.toasts:show("Added to queue · " .. album.title)
 			end
 		end
 		app:refresh()
@@ -44,12 +44,12 @@ end
 
 function albumMenu.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.AlbumMenuState]]
-	local library = app.library
+	local library = app.services.library.current
 	if library == nil then return nil end
 	local album = library:album(state.id)
 	if album == nil then return nil end
 
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local width = theme:px(218)
 	local rowHeight = theme:px(34)
 	local height = theme:px(8 * 2 + 34 * 4 + 2 * 3)
