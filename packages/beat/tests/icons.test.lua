@@ -1,7 +1,7 @@
 local test = require("lde-test")
 local wonderland = require("wonderland")
 local Atlas = require("wonderland.font.atlas")
-local face = require("beat-ui.icons-font")
+local face = require("beat.app.components.icon_font")
 
 test.it("carries the icon face as a module and draws a glyph from its bytes", function()
 	test.equal(face:sub(1, 4), "\0\1\0\0", "the module is a TrueType face")

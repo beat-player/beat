@@ -1,7 +1,7 @@
 -- A word the app offers as an action: one raised or filled box, an optional glyph before it, and
 -- the message its click sends.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -42,7 +42,7 @@ function button.view(app, props)
 
 	local children = {}
 	if props.icon ~= nil then
-		children[#children + 1] = ui.icons.element(props.icon, theme:px(16), colour)
+		children[#children + 1] = icon.view(app, { name = props.icon, size = theme:px(16), colour = colour })
 	end
 	children[#children + 1] = text(props.label):style(theme:s():text(theme:type("sm"))
 	:weight("semibold"):fg(colour))

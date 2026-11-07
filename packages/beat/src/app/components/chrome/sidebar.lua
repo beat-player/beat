@@ -1,7 +1,8 @@
 -- The rail down the left edge: where the app navigates from, the playlists played last, and the
 -- name a row gives back while the pointer is on it.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
+local logo = require("beat.app.components.logo")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
@@ -49,7 +50,8 @@ function sidebar.view(app, props)
 			local row = div():style(rowStyle):hover(rowHover)
 			:onClick({ type = "navigate", page = { kind = item.kind}})
 
-			row:children(ui.icons.element(item.icon, theme:px(19), active and theme:color("accent") or fg))
+			row:children(icon.view(app, { name = item.icon, size = theme:px(19),
+			colour = active and theme:color("accent") or fg }))
 			if not collapsed then
 				row:children(text(item.label):style(theme:s():text(theme:type("base")):weight("semibold"):fg(fg)))
 			end
@@ -57,7 +59,7 @@ function sidebar.view(app, props)
 			navChildren[#navChildren + 1] = row
 		end
 
-	local brandChildren = { ui.icons.element("logo", theme:px(22), theme:color("accent"))}
+	local brandChildren = { logo.view(app, { size = theme:px(22), colour = theme:color("accent") })}
 	if not collapsed then
 		brandChildren[#brandChildren + 1] = text("beat"):style(
 		theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))
@@ -129,8 +131,8 @@ function sidebar.view(app, props)
 	:onClick({ type = "open", overlay = "playlist_dialog", smart = false})
 	:children({
 	div():style(sty():size(artSize, artSize):radius(theme:radius("sm")):bg(theme:color("accent", 0.18))
-	:align("center"):justify("center")):children(ui.icons.element("add", theme:px(18),
-	theme:color("accent"))),
+	:align("center"):justify("center")):children(icon.view(app, { name = "add", size = theme:px(18),
+	colour = theme:color("accent") })),
 	})
 	if not collapsed then
 		create:children(text("New playlist"):style(theme:s():text(theme:type("sm")):weight("semibold")

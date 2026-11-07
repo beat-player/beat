@@ -1,8 +1,11 @@
 -- Motion values, not motion that elements own. A view is built every frame from state, so a
 -- transition is a number the view reads, advanced by one ticker, and nothing is attached to an
 -- element that could outlive the frame it was built in.
----@class beat.ui.motion
----@field new fun(reduce: boolean?): beat.ui.Motion
+--
+-- Private to the motion service: the clock, its curves and the one-shot progress. Views get the
+-- service's `ease` and `progress` instead, so there is one ticker and one owner.
+---@class beat.MotionClock
+---@field new fun(reduce: boolean?): beat.Motion
 ---@field ease table<string, fun(t: number): number>
 ---@field progress fun(start: number, duration: number, now: number, easing: fun(t: number): number?): number
 local motion = {}
@@ -29,7 +32,7 @@ motion.ease = {
 	end,
 }
 
----@class beat.ui.MotionValue
+---@class beat.MotionValue
 ---@field from number
 ---@field to number
 ---@field start number
@@ -37,8 +40,8 @@ motion.ease = {
 ---@field easing fun(t: number): number
 ---@field value number
 
----@class beat.ui.Motion
----@field values table<string, beat.ui.MotionValue>
+---@class beat.Motion
+---@field values table<string, beat.MotionValue>
 ---@field now number
 ---@field reduce boolean
 ---@field active boolean
@@ -46,7 +49,7 @@ local Motion = {}
 Motion.__index = Motion
 
 ---@param reduce boolean?
----@return beat.ui.Motion
+---@return beat.Motion
 function motion.new(reduce)
 	return setmetatable({ values = {}, now = 0, reduce = reduce or false, active = false }, Motion)
 end

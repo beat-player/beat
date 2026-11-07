@@ -1,8 +1,8 @@
 -- The code a scan worker has to be able to load without the app: everything under `src/music/` is
 -- what a music collection is on disk, and `src/workers/` runs in a copy of beat that never builds
--- a window. Neither may pull in the app, the UI toolkit or wonderland itself, or a worker would
--- pay for a renderer it cannot draw with. A wonderland module that draws nothing -- its clock --
--- is a module like any other.
+-- a window. Neither may pull in the app or wonderland itself, or a worker would pay for a
+-- renderer it cannot draw with. A wonderland module that draws nothing -- its clock -- is a
+-- module like any other.
 --
 -- The guard follows the whole load, not only the module doing the requiring: a worker reaches
 -- `beat.log`, and the log must not pull the app back in through a dependency of its own. While any
@@ -15,7 +15,7 @@ local path = require("path")
 
 local ROOTS = { "music", "workers" }
 -- Prefixes forbidden with everything under them, and modules forbidden by exact name.
-local FORBIDDEN = { "beat.app", "beat-ui" }
+local FORBIDDEN = { "beat.app" }
 local FORBIDDEN_EXACT = { wonderland = true }
 
 local REAL_REQUIRE = require
@@ -98,7 +98,7 @@ local function modules(root)
 	return names
 end
 
-test.it("loads every music module without the app, the ui or wonderland", function()
+test.it("loads every music module without the app or wonderland", function()
 	local names = modules("music")
 	test.truthy(#names > 0, "the walk found the music modules")
 
@@ -108,7 +108,7 @@ test.it("loads every music module without the app, the ui or wonderland", functi
 	end
 end)
 
-test.it("loads every worker without the app, the ui or wonderland", function()
+test.it("loads every worker without the app or wonderland", function()
 	local root = env.tmpfile() .. "-boundary-root"
 	local manifest = env.tmpfile()
 	local output = env.tmpfile()

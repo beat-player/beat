@@ -3,7 +3,7 @@
 local wonderland = require("wonderland")
 local fs = require("fs")
 local path = require("path")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local button = require("beat.app.components.button")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -128,7 +128,7 @@ function folders.view(app, page, window)
 			:bg(theme:color("hover")))
 			:onClick({ type = "folderOpen", path = entry.path})
 			:children({
-			ui.icons.element("folder", theme:px(20), theme:color("muted")),
+			icon.view(app, { name = "folder", size = theme:px(20), colour = theme:color("muted") }),
 			text(entry.name):style(theme:s():text(theme:type("base")):fg(theme:color("text"))),
 			})
 		end

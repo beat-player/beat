@@ -2,7 +2,7 @@
 -- that adds more to it.
 local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local emptyState = require("beat.app.components.empty_state")
 local PlaylistArt = require("beat.app.components.playlist_art")
 local collection = require("beat.app.components.collection")
@@ -58,7 +58,8 @@ function playlistPage.view(app, page, window)
 
 	local empty = div():style(sty():column():wrel(1.0):h(120):align("center"):justify("center")
 	:gap(10)):children({
-	ui.icons.element("playlists", app.services.appearance.theme:px(34), app.services.appearance.theme:color("faint")),
+	icon.view(app, { name = "playlists", size = app.services.appearance.theme:px(34),
+	colour = app.services.appearance.theme:color("faint") }),
 	text("This playlist is empty"):style(app.services.appearance.theme:s():text(app.services.appearance.theme:type("lg"))
 	:weight("bold"):fg(app.services.appearance.theme:color("text"))),
 	text("Use + to add albums, or right-click a track and add it here."):style(

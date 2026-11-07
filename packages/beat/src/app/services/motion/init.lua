@@ -1,8 +1,11 @@
--- Everything that moves between two values: the `ui.motion` clock the always-moving parts read
--- (the now-playing cover's growth), and the page slide. Both are numbers a frame is drawn from, so
+-- Everything that moves between two values: the clock the always-moving parts read (the
+-- now-playing cover's growth), and the page slide. Both are numbers a frame is drawn from, so
 -- they are advanced by one ticker here rather than attached to the elements that show them.
+--
+-- The clock module beside this file is private: this service hands views the curves and the
+-- one-shot progress they need, so a view never reaches past the ticker that owns the clock.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local clock = require("beat.app.services.motion.clock")
 
 local time = wonderland.time
 
@@ -11,7 +14,8 @@ local time = wonderland.time
 local SLIDE_TIME = 0.28
 
 ---@class beat.MotionService
----@field clock beat.ui.Motion
+---@field clock beat.Motion
+---@field ease table<string, fun(t: number): number> # The curves a view passes to `progress`
 ---@field pageSlide { start: number, direction: number? }?
 local Motion = {}
 Motion.__index = Motion
@@ -21,13 +25,24 @@ Motion.handles = { "reduceMotion" }
 ---@param deps { settings: beat.SettingsService }
 ---@return beat.MotionService
 function Motion.new(deps)
-	local clock = ui.motion.new(deps.settings.values.reduceMotion)
-	clock:set("nowPlaying", 0)
+	local motionClock = clock.new(deps.settings.values.reduceMotion)
+	motionClock:set("nowPlaying", 0)
 	return setmetatable({
 		settings = deps.settings,
-		clock = clock,
+		clock = motionClock,
+		ease = clock.ease,
 		pageSlide = nil,
 	}, Motion)
+end
+
+--- A one-shot progress for something a view computes itself, such as a toast fading in.
+---@param start number
+---@param duration number
+---@param now number
+---@param easing fun(t: number): number?
+---@return number
+function Motion:progress(start, duration, now, easing)
+	return clock.progress(start, duration, now, easing)
 end
 
 --- A new page arriving from `direction` (-1 back, 1 forward). A repeat click on the page already
@@ -43,7 +58,7 @@ end
 ---@return number?
 function Motion:slideProgress(now)
 	if self.pageSlide == nil then return nil end
-	return ui.motion.progress(self.pageSlide.start, SLIDE_TIME, now, ui.motion.ease.outCubic)
+	return clock.progress(self.pageSlide.start, SLIDE_TIME, now, clock.ease.outCubic)
 end
 
 -- Reducing motion takes effect at once: the clock drops to its end values for every animation

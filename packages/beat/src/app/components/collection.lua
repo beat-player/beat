@@ -1,7 +1,7 @@
 -- One collection is a cover, a title block, and a track table. Albums and playlist pages
 -- differ in the words and the one extra control they offer, not in how the page is built.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local iconButton = require("beat.app.components.icon_button")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -81,7 +81,7 @@ function collection.view(app, props)
 	div():style(sty():size(theme:px(52), theme:px(52)):radius(theme:radius("full")):bg(theme:color("accent"))
 	:align("center"):justify("center"))
 	:onClick(props.playAction)
-	:children(ui.icons.element(props.playIcon, theme:px(24), theme.accentInk)),
+	:children(icon.view(app, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })),
 	iconButton.view(app, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction }),
 	}
 	if props.addAction ~= nil then

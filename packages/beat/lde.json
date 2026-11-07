@@ -3,8 +3,8 @@
 	"version": "0.1.0",
 	"dependencies": {
 		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
-		"beat-ui": {
-			"path": "../beat-ui"
+		"wonderland": {
+			"version": "^0.1.8"
 		},
 		"fs": {
 			"version": "^0.3.2"
@@ -41,10 +41,6 @@
 		"lde-build": {
 			"git": "https://github.com/lde-org/lde"
 		}
-	},
-	"scripts": {
-		"shots": "lde run tools/shots.lua",
-		"bench": "lde run tools/bench-scan.lua"
 	},
 	"$schema": "https://raw.githubusercontent.com/lde-org/lde/master/schemas/lde.schema.json"
 }

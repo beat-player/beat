@@ -2,7 +2,7 @@
 -- Last.fm and the About section.
 local wonderland = require("wonderland")
 local path = require("path")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local format = require("beat.app.components.helpers.format")
 local button = require("beat.app.components.button")
 local volume = require("beat.app.components.volume")
@@ -36,7 +36,7 @@ function settings.view(app, page, window)
 
 	local themeChips = {}
 	local narrowTheme = window.width < 560
-	for _, name in ipairs(ui.theme.names()) do
+	for _, name in ipairs(app.services.appearance:names()) do
 			themeChips[#themeChips + 1] = button.view(app, {
 			label = name:sub(1, 1):upper() .. name:sub(2),
 			onClick = { type = "theme", name = name},
@@ -53,15 +53,16 @@ function settings.view(app, page, window)
 	end
 
 	local accents = {}
-	for _, name in ipairs(ui.theme.accents()) do
+	for _, name in ipairs(app.services.appearance:accents()) do
 			local active = app.services.settings.values.accent == name
 			accents[#accents + 1] = div()
 			:style(sty():size(theme:px(narrowTheme and 20 or 28), theme:px(narrowTheme and 20 or 28))
 			:radius(theme:radius("full"))
-			:bg(ui.theme.accentColour(name))
+			:bg(app.services.appearance:accentColour(name))
 			:align("center"):justify("center"))
 			:onClick({ type = "accent", name = name})
-			:children(active and ui.icons.element("check", theme:px(14), ui.theme.accentInk(name)) or div())
+			:children(active and icon.view(app, { name = "check", size = theme:px(14),
+			colour = app.services.appearance:accentInk(name) }) or div())
 		end
 	local accentRow = div():style(sty():row():h(theme:px(narrowTheme and 20 or 28))
 	:gap(theme:px(narrowTheme and 5 or 8))):children(accents)

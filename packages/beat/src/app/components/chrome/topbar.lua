@@ -1,6 +1,6 @@
 -- The top bar: back and forward, the search field, and the way into settings.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local iconButton = require("beat.app.components.icon_button")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -50,7 +50,7 @@ function topbar.view(app, props)
 	local field = div()
 	:style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center"))
 	:children({
-	ui.icons.element("search", theme:px(16), theme:color("faint")),
+	icon.view(app, { name = "search", size = theme:px(16), colour = theme:color("faint") }),
 	searchArea,
 	})
 

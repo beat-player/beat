@@ -1,7 +1,7 @@
 -- The bar along the bottom that follows the queue: the desktop one with transport, progress and
 -- volume, and the phone's one row that opens the individual track view.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local cover = require("beat.app.components.cover")
 local iconButton = require("beat.app.components.icon_button")
 local progress = require("beat.app.components.progress")
@@ -58,7 +58,7 @@ function playerBar.view(app, props)
 	iconButton.view(app, { name = "previous", size = theme:px(28), onClick = { type = "previous"} }),
 	div():style(sty():size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent"))
 	:align("center"):justify("center")):onClick({ type = "togglePlay"})
-	:children(ui.icons.element(isPlaying and "pause" or "play", theme:px(20), theme.accentInk)),
+	:children(icon.view(app, { name = isPlaying and "pause" or "play", size = theme:px(20), colour = theme.accentInk })),
 	iconButton.view(app, { name = "next", size = theme:px(28), onClick = { type = "next"} }),
 	iconButton.view(app, {
 	name = player.queue and player.queue.repeatMode == "one" and "repeatOne" or "repeat",
@@ -174,7 +174,7 @@ function playerBar.mobile(app, props)
 	}),
 	div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent"))
 	:align("center"):justify("center")):onClick({ type = "togglePlay"})
-	:children(ui.icons.element(playing and "pause" or "play", theme:px(19), theme.accentInk)),
+	:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(19), colour = theme.accentInk })),
 	iconButton.view(app, { name = "next", size = nextSize, onClick = { type = "next"} }),
 	})
 end

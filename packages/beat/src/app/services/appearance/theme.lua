@@ -1,9 +1,13 @@
 -- The colours, type and spacing a screen is built from. A theme is data; a component asks for a
 -- token and a transparency, never for a fixed hex value.
+--
+-- Private to the appearance service: the palettes and the choices it lists. A view reads the live
+-- theme from `app.services.appearance.theme` and asks the service for a name or an accent, so this
+-- module is never required from outside `services/appearance/`.
 local sty = require("wonderland").sty
 
----@class beat.ui.theme
----@field new fun(name: string?, accent: string?, scale: number?, fontFamily: string?): beat.ui.Theme
+---@class beat.ThemeModule
+---@field new fun(name: string?, accent: string?, scale: number?, fontFamily: string?): beat.Theme
 ---@field names fun(): string[]
 ---@field accents fun(): string[]
 ---@field accentColour fun(name: string): string
@@ -145,7 +149,7 @@ local function hex(r, g, b, a)
 	math.floor(b + 0.5), math.floor(a + 0.5))
 end
 
----@class beat.ui.Theme
+---@class beat.Theme
 ---@field name string
 ---@field accent string
 ---@field isDark boolean
@@ -156,12 +160,12 @@ end
 ---@field accentInk string
 ---@field fontFamily string
 ---@field scale number
----@field color fun(self: beat.ui.Theme, token: string, alpha: number?): string
----@field space fun(self: beat.ui.Theme, value: number): number
----@field px fun(self: beat.ui.Theme, value: number): number
----@field type fun(self: beat.ui.Theme, name: string): number
----@field radius fun(self: beat.ui.Theme, name: string): number
----@field s fun(self: beat.ui.Theme): wonderland.StyleBuilder
+---@field color fun(self: beat.Theme, token: string, alpha: number?): string
+---@field space fun(self: beat.Theme, value: number): number
+---@field px fun(self: beat.Theme, value: number): number
+---@field type fun(self: beat.Theme, name: string): number
+---@field radius fun(self: beat.Theme, name: string): number
+---@field s fun(self: beat.Theme): wonderland.StyleBuilder
 local Theme = {}
 Theme.__index = Theme
 
@@ -169,7 +173,7 @@ Theme.__index = Theme
 ---@param accent string?
 ---@param scale number?
 ---@param fontFamily string?
----@return beat.ui.Theme
+---@return beat.Theme
 function theme.new(name, accent, scale, fontFamily)
 	local palette = THEMES[name] or THEMES.night
 	local chosen, custom = accentDefinition(accent)

@@ -1,6 +1,6 @@
 -- The sort choices, anchored under the library's sort button.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -48,7 +48,7 @@ function sortMenu.view(app, overlay, window)
 			:onClick({ type = "sort", value = option.key})
 			:children({
 			text(option.label):style(theme:s():w(theme:px(150)):text(theme:type("sm")):ellipsis()),
-			active and ui.icons.element("check", theme:px(15), theme.accentInk) or div(),
+			active and icon.view(app, { name = "check", size = theme:px(15), colour = theme.accentInk }) or div(),
 			})
 		end
 

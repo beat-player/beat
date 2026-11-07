@@ -1,7 +1,7 @@
 -- A control that is only a glyph: the round hit area every icon in the app sits in, and the
 -- named icon that fills it.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -46,7 +46,7 @@ function iconButton.view(app, props)
 	return iconButton.surface(app, {
 		size = props.size,
 		onClick = props.onClick,
-		content = ui.icons.element(props.name, glyphSize, colour),
+		content = icon.view(app, { name = props.name, size = glyphSize, colour = colour }),
 	})
 end
 

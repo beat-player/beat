@@ -1,6 +1,6 @@
 -- An album as the shelf shows it: its cover with a play control, and the title block beneath.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -57,7 +57,7 @@ function albumCard.view(app, props)
 	:offset(width - theme:px(44), width - theme:px(44))
 	:bg(theme:color("accent")):align("center"):justify("center"))
 	:onClick(onPlay)
-	:children(ui.icons.element(playing and "pause" or "play", theme:px(18), theme.accentInk)),
+	:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(18), colour = theme.accentInk })),
 	}),
 	div():style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2))):children({
 	text(album.title):style(titleStyle),

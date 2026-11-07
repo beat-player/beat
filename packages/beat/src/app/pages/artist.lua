@@ -1,7 +1,7 @@
 -- The artist screen: a hero of their first cover, their top tracks, and every album.
 local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
 local emptyState = require("beat.app.components.empty_state")
@@ -78,7 +78,7 @@ function artistPage.view(app, page, window)
 	div():style(sty():size(theme:px(38), theme:px(38)):radius(theme:radius("full"))
 	:bg(theme:color("accent")):align("center"):justify("center"))
 	:onClick({ type = "playArtist", id = artist.id})
-	:children(ui.icons.element("play", theme:px(18), theme.accentInk)),
+	:children(icon.view(app, { name = "play", size = theme:px(18), colour = theme.accentInk })),
 	text("Play all"):style(theme:s():text(theme:type("sm")):weight("semibold")
 	:fg(theme:color("text"))):onClick({ type = "playArtist", id = artist.id}),
 	}),

@@ -16,23 +16,18 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat/src/app/components/` | Stateless view pieces, including the shell's chrome |
 | `packages/beat/src/workers/` | Background programs started as copies of beat: the scan coordinator and its inspectors |
 | `packages/beat/src/music/` | What a music collection is on disk: the library, the scan, artwork, names and md5. The workers load it without the app |
-| `packages/beat-ui` | Theme tokens, motion, icons and shared drawing primitives |
 | `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width, and the music rules |
-| `packages/beat/tools/shots.lua` | Renders the screenshot matrix into `packages/beat/docs/screens/` |
-| `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
-| `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
-| `packages/beat/tools/build-icon-font.cjs` | Rebuilds the bundled Ionicons face from `packages/beat/assets/ionicons/` |
-| `packages/beat-ui/src/assets/fonts/` | Ionicons (MIT), embedded into the UI package as vector glyphs |
+| `tools/build-icon-font.cjs` | Rebuilds the bundled Ionicons face from `packages/beat/assets/ionicons/` |
+| `packages/beat/src/assets/fonts/` | Ionicons (MIT), embedded into the app as vector glyphs |
 | `packages/beat/assets/ionicons/` | Ionicons 7.4 SVG sources and licence, used to build the bundled face |
 | `packages/beat/docs/` | Visual QA notes and rendered screenshots |
 | `packages/beat/docs/mobile.md` | Phone layout, winit input audit and the touch-bridge plan |
 
-`beat-ui` is a sibling path dependency. `wonderland 0.1.7` and `texter 0.1.4`
-add faces read from bytes, which is what lets the icon font travel inside the executable. While
-those releases are being prepared, the UI package and wonderland point at the sibling wonderland
-and texter checkouts; the published versions replace those path dependencies. The rest of the
-external dependencies come from the registry: `winit 0.1.9`, and `treble 0.2.0` plus the registry
-image/JSON/path/fs packages. The app depends on winit through wonderland, so the
+`wonderland 0.1.8` and `texter 0.1.4` add faces read from bytes, which is what lets the icon font
+travel inside the executable. While those releases are being prepared, wonderland points at the
+sibling wonderland and texter checkouts; the published versions replace those path dependencies.
+The rest of the external dependencies come from the registry: `winit 0.1.9`, and `treble 0.2.0`
+plus the registry image/JSON/path/fs packages. The app depends on winit through wonderland, so the
 window-icon implementation comes from that release as well.
 
 ## Run
@@ -157,51 +152,14 @@ git push origin v0.2.0
 ```sh
 lde test                              # every package in this repository
 lde test -C packages/beat             # app headless tests only
-lde test -C packages/beat-ui
 cd packages/beat && lye check
 ```
-
-The scan benchmark takes any music folder:
-
-```sh
-lde run -C packages/beat bench -- /path/to/music
-# or: lde run -C packages/beat tools/bench-scan.lua /path/to/music
-```
-
-Its two numbers are the two passes the scanner runs: directory enumeration, then a header-only read
-per file. The scan coordinator hands directory-balanced shards to several inspector processes, and
-they read and downscale one cover per album into the local cache; the window only loads those local
-files and never reads the music folder for artwork. On a local filesystem the scan is milliseconds
-per thousand files. On a network/FUSE mount every header read is a round trip; a Google Drive rclone
-mount is bound by the mount, not by the scanner, and the process pool overlaps those round trips
-without blocking the frame.
 
 Library grids, the artist album grid, and the search see-all pages are windowed; home shelves are
 capped. The search result page previews two album rows, 10 artists, and 100 tracks and links to the
 full category. Decoded cover textures are view-local and released on navigation; the downscaled
 JPEGs they come from stay in the local cache. The interface font is Inter when the machine has it,
 with the platform fallback otherwise.
-
-## Screenshots and layout debugging
-
-```sh
-lde run -C packages/beat shots
-```
-
-This writes the night shell, all pages, day, AMOLED, onboarding, scanning, toasts, idle/no-result
-search, 1440×900 and 960×640 variants to `packages/beat/docs/screens/`.
-`packages/beat/docs/visual-qa.md` records the reviewed matrix and the known limits.
-
-When something looks off, inspect the solved boxes rather than guessing from the pixels:
-
-```sh
-lde run -C packages/beat tools/layout-debug.lua                 # library at 960, 1200, and 1440
-lde run -C packages/beat tools/layout-debug.lua album 960 640
-```
-
-It writes `packages/beat/docs/screens/debug-<page>-<width>.png` with every layout box and
-`packages/beat/docs/screens/debug-<page>-<width>.txt` with every text box's `x y width height`. It
-also reports text boxes that fall outside the window or a scroll viewport.
 
 ## Design notes
 
