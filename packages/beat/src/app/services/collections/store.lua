@@ -3,7 +3,8 @@
 local fs = require("fs")
 local json = require("json")
 local path = require("path")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
+local Taxonomy = require("beat.app.services.collections.taxonomy")
 local Log = require("beat.log")
 
 local TagStore = {}
@@ -13,7 +14,7 @@ local VERSION = 1
 ---@param dir string?
 ---@return string
 local function storeFile(dir)
-	return path.join(dir or core.settings.directory(), "tags.json")
+	return path.join(dir or settingsModel.directory(), "tags.json")
 end
 
 ---@param dir string?
@@ -21,21 +22,21 @@ end
 function TagStore.load(dir)
 	local file = storeFile(dir)
 	local bytes = fs.read(file)
-	if bytes == nil then return core.Taxonomy.new() end
+	if bytes == nil then return Taxonomy.new() end
 
 	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
 
 	if not ok then
 		Log.write("error", "tags could not be read: " .. tostring(decoded))
-		return core.Taxonomy.new()
+		return Taxonomy.new()
 	end
 
 	if type(decoded) ~= "table" or decoded.version ~= VERSION then
-		return core.Taxonomy.new()
+		return Taxonomy.new()
 	end
 
-	local unpacked, taxonomy = pcall(core.Taxonomy.unpack, decoded)
-	if not unpacked then return core.Taxonomy.new() end
+	local unpacked, taxonomy = pcall(Taxonomy.unpack, decoded)
+	if not unpacked then return Taxonomy.new() end
 	return taxonomy
 end
 
@@ -44,7 +45,7 @@ end
 ---@return boolean
 ---@return string?
 function TagStore.save(taxonomy, dir)
-	local folder = dir or core.settings.directory()
+	local folder = dir or settingsModel.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end

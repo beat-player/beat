@@ -15,9 +15,9 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat/src/app/pages/`, `overlays/` | The screens the router shows and the panels it opens over them |
 | `packages/beat/src/app/components/` | Stateless view pieces, including the shell's chrome |
 | `packages/beat/src/workers/` | Background programs started as copies of beat: the scan coordinator and its inspectors |
-| `packages/beat-core` | Scanning, library grouping, tags and playlists, search, cover caching/downscaling, queue, playback, Last.fm signing |
+| `packages/beat/src/music/` | What a music collection is on disk: the library, the scan, artwork, names and md5. The workers load it without the app |
 | `packages/beat-ui` | Theme tokens, motion, icons and shared drawing primitives |
-| `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width |
+| `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width, and the music rules |
 | `packages/beat/tools/shots.lua` | Renders the screenshot matrix into `packages/beat/docs/screens/` |
 | `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
 | `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
@@ -27,12 +27,12 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat/docs/` | Visual QA notes and rendered screenshots |
 | `packages/beat/docs/mobile.md` | Phone layout, winit input audit and the touch-bridge plan |
 
-`beat-core` and `beat-ui` are sibling path dependencies. `wonderland 0.1.7` and `texter 0.1.4`
+`beat-ui` is a sibling path dependency. `wonderland 0.1.7` and `texter 0.1.4`
 add faces read from bytes, which is what lets the icon font travel inside the executable. While
 those releases are being prepared, the UI package and wonderland point at the sibling wonderland
 and texter checkouts; the published versions replace those path dependencies. The rest of the
 external dependencies come from the registry: `winit 0.1.9`, and `treble 0.2.0` plus the registry
-image/JSON/path/fs packages for `beat-core`. The app depends on winit through wonderland, so the
+image/JSON/path/fs packages. The app depends on winit through wonderland, so the
 window-icon implementation comes from that release as well.
 
 ## Run
@@ -157,7 +157,6 @@ git push origin v0.2.0
 ```sh
 lde test                              # every package in this repository
 lde test -C packages/beat             # app headless tests only
-lde test -C packages/beat-core
 lde test -C packages/beat-ui
 cd packages/beat && lye check
 ```
@@ -213,17 +212,17 @@ also reports text boxes that fall outside the window or a scroll viewport.
   through treble; making that path asynchronous is a separate change in the audio layer.
 - **Covers are view-local.** Only the page on screen owns textures; navigation releases them. The
   downscaled files behind them are cached per library root and pruned after a complete scan.
-- **One queue.** Shuffle, repeat and queue jumps live in `beat-core` and are shared by the bar, the
-  album page, the artist page, and the expanded view.
+- **One queue.** Shuffle, repeat and queue jumps live in the playback service and are shared by the
+  bar, the album page, the artist page, and the expanded view.
 - **Playlist art is a mosaic.** A long playlist spreads four tracks over a 2×2 cover behind its
   initials; one track uses its cover whole, two or three leave the rest black, and the rounded
   parent clips every case to the same silhouette.
 - **Tags are the source of truth.** Smart playlists, manual playlist membership and search filters
   all read the same path-keyed tag assignments; a manual playlist's membership is a hidden tag tied
   to its playlist id.
-- **Last.fm is optional and non-blocking.** The client signs its calls in `beat-core`, carries them
-  over `curl-sys`'s multi interface, and runs the same scrobbler state machine as the rest of the
-  app; an offline Last.fm never stalls a frame.
+- **Last.fm is optional and non-blocking.** The client signs its calls in the Last.fm protocol
+  module, carries them over `curl-sys`'s multi interface, and runs the same scrobbler state machine
+  as the rest of the app; an offline Last.fm never stalls a frame.
 - **Cover colour carries the page.** Featured covers cast a soft halo in their dominant colour;
   the colour comes from the same small decoded copy that is uploaded as the texture.
 - **Manual starts fade in.** A 120 ms ramp avoids the click of a hard start; treble's gapless

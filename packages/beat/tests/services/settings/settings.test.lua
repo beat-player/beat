@@ -1,7 +1,7 @@
 local test = require("lde-test")
 local fs = require("fs")
 local path = require("path")
-local core = require("beat-core")
+local settingsModel = require("beat.app.services.settings.model")
 
 local function tempDir()
 	local dir = os.tmpname() .. "-beat-settings"
@@ -12,7 +12,7 @@ end
 
 test.it("loads defaults when there is no file", function()
 	local dir = tempDir()
-	local loaded = core.settings.load(dir)
+	local loaded = settingsModel.load(dir)
 
 	test.equal(loaded.theme, "night")
 	test.equal(loaded.accent, "lime")
@@ -31,7 +31,7 @@ end)
 
 test.it("round-trips the settings a launch remembers", function()
 	local dir = tempDir()
-	local value = core.settings.load(dir)
+	local value = settingsModel.load(dir)
 
 	value.root = "/music"
 	value.theme = "day"
@@ -50,10 +50,10 @@ test.it("round-trips the settings a launch remembers", function()
 	value.equalizerCustomPresets = { { name = "Custom", gains = { 1, 2, 3, 4, 5}},
 	{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
 
-	local ok, err = core.settings.save(value, dir)
+	local ok, err = settingsModel.save(value, dir)
 	test.truthy(ok, err)
 
-	local again = core.settings.load(dir)
+	local again = settingsModel.load(dir)
 	test.equal(again.root, "/music")
 	test.equal(again.theme, "day")
 	test.equal(again.accent, "violet")
@@ -73,7 +73,7 @@ test.it("round-trips the settings a launch remembers", function()
 	test.equal(again.equalizerCustomPresets[1].name, "Custom")
 	test.equal(again.equalizerCustomPresets[2].gains[4], 2)
 
-	fs.delete(core.settings.file(dir))
+	fs.delete(settingsModel.file(dir))
 	fs.rmdir(dir)
 end)
 
@@ -81,9 +81,9 @@ test.it("survives a settings file that is not JSON", function()
 	local dir = tempDir()
 	fs.write(path.join(dir, "settings.json"), "{not json")
 
-	local loaded = core.settings.load(dir)
+	local loaded = settingsModel.load(dir)
 	test.equal(loaded.theme, "night", "a broken file is the defaults")
 
-	fs.delete(core.settings.file(dir))
+	fs.delete(settingsModel.file(dir))
 	fs.rmdir(dir)
 end)

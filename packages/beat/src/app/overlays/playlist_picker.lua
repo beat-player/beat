@@ -1,10 +1,9 @@
 -- Where a track or a whole album goes: one row per playlist, with how many tracks it would hold.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@class beat.PlaylistPickerState
 ---@field kind "album"|"track"
@@ -61,7 +60,7 @@ function playlistPicker.view(app, overlay, window)
 			:children({
 			text(playlist.name):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("text"))
 			:ellipsis()),
-			text(util.count(count, "track")):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
+			text(names.count(count, "track")):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
 			})
 		end
 	if #rows == 0 then

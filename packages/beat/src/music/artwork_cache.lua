@@ -4,9 +4,9 @@
 -- so switching roots cannot make one scan prune another's art.
 local fs = require("fs")
 local path = require("path")
-local md5 = require("beat-core.md5")
+local md5 = require("beat.music.md5")
 
-local cover_cache = {}
+local artworkCache = {}
 
 ---@return string
 local function baseDirectory()
@@ -24,7 +24,7 @@ end
 
 ---@param root string
 ---@return string
-function cover_cache.directory(root)
+function artworkCache.directory(root)
 	return path.join(baseDirectory(), "covers", md5.sumhexa(root))
 end
 
@@ -35,10 +35,10 @@ end
 ---@param modified number?
 ---@param maxSide number
 ---@return string
-function cover_cache.file(root, source, modified, maxSide)
+function artworkCache.file(root, source, modified, maxSide)
 	local key = source .. "\0" .. tostring(modified or 0) .. "\0" .. tostring(maxSide)
 
-	return path.join(cover_cache.directory(root), md5.sumhexa(key) .. ".jpg")
+	return path.join(artworkCache.directory(root), md5.sumhexa(key) .. ".jpg")
 end
 
 --- Remove cached covers this scan did not use. Called only after a complete, successful scan:
@@ -46,8 +46,8 @@ end
 ---@param root string
 ---@param used table<string, boolean>
 ---@return number removed
-function cover_cache.prune(root, used)
-	local dir = cover_cache.directory(root)
+function artworkCache.prune(root, used)
+	local dir = artworkCache.directory(root)
 	local iterator = fs.readdir(dir)
 	if iterator == nil then return 0 end
 
@@ -64,4 +64,4 @@ function cover_cache.prune(root, used)
 	return removed
 end
 
-return cover_cache
+return artworkCache

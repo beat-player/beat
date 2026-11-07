@@ -1,12 +1,11 @@
 -- Everything search found in one category, scrolled as a grid of albums or a list of artists or
 -- tracks.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@type beat.PageSurface
 local searchAll = {}
@@ -110,7 +109,7 @@ function searchAll.view(app, page, window)
 	or "All tracks"
 	local headerChildren = {
 	text(label):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-	text(util.count(count, category == "albums" and "album" or category == "artists" and "artist" or "track")
+	text(names.count(count, category == "albums" and "album" or category == "artists" and "artist" or "track")
 	.. " for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("sm"))
 	:fg(theme:color("muted")):ellipsis()),
 	}

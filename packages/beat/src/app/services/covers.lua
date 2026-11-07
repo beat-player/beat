@@ -3,7 +3,7 @@
 -- This is not a cache. It holds exactly the covers the page on screen asked for, decodes them one
 -- tick at a time (so the frame that asks for a cover draws a placeholder and the next one draws
 -- the art), and releases every texture when the page goes away. Nothing survives navigation.
-local core = require("beat-core")
+local artwork = require("beat.music.artwork")
 
 -- Covers stay across page changes: going home again, or back to an album, must not decode and
 -- upload the same picture again. The cache is bounded, oldest first, so browsing does not grow
@@ -137,7 +137,7 @@ function Covers:step()
 	self.jobsByKey[job.key] = nil
 	if job.epoch ~= self.epoch then return true, #self.jobs > 0 end
 
-	local fitted, colour, err = core.art.forAlbum(job.album, job.size)
+	local fitted, colour, err = artwork.forAlbum(job.album, job.size)
 	if fitted ~= nil then
 		---@cast fitted image.Image
 		local asset = self.assets:upload(fitted)

@@ -1,7 +1,7 @@
 -- Renaming a saved equalizer preset. The preset is named in its field and deleted from the same
 -- dialog, so a name that is no longer wanted is not a trip through the settings.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local equalizerBands = require("beat.app.services.playback.equalizer")
 local render = require("beat.app.components.ui")
 local equalizer = require("beat.app.overlays.equalizer")
 
@@ -69,8 +69,8 @@ function equalizerRename.update(app, overlay, message)
 			table.remove(app.services.settings.values.equalizerCustomPresets, found)
 			if app.services.settings.values.equalizerPreset == name then
 				app.services.settings.values.equalizerPreset = "flat"
-				app.services.settings.values.equalizerGains = core.equalizer.presetGains("flat")
-				app.services.playback.player:setEqualizer(core.equalizer.bands(app.services.settings.values.equalizerGains))
+				app.services.settings.values.equalizerGains = equalizerBands.presetGains("flat")
+				app.services.playback.player:setEqualizer(equalizerBands.bands(app.services.settings.values.equalizerGains))
 			end
 			app:close(overlay)
 			app.services.settings:changed()

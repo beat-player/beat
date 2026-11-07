@@ -1,11 +1,10 @@
 -- The album shelf: every album in the library, as cards or as rows, windowed as it scrolls.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@type beat.PageSurface
 local libraryPage = {}
@@ -67,7 +66,7 @@ function libraryPage.view(app, page, window)
 	:h(stacked and theme:px(58) or headerHeight):gap(4)):children({
 	text("Your library"):style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold")
 	:fg(theme:color("text")):ellipsis()),
-	text(util.count(#albums, "album") .. " · " .. util.count(#library.tracks, "track")):style(
+	text(names.count(#albums, "album") .. " · " .. names.count(#library.tracks, "track")):style(
 	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
 	),
 	})
@@ -134,10 +133,10 @@ function libraryPage.view(app, page, window)
 				text(album.artist .. (album.year and (" · " .. album.year) or "")):style(
 				theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
 				}),
-				(not mobile) and text(util.count(#album.tracks, "track")):style(
+				(not mobile) and text(names.count(#album.tracks, "track")):style(
 				theme:s():text(theme:type("sm")):fg(theme:color("muted"))) or div():style(
 				sty():w(0):h(0)),
-				(not mobile) and text(util.duration(album.duration)):style(
+				(not mobile) and text(names.duration(album.duration)):style(
 				theme:s():text(theme:type("sm")):fg(theme:color("faint"))) or div():style(
 				sty():w(0):h(0)),
 				})

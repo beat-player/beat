@@ -4,7 +4,7 @@
 -- and the process ending is what forgets it. The indexes exist so a screen can ask for an album
 -- by id without walking the list, not so a later launch can skip the walk.
 local path = require("path")
-local util = require("beat-core.util")
+local names = require("beat.music.names")
 
 ---@class beat.Track
 ---@field id number
@@ -120,10 +120,10 @@ end
 ---@return boolean gainedCover # Whether this was the album's first cached cover
 function Library:add(info, entry, cover, coverCache)
 	local tags = info.tags or {}
-	local base = util.stripExtension(entry.name)
-	local title = hasText(tags.title) and tags.title or util.stripTrackPrefix(base)
-	local albumFallback = util.parentName(entry.dir)
-	local artistFallback = util.parentName(path.dirname(entry.dir))
+	local base = names.stripExtension(entry.name)
+	local title = hasText(tags.title) and tags.title or names.stripTrackPrefix(base)
+	local albumFallback = names.parentName(entry.dir)
+	local artistFallback = names.parentName(path.dirname(entry.dir))
 	if artistFallback == "Unknown Album" then artistFallback = "Unknown Artist" end
 
 	local artist = intern(self, hasText(tags.artist) and tags.artist or artistFallback) or ""
@@ -152,7 +152,7 @@ function Library:add(info, entry, cover, coverCache)
 	albumArtist = albumArtist,
 	disc = disc,
 	number = number,
-	year = util.yearOf(date),
+	year = names.yearOf(date),
 	genre = intern(self, tags.genre),
 	duration = duration,
 	format = intern(self, info.format) or "",
@@ -162,7 +162,7 @@ function Library:add(info, entry, cover, coverCache)
 	coverPath = intern(self, cover),
 	coverCache = intern(self, coverCache),
 	modified = entry.modifyTime or 0,
-	hash = util.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
+	hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
 	}
 
 	-- The album key is the album artist when the files agree on one, and the album's directory
@@ -170,7 +170,7 @@ function Library:add(info, entry, cover, coverCache)
 	-- that already decided which album a file belongs to hands that key over: what a file was
 	-- grouped into is not always something its own tags say twice, and a cache replaying the tags
 	-- alone would group it again into an album of its own.
-	local key = entry.key or util.albumKey(tags, entry.dir)
+	local key = entry.key or names.albumKey(tags, entry.dir)
 
 	local album = self.albumByKey[key]
 	local gainedCover = false
@@ -189,7 +189,7 @@ function Library:add(info, entry, cover, coverCache)
 		coverCache = intern(self, coverCache),
 		coverTrack = info.hasPicture and track or nil,
 		modified = track.modified,
-		hash = util.fold(albumTitle .. "\0" .. albumArtist),
+		hash = names.fold(albumTitle .. "\0" .. albumArtist),
 		}
 
 		self.albums[albumId] = album
@@ -222,7 +222,7 @@ function Library:add(info, entry, cover, coverCache)
 		name = artistKey,
 		albums = {},
 		tracks = {},
-		hash = util.fold(artistKey),
+		hash = names.fold(artistKey),
 		}
 
 		self.artists[artistId] = profile
@@ -250,16 +250,16 @@ local function trackOrder(a, b)
 	if a.disc ~= b.disc then return a.disc < b.disc end
 	local an, bn = a.number or math.huge, b.number or math.huge
 	if an ~= bn then return an < bn end
-	if a.title ~= b.title then return util.fold(a.title) < util.fold(b.title) end
+	if a.title ~= b.title then return names.fold(a.title) < names.fold(b.title) end
 	return a.path < b.path
 end
 
 ---@param a beat.Album
 ---@param b beat.Album
 local function albumOrder(a, b)
-	local an, bn = util.fold(a.title), util.fold(b.title)
+	local an, bn = names.fold(a.title), names.fold(b.title)
 	if an ~= bn then return an < bn end
-	return util.fold(a.artist) < util.fold(b.artist)
+	return names.fold(a.artist) < names.fold(b.artist)
 end
 
 --- Closes the scan: sorts what was found and computes the values a screen reads in a loop.
@@ -328,7 +328,7 @@ end
 ---@param query string
 ---@return beat.Album[] albums, beat.Artist[] artists, beat.Track[] tracks
 function Library:search(query)
-	local needle = util.fold(query:gsub("^%s+", ""):gsub("%s+$", ""))
+	local needle = names.fold(query:gsub("^%s+", ""):gsub("%s+$", ""))
 	if needle == "" then return {}, {}, {} end
 
 	local albums, artists, tracks = {}, {}, {}
@@ -349,8 +349,8 @@ end
 ---@param album beat.Album
 ---@return string
 function Library:albumMeta(album)
-	local parts = { util.count(#album.tracks, "track")}
-	if album.duration > 0 then parts[#parts + 1] = util.duration(album.duration) end
+	local parts = { names.count(#album.tracks, "track")}
+	if album.duration > 0 then parts[#parts + 1] = names.duration(album.duration) end
 	if album.year ~= nil then parts[#parts + 1] = tostring(album.year) end
 	return table.concat(parts, " · ")
 end

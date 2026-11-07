@@ -3,11 +3,23 @@
 	"version": "0.1.0",
 	"dependencies": {
 		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
-		"beat-core": {
-			"path": "../beat-core"
-		},
 		"beat-ui": {
 			"path": "../beat-ui"
+		},
+		"fs": {
+			"version": "^0.3.2"
+		},
+		"path": {
+			"version": "^0.1.0"
+		},
+		"json": {
+			"version": "^0.1.1"
+		},
+		"treble": {
+			"version": "^0.2.1"
+		},
+		"image": {
+			"version": "^0.1.3"
 		},
 		"curl-sys": {
 			"version": "^0.1.2"

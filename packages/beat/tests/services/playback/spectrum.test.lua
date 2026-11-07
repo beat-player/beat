@@ -1,6 +1,6 @@
 local test = require("lde-test")
 local ffi = require("ffi")
-local core = require("beat-core")
+local Spectrum = require("beat.app.services.playback.spectrum")
 
 test.it("puts a sine wave in the upper half of the band strip", function()
 	local samples = ffi.new("int16_t[?]", 512)
@@ -9,7 +9,7 @@ test.it("puts a sine wave in the upper half of the band strip", function()
 		samples[at] = math.floor(math.sin(2 * math.pi * cycles * at / 512) * 20000)
 	end
 
-	local spectrum = core.Spectrum.new()
+	local spectrum = Spectrum.new()
 	spectrum:feed(samples, 512, 1)
 	test.truthy(spectrum:step(1))
 
@@ -27,7 +27,7 @@ test.it("decays when nothing new arrives", function()
 	local samples = ffi.new("int16_t[?]", 512)
 	for at = 0, 511 do samples[at] = 10000 end
 
-	local spectrum = core.Spectrum.new()
+	local spectrum = Spectrum.new()
 	spectrum:feed(samples, 512, 1)
 	test.truthy(spectrum:step(1))
 	spectrum:clear()

@@ -1,10 +1,10 @@
 local test = require("lde-test")
 local fs = require("fs")
 local path = require("path")
-local core = require("beat-core")
+local Scanner = require("beat.music.scan")
 
 local HERE = (debug.getinfo(1, "S").source:sub(2):match("^(.*)[/\\]") or ".")
-local FIXTURES = HERE .. "/fixtures"
+local FIXTURES = path.join(HERE, "..", "fixtures")
 local TONE = FIXTURES .. "/tone.wav"
 local TAGGED = FIXTURES .. "/tagged.flac"
 local COVER = FIXTURES .. "/cover.png"
@@ -21,7 +21,7 @@ local function copy(from, to)
 end
 
 local function scanAll(root)
-	local scanner = core.Scanner.new(root)
+	local scanner = Scanner.new(root)
 	local rounds = 0
 
 	while not scanner:isDone() do
@@ -68,7 +68,7 @@ test.it("enumerates a tree without inspecting the files", function()
 	copy(TONE, path.join(second, "03 tone.wav"))
 	copy(COVER, path.join(first, "cover.png"))
 
-	local scanner = core.Scanner.new(root)
+	local scanner = Scanner.new(root)
 	local rounds = 0
 	while scanner.phase == "enumerate" do
 		scanner:enumerateStep(0.05, os.clock)
@@ -146,7 +146,7 @@ test.it("scans without building the worker a second library", function()
 	copy(TONE, path.join(root, "one.wav"))
 
 	local seen = 0
-	local scanner = core.Scanner.new(root, { library = false})
+	local scanner = Scanner.new(root, { library = false})
 	scanner.onTrack = function() seen = seen + 1 end
 
 	while not scanner:isDone() do
@@ -164,7 +164,7 @@ test.it("cancels without finishing the library", function()
 	local root = tempDir()
 	copy(TONE, path.join(root, "one.wav"))
 
-	local scanner = core.Scanner.new(root)
+	local scanner = Scanner.new(root)
 	scanner:cancel()
 	test.truthy(scanner:isDone())
 	test.equal(scanner:progress().phase, "cancelled")

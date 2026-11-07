@@ -6,30 +6,30 @@ local image = require("image")
 local fs = require("fs")
 local path = require("path")
 local audio = require("treble.audio")
-local cover_cache = require("beat-core.cover_cache")
+local artworkCache = require("beat.music.artwork_cache")
 
-local art = {}
+local artwork = {}
 
 local u8 = ffi.typeof("uint8_t*")
 
 ---@param picture treble.Tags.Picture
 ---@return image.Image?
 ---@return string?
-function art.decode(picture)
+function artwork.decode(picture)
 	return image.decode(picture.data, { channels = 4})
 end
 
 ---@param bytes string
 ---@return image.Image?
 ---@return string?
-function art.decodePNG(bytes)
+function artwork.decodePNG(bytes)
 	return image.decode(bytes, { channels = 4})
 end
 
 ---@param path string
 ---@return image.Image?
 ---@return string?
-function art.load(path)
+function artwork.load(path)
 	return image.load(path, { channels = 4})
 end
 
@@ -38,7 +38,7 @@ end
 ---@param source image.Image
 ---@param maxSide number
 ---@return image.Image
-function art.fit(source, maxSide)
+function artwork.fit(source, maxSide)
 	local side = math.min(source.width, source.height)
 	local target = math.min(maxSide, side)
 	local left = math.floor((source.width - side) / 2)
@@ -105,7 +105,7 @@ end
 ---@return number r
 ---@return number g
 ---@return number b
-function art.dominant(source)
+function artwork.dominant(source)
 	local pixels = ffi.cast(u8, source.pixels)
 	local step = math.max(1, math.floor(math.min(source.width, source.height) / 12))
 	local r, g, b, count = 0, 0, 0, 0
@@ -131,7 +131,7 @@ end
 ---@return image.Image? fitted
 ---@return { r: number, g: number, b: number }? colour
 ---@return string? err
-function art.forTrack(track, maxSide)
+function artwork.forTrack(track, maxSide)
 	local decoded, err
 
 	if track.hasPicture then
@@ -152,8 +152,8 @@ function art.forTrack(track, maxSide)
 	end
 
 	---@cast decoded image.Image
-	local fitted = art.fit(decoded, maxSide)
-	local r, g, b = art.dominant(fitted)
+	local fitted = artwork.fit(decoded, maxSide)
+	local r, g, b = artwork.dominant(fitted)
 	decoded:close()
 
 	return fitted, { r = r, g = g, b = b}
@@ -167,15 +167,15 @@ end
 ---@param root string
 ---@return string? file
 ---@return string? err
-function art.cacheCover(track, maxSide, root)
+function artwork.cacheCover(track, maxSide, root)
 	local source = track.hasPicture and track.path or track.coverPath
 	if source == nil then return nil, "no artwork" end
 
 	local modified = track.hasPicture and track.modified or (track.coverModified or track.modified)
-	local file = cover_cache.file(root, source, modified, maxSide)
+	local file = artworkCache.file(root, source, modified, maxSide)
 	if fs.isfile(file) then return file, nil end
 
-	local fitted, _, err = art.forTrack(track, maxSide)
+	local fitted, _, err = artwork.forTrack(track, maxSide)
 	if fitted == nil then return nil, err end
 
 	local folder = path.dirname(file)
@@ -212,15 +212,15 @@ end
 ---@return image.Image? fitted
 ---@return { r: number, g: number, b: number }? colour
 ---@return string? err
-function art.forAlbum(album, maxSide)
+function artwork.forAlbum(album, maxSide)
 	local cache = album.coverCache
 	if cache == nil then return nil, nil, "cover has not been cached yet" end
 
 	local decoded, err = image.load(cache, { channels = 4})
 	if decoded == nil then return nil, nil, err end
 
-	local fitted = art.fit(decoded, maxSide)
-	local r, g, b = art.dominant(fitted)
+	local fitted = artwork.fit(decoded, maxSide)
+	local r, g, b = artwork.dominant(fitted)
 	decoded:close()
 
 	return fitted, { r = r, g = g, b = b}
@@ -230,10 +230,10 @@ end
 ---@param path string
 ---@return image.Info?
 ---@return string?
-function art.probeFile(path)
+function artwork.probeFile(path)
 	local bytes = fs.read(path)
 	if bytes == nil then return nil, "cannot read " .. path end
 	return image.probe(bytes, path)
 end
 
-return art
+return artwork

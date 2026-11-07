@@ -2,11 +2,10 @@
 -- order every grid asks for. A scan changes it a track at a time, so what was already drawn must
 -- know when that happened rather than poll it every frame; and because the sort is computed over
 -- the whole library, it is kept until a track actually changes what is in it.
-local core = require("beat-core")
+local names = require("beat.music.names")
+local Library = require("beat.music.library")
 local LibraryCache = require("beat.app.services.library.cache")
 local Signal = require("beat.app.signal")
-
-local util = core.util
 
 ---@class beat.LibraryService
 ---@field current beat.Library?
@@ -51,7 +50,7 @@ end
 --- A new library for a root, which is what a scan starts from.
 ---@param root string
 function LibraryService:replace(root)
-	self.current = core.Library.new(root)
+	self.current = Library.new(root)
 	dropSorted(self)
 	self.replaced:fire(self.current)
 end
@@ -99,15 +98,15 @@ function LibraryService:sorted(order)
 
 	if order == "artist" then
 		table.sort(albums, function(a, b)
-			local aa, ba = util.fold(a.artist), util.fold(b.artist)
+			local aa, ba = names.fold(a.artist), names.fold(b.artist)
 			if aa ~= ba then return aa < ba end
-			return util.fold(a.title) < util.fold(b.title)
+			return names.fold(a.title) < names.fold(b.title)
 		end)
 	elseif order == "year" then
 		table.sort(albums, function(a, b)
 			local ay, by = a.year or 0, b.year or 0
 			if ay ~= by then return ay > by end
-			return util.fold(a.title) < util.fold(b.title)
+			return names.fold(a.title) < names.fold(b.title)
 		end)
 	elseif order == "recent" then
 		albums = {}
@@ -115,7 +114,7 @@ function LibraryService:sorted(order)
 	elseif order == "modified" then
 		table.sort(albums, function(a, b)
 			if a.modified ~= b.modified then return a.modified > b.modified end
-			return util.fold(a.title) < util.fold(b.title)
+			return names.fold(a.title) < names.fold(b.title)
 		end)
 	end
 

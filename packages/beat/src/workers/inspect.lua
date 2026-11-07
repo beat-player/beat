@@ -7,7 +7,8 @@
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
-local core = require("beat-core")
+local names = require("beat.music.names")
+local artwork = require("beat.music.artwork")
 local Log = require("beat.log")
 local audio = require("treble.audio")
 local time = require("wonderland.time")
@@ -82,11 +83,11 @@ local function inspect(entry)
 		return
 	end
 
-	local key = core.util.albumKey(info.tags, entry.dir)
+	local key = names.albumKey(info.tags, entry.dir)
 	local coverCache = cached[key]
 	if coverCache == nil then
 		if info.hasPicture then
-			coverCache = core.art.cacheCover({
+			coverCache = artwork.cacheCover({
 				path = entry.path,
 				hasPicture = true,
 				coverPath = entry.cover,
@@ -95,7 +96,7 @@ local function inspect(entry)
 		elseif entry.cover ~= nil and not triedFolder[key] then
 			triedFolder[key] = true
 			local coverStat = fs.stat(entry.cover)
-			coverCache = core.art.cacheCover({
+			coverCache = artwork.cacheCover({
 				path = entry.path,
 				hasPicture = false,
 				coverPath = entry.cover,

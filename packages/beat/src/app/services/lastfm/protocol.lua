@@ -2,7 +2,7 @@
 -- for the desktop auth handshake and the two playback services. The network is not here, so the
 -- signing and the shapes it signs are testable without a socket.
 local json = require("json")
-local md5 = require("beat-core.md5")
+local md5 = require("beat.music.md5")
 
 local lastfm = {}
 

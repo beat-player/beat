@@ -107,7 +107,7 @@ test.skipIf(not canNameNonUtf8())("scans past a file whose name is not UTF-8 and
 	local root = os.tmpname() .. "-beat-scan-names"
 	os.remove(root)
 	fs.mkdirAll(root)
-	local tone = assert(fs.read("../beat-core/tests/fixtures/tone.wav"))
+	local tone = assert(fs.read("tests/fixtures/tone.wav"))
 	-- "Antônio" as Windows-1252 spells it: the bytes upstream fs reads on Windows.
 	local foreign = root .. "/Ant\244nio.wav"
 	assert(fs.write(root .. "/plain.wav", tone))

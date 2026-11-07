@@ -1,14 +1,13 @@
 -- The playlists page: the playlists to open and the tags that make the smart ones. A tag's
 -- name is edited in place here, so the draft and the one being edited belong to this page.
 local wonderland = require("wonderland")
-local core = require("beat-core")
+local names = require("beat.music.names")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 local measure = require("beat.app.components.measure")
 local PlaylistArt = require("beat.app.components.playlist_art")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local util = core.util
 
 ---@class beat.PlaylistsState
 ---@field tagEditId number? # The tag whose name is being edited in place
@@ -164,7 +163,7 @@ function playlists.view(app, page, window)
 		:text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
 		PlaylistArt.icons(app, playlist),
 		}),
-		text(util.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(
+		text(names.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(
 		theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs"))
 		:fg(theme:color("muted")):ellipsis()),
 		}),

@@ -1,5 +1,5 @@
 local test = require("lde-test")
-local core = require("beat-core")
+local Taxonomy = require("beat.app.services.collections.taxonomy")
 
 local function library()
 	return {
@@ -12,7 +12,7 @@ local function library()
 end
 
 test.it("names tags case-insensitively and toggles them on a track", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local high = taxonomy:addTag("  High Energy ")
 	local late = taxonomy:addTag("Late Night")
 
@@ -30,7 +30,7 @@ test.it("names tags case-insensitively and toggles them on a track", function()
 end)
 
 test.it("filters a smart playlist by all or any of its tags", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local high = assert(taxonomy:addTag("High Energy"))
 	local late = assert(taxonomy:addTag("Late Night"))
 	local lib = library()
@@ -50,7 +50,7 @@ test.it("filters a smart playlist by all or any of its tags", function()
 end)
 
 test.it("keeps manual playlist membership in a hidden tag", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local lib = library()
 	local playlist = assert(taxonomy:addPlaylist("Favourites", false))
 	---@cast playlist beat.Playlist
@@ -67,14 +67,14 @@ test.it("keeps manual playlist membership in a hidden tag", function()
 end)
 
 test.it("round-trips tags and playlists through its packed form", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local high = assert(taxonomy:addTag("High Energy"))
 	local smart = assert(taxonomy:addPlaylist("High", true, { high.id}, "all"))
 	local manual = assert(taxonomy:addPlaylist("Manual", false))
 	taxonomy:setTag("/music/a.flac", high.id, true)
 	taxonomy:setPlaylistTrack(manual, "/music/b.flac", true)
 
-	local loaded = core.Taxonomy.unpack(taxonomy:pack())
+	local loaded = Taxonomy.unpack(taxonomy:pack())
 	local lib = library()
 	test.equal(#loaded:visibleTags(), 1)
 	test.equal(loaded:visibleTags()[1].name, "High Energy")
@@ -84,7 +84,7 @@ test.it("round-trips tags and playlists through its packed form", function()
 end)
 
 test.it("makes an automatic smart playlist for each tag", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local tag = assert(taxonomy:addTag("Focus"))
 	local playlists = taxonomy.playlists
 	test.equal(#playlists, 1)
@@ -96,7 +96,7 @@ test.it("makes an automatic smart playlist for each tag", function()
 end)
 
 test.it("mixes smart criteria and hand-added tracks in one playlist", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local tag = assert(taxonomy:addTag("Focus"))
 	local playlist = taxonomy.playlists[1]
 	local lib = library()
@@ -110,7 +110,7 @@ test.it("mixes smart criteria and hand-added tracks in one playlist", function()
 end)
 
 test.it("renames a tag by id and removes it with its automatic playlist", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local tag = assert(taxonomy:addTag("Focus"))
 	local auto = taxonomy.playlists[1]
 	local renamed = assert(taxonomy:renameTag(tag.id, "Deep Focus"))
@@ -124,7 +124,7 @@ test.it("renames a tag by id and removes it with its automatic playlist", functi
 end)
 
 test.it("records listens for tracks, albums, tags and playlists", function()
-	local taxonomy = core.Taxonomy.new()
+	local taxonomy = Taxonomy.new()
 	local tag = assert(taxonomy:addTag("Focus"))
 	local auto = taxonomy.playlists[1]
 	local lib = library()
@@ -143,7 +143,7 @@ test.it("records listens for tracks, albums, tags and playlists", function()
 	test.equal(#recent, 1)
 	test.equal(recent[1].key, "artist\0album")
 
-	local loaded = core.Taxonomy.unpack(taxonomy:pack())
+	local loaded = Taxonomy.unpack(taxonomy:pack())
 	test.equal(loaded.metrics.tracks["/music/a.flac"].count, 1)
 	test.equal(loaded.metrics.albums["artist\0album"].last, 1234)
 end)
