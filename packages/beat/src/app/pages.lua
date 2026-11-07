@@ -2764,18 +2764,27 @@ function pages.expanded(app, window)
 		})
 		textRows[#textRows + 1] = render.progress(app, track, app.player, progressWidth)
 		local controlHeight = theme:px(54 * transport)
+		-- The transport is centred by a spacer either side rather than by spreading the row: the
+		-- panels below are boxes offset from the row, and a spread row still counts them among the
+		-- boxes it spreads, which moved the transport towards them. The spacers share what the
+		-- other boxes leave, so the transport says how wide it is.
+		local skipSize = theme:px(30 * transport)
+		local playSize = theme:px(54 * transport)
 		local controlChildren = {
 		render.volumeButton(app, theme:px(28 * transport)),
-		div():style(sty():row():gap(controlGap):align("center"):justify("center")):children({
-		render.iconButton(app, "previous", theme:px(30 * transport), { type = "previous"}),
-		div():style(sty():size(theme:px(54 * transport), theme:px(54 * transport))
+		div():style(sty():w("auto"):h(controlHeight)),
+		div():style(sty():row():w(skipSize * 2 + playSize + controlGap * 2):h(controlHeight)
+		:gap(controlGap):align("center"):justify("center")):children({
+		render.iconButton(app, "previous", skipSize, { type = "previous"}),
+		div():style(sty():size(playSize, playSize)
 		:radius(theme:radius("full")):bg(theme:color("accent"))
 		:align("center"):justify("center"))
 		:onClick({ type = "togglePlay"})
 		:children(ui.icons.element(app.player:isPlaying() and "pause" or "play",
 		theme:px(24 * transport), theme.accentInk)),
-		render.iconButton(app, "next", theme:px(30 * transport), { type = "next"}),
+		render.iconButton(app, "next", skipSize, { type = "next"}),
 		}),
+		div():style(sty():w("auto"):h(controlHeight)),
 		render.equalizerButton(app, theme:px(28 * transport),
 		{ type = "toggleEqualizer"}, app.equalizerOpen),
 		}
@@ -2788,18 +2797,39 @@ function pages.expanded(app, window)
 			y = compact and (-panelHeight - theme:px(8)) or (controlHeight + theme:px(8)),
 			})
 		end
-		local controls = div():style(sty():row():wrel(1.0):h(controlHeight)
-		:align("center"):justify("space-between")):children(controlChildren)
-		textRows[#textRows + 1] = controls
-		local stackedTextHeight = theme:type("xxl") + theme:type("lg")
-		+theme:px(34 + 18) + controlHeight + stageGap * 4
+		local titleSize = theme:type(mobile and "xxl" or "hero")
+		local textHeight = titleSize + theme:type("lg") + theme:px(34 + 18) + controlHeight + stageGap * 4
+
+		-- The queue and the menu open from the tool row, towards whichever side of it has the room.
+		-- Where the row is comes from the sizes the stage is centred with -- a line of text is as
+		-- tall as its type -- so the panels can be sized before the layout has run.
+		local lead = stacked and (coverSize + theme:space(16)) or 0
+		local rowTop = margin + mainPad + (availableHeight - mainPad * 2 - lead - textHeight) / 2 + lead
+		+titleSize + theme:type("lg") + stageGap * 2
+		local edge = theme:px(12)
+		-- They are offset from the controls, the last row of the stage, rather than from the tool
+		-- row: what is painted later than a panel and under its shadow is not painted at all, and
+		-- nothing in the stage is painted later than its last row. The tool row is a fixed distance
+		-- above it.
+		local room = {
+		below = window.height - edge - rowTop - theme:px(34),
+		above = rowTop - edge,
+		top = -(theme:px(34) + theme:px(18) + stageGap * 2),
+		}
+		local queuePanel = pages.queuePanel(app, progressWidth, room)
+		if queuePanel ~= nil then controlChildren[#controlChildren + 1] = queuePanel end
+		local menu = pages.nowPlayingMenu(app, progressWidth, room, toolSize + toolGap)
+		if menu ~= nil then controlChildren[#controlChildren + 1] = menu end
+		textRows[#textRows + 1] = div():style(sty():row():wrel(1.0):h(controlHeight)
+		:align("center")):children(controlChildren)
+
 		local main
 		if stacked then
 			main = div():style(sty():h(availableHeight)
 			:column():align("center"):justify("center"):gap(theme:space(16)):pad(mainPad, 0, mainPad, 0))
 			main:children({
 			cover,
-			div():style(sty():column():h(stackedTextHeight):gap(stageGap)
+			div():style(sty():column():h(textHeight):gap(stageGap)
 			:w(progressWidth)):children(textRows),
 			})
 		else
@@ -2820,13 +2850,21 @@ function pages.expanded(app, window)
 	local content = div():style(sty():fill():column():pad(margin, margin, margin, margin)
 	:gap(theme:space(16))):children(contentChildren)
 
+	local children = { content}
+	-- The panels sit inside the stage, so what closes them on a click elsewhere is here: under
+	-- them, over everything else on the screen.
+	if app.queueOpen or app.moreOpen then
+		children[#children + 1] = div():style(sty():fill():offset(0, 0):z(128))
+		:onClick({ type = app.queueOpen and "closeQueue" or "closeMore"})
+	end
+
 	return div()
 	:style(sty():fill():offset(0, 0):z(100):column():bg(theme:color("bg"))
 	:fg(theme:color("text")):font(theme.fontFamily))
 	:canvas(function(canvas)
 		render.spectrumBackground(app, canvas, { intensity = 0.28, reach = 0.72})
 	end)
-	:children({ content})
+	:children(children)
 end
 
 ---@param app beat.App
@@ -3432,29 +3470,61 @@ local function nowPlayingEntry(app, label, action, width, height)
 	:weight("medium"):fg(theme:color("text")):ellipsis()))
 end
 
---- The queue is a panel instead of a permanent column, so the cover and controls keep the room
---- on every width. The phone gets the same sheet, just full width.
+---@class beat.app.ToolRoom
+---@field below number # How far the window goes under the now-playing tool row
+---@field above number # And over it
+---@field top number # Where the tool row's top is from the top of the box a panel is offset from
+
+--- Places a panel opened from the now-playing tool row: under the row where it fits or where
+--- there is more room below than above, over it otherwise.
 ---@param app beat.App
----@param window wonderland.RenderWindow
+---@param panel wonderland.Element
+---@param x number # From the row's left edge
+---@param width number
+---@param height number
+---@param room beat.app.ToolRoom
+---@return wonderland.Element
+local function toolPanel(app, panel, x, width, height, room)
+	local theme = app.theme
+	local gap = theme:px(6)
+	local below = height + gap <= room.below or room.below >= room.above
+	local y = room.top + (below and (theme:px(34) + gap) or -(height + gap))
+	return div():style(sty():w(width):h(height):offset(x, y):z(130)):children({ panel})
+end
+
+--- The queue is a panel instead of a permanent column, so the cover and controls keep the room
+--- on every width. It opens from the queue button, as tall as the queue up to the room on that
+--- side of the button, and scrolls past that.
+---@param app beat.App
+---@param toolWidth number # The tool row's width; the panel is no wider
+---@param room beat.app.ToolRoom
 ---@return wonderland.Element?
-function pages.queuePanel(app, window)
+function pages.queuePanel(app, toolWidth, room)
 	if not app.queueOpen then return nil end
 	local theme = app.theme
 	local queue = app.player.queue
-	local upcoming = queue and queue:upcoming(24) or {}
+	local upcoming = queue and queue:upcoming() or {}
 	local rowHeight = theme:px(48)
 	local padding = theme:px(10)
 	local headerHeight = theme:px(24)
 	local gap = theme:px(4)
-	local mobile = pages.mobile(app, window.width)
-	local width = math.min(theme:px(340), window.width - (mobile and theme:px(24) or theme:px(32)))
-	local most = math.max(1, math.min(#upcoming,
-	math.floor((window.height - theme:px(220)) / rowHeight)))
-	local shown = math.min(#upcoming, most)
-	local more = #upcoming - shown
-	local rowsHeight = shown * rowHeight + math.max(0, shown - 1) * gap
-	local moreHeight = more > 0 and (theme:px(24) + gap) or 0
-	local height = padding * 2 + headerHeight + gap + math.max(rowHeight, rowsHeight + moreHeight)
+	local width = math.min(theme:px(340), toolWidth)
+	local inner = width - padding * 2
+	local fixed = padding * 2 + headerHeight + gap
+
+	local fullHeight = #upcoming * rowHeight
+	local space = math.max(room.below, room.above) - theme:px(6)
+	local listHeight = math.max(rowHeight, math.min(fullHeight, space - fixed))
+	local height = fixed + listHeight
+	local scrollMax = math.max(0, fullHeight - listHeight)
+	local offset = math.min(app:scrollOffset("queue"), scrollMax)
+	-- The bar takes its strip from the rows, so they are narrowed by it rather than run under it.
+	local barWidth = theme:px(6)
+	local listWidth = scrollMax > 0 and (inner - barWidth) or inner
+	local rowPad = theme:px(8)
+	local rowGap = theme:px(8)
+	local clockWidth = theme:px(44)
+	local infoWidth = listWidth - rowPad * 2 - rowGap - clockWidth
 
 	local rows = {}
 	rows[#rows + 1] = div():style(sty():row():wrel(1.0):h(headerHeight):align("center")
@@ -3463,36 +3533,48 @@ function pages.queuePanel(app, window)
 	text(util.count(#upcoming, "track")):style(theme:s():text(theme:type("xs"))
 	:fg(theme:color("faint"))),
 	})
-	if shown == 0 then
+	if #upcoming == 0 then
 		rows[#rows + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):align("center")):children({
 		text("Nothing queued yet"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 		})
 	else
-		for at = 1, shown do
+		-- Only the rows in view are built, between spacers that keep the list its full height: a
+		-- queue can be a whole library.
+		local first, last, top = app:slices(#upcoming, 1, rowHeight, offset, listHeight)
+		local list = {}
+		if top > 0 then list[#list + 1] = div():style(sty():w(listWidth):h(top)) end
+		for at = first, last do
 				local nextTrack = upcoming[at]
 				---@cast nextTrack beat.Track
-				rows[#rows + 1] = div()
-				:style(sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(8), 0, theme:px(8))
-				:gap(theme:px(8)):align("center"):radius(theme:radius("sm")))
-				:hover(sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(8), 0, theme:px(8))
-				:gap(theme:px(8)):align("center"):radius(theme:radius("sm"))
+				list[#list + 1] = div()
+				:style(sty():row():w(listWidth):h(rowHeight):pad(0, rowPad, 0, rowPad)
+				:gap(rowGap):align("center"):radius(theme:radius("sm")))
+				:hover(sty():row():w(listWidth):h(rowHeight):pad(0, rowPad, 0, rowPad)
+				:gap(rowGap):align("center"):radius(theme:radius("sm"))
 				:bg(theme:color("hover")))
 				:onClick({ type = "jumpTrack", trackId = nextTrack.id})
 				:children({
-				div():style(sty():column():wrel(1.0)):children({
-				text(nextTrack.title):style(theme:s():wrel(1.0):text(theme:type("sm"))
+				div():style(sty():column():w(infoWidth)):children({
+				text(nextTrack.title):style(theme:s():w(infoWidth):text(theme:type("sm"))
 				:weight("semibold"):fg(theme:color("text")):ellipsis()),
-				text(nextTrack.artist):style(theme:s():wrel(1.0):text(theme:type("xs"))
+				text(nextTrack.artist):style(theme:s():w(infoWidth):text(theme:type("xs"))
 				:fg(theme:color("muted")):ellipsis()),
 				}),
-				text(util.clock(nextTrack.duration)):style(theme:s():text(theme:type("xs"))
-				:fg(theme:color("faint"))),
+				div():style(sty():row():w(clockWidth):h(rowHeight):align("center"):justify("end"))
+				:children(text(util.clock(nextTrack.duration)):style(theme:s():text(theme:type("xs"))
+				:fg(theme:color("faint")))),
 				})
 			end
-		if more > 0 then
-			rows[#rows + 1] = text("+" .. tostring(more) .. " more tracks"):style(
-			theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("faint")))
-		end
+		local bottom = fullHeight - top - (last - first + 1) * rowHeight
+		if bottom > 0 then list[#list + 1] = div():style(sty():w(listWidth):h(bottom)) end
+
+		rows[#rows + 1] = div()
+		:style(sty():column():w(inner):h(listHeight):bar(barWidth, theme:px(32), theme:color("faint")))
+		:scroll(offset)
+		:onScroll(function(by, to)
+			return { type = "scroll", key = "queue", max = scrollMax, by = by, to = to}
+		end)
+		:children(list)
 	end
 
 	local panel = div()
@@ -3502,24 +3584,18 @@ function pages.queuePanel(app, window)
 	:shadow(0, theme:px(12), theme:px(30), "#00000099"))
 	:onClick({ type = "queueKeep"})
 	:children(rows)
-	local margin = theme:px(mobile and 12 or 24)
-	local x = mobile and math.floor((window.width - width) / 2) or (window.width - width - margin)
-	local y = window.height - height - margin
 
-	return div()
-	:style(sty():fill():offset(0, 0):z(128))
-	:onClick({ type = "closeQueue"})
-	:children({
-	div():style(sty():w(width):h(height):offset(x, y)):children({ panel}),
-	})
+	return toolPanel(app, panel, 0, width, height, room)
 end
 
 --- The three dots open the larger per-track menu: tagging, playlists, and the album and artist
 --- pages that the compact controls no longer have room to grow another row for.
 ---@param app beat.App
----@param window wonderland.RenderWindow
+---@param rowWidth number # The tool row's width; the menu stays inside it
+---@param room beat.app.ToolRoom
+---@param x number # Where the three dots start in the row
 ---@return wonderland.Element?
-function pages.nowPlayingMenu(app, window)
+function pages.nowPlayingMenu(app, rowWidth, room, x)
 	if not app.moreOpen then return nil end
 	local track = app:currentTrack()
 	if track == nil then return nil end
@@ -3537,8 +3613,9 @@ function pages.nowPlayingMenu(app, window)
 	end
 	entries[#entries + 1] = { "Open queue", { type = "openQueue"}}
 
-	local mobile = pages.mobile(app, window.width)
-	local width = math.min(theme:px(252), window.width - theme:px(24))
+	-- Under its own button, unless that would carry it past the end of the row.
+	local width = math.min(theme:px(252), rowWidth)
+	x = math.max(0, math.min(x, rowWidth - width))
 	local rowHeight = theme:px(40)
 	local padding = theme:px(8)
 	local gap = theme:px(2)
@@ -3556,16 +3633,8 @@ function pages.nowPlayingMenu(app, window)
 	:shadow(0, theme:px(14), theme:px(36), "#00000099"))
 	:onClick({ type = "moreKeep"})
 	:children(rows)
-	local margin = theme:px(mobile and 12 or 24)
-	local x = mobile and math.floor((window.width - width) / 2) or (window.width - width - margin)
-	local y = window.height - height - margin
 
-	return div()
-	:style(sty():fill():offset(0, 0):z(129))
-	:onClick({ type = "closeMore"})
-	:children({
-	div():style(sty():w(width):h(height):offset(x, y)):children({ panel}),
-	})
+	return toolPanel(app, panel, x, width, height, room)
 end
 
 -- ────────────────────────────────────────────────────────────────
@@ -3785,8 +3854,6 @@ local function pageOverlays(app, window)
 	add(pages.trackMenu(app, window))
 	add(pages.albumMenu(app, window))
 	add(pages.playlistMenu(app, window))
-	add(pages.queuePanel(app, window))
-	add(pages.nowPlayingMenu(app, window))
 	add(pages.equalizerPanel(app, window))
 	add(pages.equalizerRenameDialog(app, window))
 	return overlays
