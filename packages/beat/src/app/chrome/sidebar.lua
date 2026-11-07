@@ -1,0 +1,267 @@
+-- The rail down the left edge: where the app navigates from, the playlists played last, and the
+-- name a row gives back while the pointer is on it.
+local wonderland = require("wonderland")
+local ui = require("beat-ui")
+local core = require("beat-core")
+local metrics = require("beat.app.metrics")
+local measure = require("beat.app.measure")
+local PlaylistArt = require("beat.app.playlist_art")
+
+local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
+local util = core.util
+
+local sidebar = {}
+
+---@param app beat.App
+---@param width number
+---@param height number
+---@return wonderland.Element
+function sidebar.view(app, width, height)
+	local theme = app.theme
+	local collapsed = app.settings.sidebarCollapsed or width < 1040
+	local side = metrics.sidebarWidth(app, width)
+	local current = app.page
+
+	local nav = {
+	{ kind = "home", icon = "home", label = "Home"},
+	{ kind = "library", icon = "library", label = "Library"},
+	{ kind = "playlists", icon = "playlists", label = "Playlists"},
+	}
+
+	local navRowHeight = theme:px(collapsed and 44 or 42)
+	local navHeight = navRowHeight * #nav + math.max(0, #nav - 1) * theme:px(2) + theme:px(20)
+	local navChildren = {}
+	for _, item in ipairs(nav) do
+			local active = current.kind == item.kind
+			local fg = active and theme:color("text") or theme:color("muted")
+			local bg = active and theme:color("elevated") or theme:color("sidebar", 0)
+			local rowStyle = sty():row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10))
+			:gap(theme:px(12)):radius(theme:radius("sm")):align("center"):bg(bg)
+			local rowHover = sty():row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10))
+			:gap(theme:px(12)):radius(theme:radius("sm")):align("center"):bg(theme:color("hover"))
+			if collapsed then
+				rowStyle:justify("center")
+				rowHover:justify("center")
+			end
+			local row = div():style(rowStyle):hover(rowHover)
+			:onClick({ type = "navigate", page = { kind = item.kind}})
+
+			row:children(ui.icons.element(item.icon, theme:px(19), active and theme:color("accent") or fg))
+			if not collapsed then
+				row:children(text(item.label):style(theme:s():text(theme:type("base")):weight("semibold"):fg(fg)))
+			end
+
+			navChildren[#navChildren + 1] = row
+		end
+
+	local brandChildren = { ui.icons.element("logo", theme:px(22), theme:color("accent"))}
+	if not collapsed then
+		brandChildren[#brandChildren + 1] = text("beat"):style(
+		theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))
+		)
+	end
+	local brandStyle = sty():row():wrel(1.0):h(theme:px(52)):gap(theme:px(10)):align("center")
+	if collapsed then brandStyle:justify("center") end
+
+	local rowGap = theme:px(3)
+	local sectionGap = theme:px(4)
+	local playlists = app:recentPlaylists(3)
+	---@cast playlists beat.Playlist[]
+	local rowCount = #playlists + 1
+	local headerHeight = collapsed and theme:px(0) or theme:px(24)
+	-- The sidebar gaps and the header are style values, so the hover hit test can be the rows'
+	-- own geometry without asking the layout that has not run yet.
+	local sectionTop = theme:px(52) + theme:px(1) + theme:px(16) + theme:px(1)
+	+navHeight + theme:px(4) * 5
+	local sectionInset = collapsed and sectionGap or headerHeight + sectionGap
+	local available = height - sectionTop - sectionInset
+	local baseRowHeight = theme:px(collapsed and 44 or 52)
+	local rowHeight = math.min(baseRowHeight,
+	math.max(theme:px(36), math.floor((available - (rowCount - 1) * rowGap) / rowCount)))
+	local artSize = math.min(theme:px(collapsed and 36 or 40), rowHeight - theme:px(8))
+	local rowStep = rowHeight + rowGap
+	local listTop = sectionTop + sectionInset
+	local rows = {}
+
+	for _, playlist in ipairs(playlists) do
+			local tracks = PlaylistArt.tracks(app, playlist)
+			local active = current.kind == "playlist" and current.id == playlist.id
+			local style = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
+			:justify("space-between"):radius(theme:radius("sm"))
+			:bg(active and theme:color("elevated") or theme:color("sidebar", 0))
+			local over = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
+			:justify("space-between"):radius(theme:radius("sm")):bg(theme:color("hover"))
+			if collapsed then
+				style:justify("center")
+				over:justify("center")
+			end
+
+			local row = div():style(style):hover(over)
+			:onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id}})
+			:children(PlaylistArt.art(app, tracks, artSize, nil, playlist.name))
+
+			if not collapsed then
+				row:children(text(util.count(#tracks, "track")):style(theme:s():text(theme:type("xs"))
+				:fg(theme:color("faint"))))
+			end
+
+			-- A row that is not being pointed at says nothing; the tooltip is where a playlist gets
+			-- its name back. The list's own hit test is what knows which row the pointer is over.
+			rows[#rows + 1] = row
+		end
+
+	local createStyle = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
+	:radius(theme:radius("sm")):bg(theme:color("accent", 0.13))
+	local createHover = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
+	:radius(theme:radius("sm")):bg(theme:color("accent", 0.22))
+	if collapsed then
+		createStyle:justify("center")
+		createHover:justify("center")
+	else
+		createStyle:pad(0, theme:px(8), 0, theme:px(8))
+		createHover:pad(0, theme:px(8), 0, theme:px(8))
+	end
+
+	local create = div():style(createStyle):hover(createHover)
+	:onClick({ type = "open", overlay = "playlist_dialog", smart = false})
+	:children({
+	div():style(sty():size(artSize, artSize):radius(theme:radius("sm")):bg(theme:color("accent", 0.18))
+	:align("center"):justify("center")):children(ui.icons.element("add", theme:px(18),
+	theme:color("accent"))),
+	})
+	if not collapsed then
+		create:children(text("New playlist"):style(theme:s():text(theme:type("sm")):weight("semibold")
+		:fg(theme:color("accent"))))
+	end
+	rows[#rows + 1] = create
+
+	local listHeight = #rows * rowHeight + math.max(0, #rows - 1) * rowGap
+
+	---@param relY number
+	---@return { type: string, id: number?, y: number? }?
+	local function hoverAt(relY)
+		local offset = relY - listTop
+		local hovered = nil
+		if offset >= 0 then
+			local index = math.floor(offset / rowStep) + 1
+			local within = offset - (index - 1) * rowStep
+			if index <= #playlists and within < rowHeight then
+				local rowTop = listTop + (index - 1) * rowStep
+				local artX = collapsed and side / 2 or (theme:px(16) + artSize / 2)
+				hovered = {
+				id = playlists[index].id,
+				y = rowTop + rowHeight / 2,
+				-- The arrow meets the artwork's top edge, not the taller hover row around it.
+				top = rowTop + (rowHeight - artSize) / 2,
+				x = artX,
+				height = artSize,
+				}
+			end
+		end
+
+		-- A message is a frame: moving inside one row, or over anything that has no shortcut,
+		-- asks for nothing when the tooltip is already in the state that movement means.
+		local old = app.hoverPlaylist
+		if hovered == nil then
+			if old == nil then return nil end
+			return { type = "hoverPlaylist", id = nil}
+		end
+		if old ~= nil and old.id == hovered.id and old.y == hovered.y
+		and old.top == hovered.top and old.x == hovered.x then return nil end
+		return {
+		type = "hoverPlaylist", id = hovered.id, y = hovered.y,
+		top = hovered.top, x = hovered.x, height = hovered.height,
+		}
+	end
+
+	return div()
+	:style(sty():w(side):hrel(1.0):column():pad(0, theme:px(16), 0, theme:px(16))
+	:gap(theme:px(4)):bg(theme:color("sidebar")))
+	:resize({
+	edge = "right",
+	min = theme:px(200),
+	max = theme:px(360),
+	grab = theme:px(5),
+	onchange = function(size)
+		return { type = "sidebarWidth", width = size / theme.scale}
+	end,
+	})
+	:onMouseMove(function(_, relY) return hoverAt(relY --[[@as number]]) end)
+	:children({
+	div():style(brandStyle):onClick({ type = "toggleSidebar"}):children(brandChildren),
+	div():style(sty():h(1):bg(theme:color("border"))),
+	div():style(sty():column():h(navHeight):gap(theme:px(2))
+	:pad(theme:px(10), 0, 0, 0)):children(navChildren),
+	div():style(sty():h(1):bg(theme:color("border"))),
+	div():style(sty():h(theme:px(16))),
+	div():style(sty():column():h(theme:px(collapsed and 0 or 28) + listHeight)
+	:gap(sectionGap)):children({
+	(function()
+		if collapsed then return div():style(sty():h(theme:px(0))) end
+		return div():style(sty():row():wrel(1.0):h(theme:px(24)):align("center")
+		:justify("space-between")):children({
+		text("PLAYLISTS"):style(theme:s():text(theme:type("xs"))
+		:weight("bold"):fg(theme:color("faint"))),
+		})
+	end)(),
+	div():style(sty():column():h(listHeight):gap(rowGap)):children(rows),
+	}),
+	})
+end
+
+--- The name a sidebar playlist hides until it is pointed at. It is drawn over the page rather
+--- than inside the narrow sidebar, and clamped so the last row's label stays on screen.
+---@param app beat.App
+---@param width number
+---@param height number
+---@return wonderland.Element?
+function sidebar.tooltip(app, width, height)
+	local hover = app.hoverPlaylist
+	if hover == nil or app.taxonomy == nil then return nil end
+	local playlist = app.taxonomy:playlist(hover.id)
+	if playlist == nil then return nil end
+
+	local theme = app.theme
+	local pad = theme:px(8)
+	local nameStyle = theme:s():text(theme:type("sm")):weight("semibold")
+	local measured = measure.width(app, playlist.name, nameStyle)
+	local fallback = measure.estimate(playlist.name, theme:type("sm"), 0.45)
+	local border = theme:px(1)
+	local nameWidth = math.min(theme:px(180), math.max(theme:px(8),
+	math.ceil(measured or fallback)))
+	local boxWidth = nameWidth + pad * 2 + border * 2
+	local boxHeight = theme:px(30)
+	local arrowWidth = theme:px(14)
+	local arrowHeight = theme:px(7)
+	local totalHeight = boxHeight + arrowHeight
+	local artWidth = hover.height or theme:px(40)
+	local centre = hover.x or (metrics.sidebarWidth(app, width) / 2)
+	local wrapperX = centre - artWidth / 2
+	local rowTop = hover.top or (hover.y - (hover.height or theme:px(52)) / 2)
+	local wrapperY = math.max(theme:px(8), rowTop - totalHeight)
+
+	-- The box is as wide as the run Wonderland measured, so emoji and other wide glyphs keep
+	-- their own padding rather than being sized by a byte count.
+	local box = div()
+	:style(sty():w(boxWidth):h(boxHeight):row():align("center")
+	:pad(0, pad, 0, pad):radius(theme:radius("sm"))
+	:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+	:shadow(0, theme:px(4), theme:px(14), "#00000099"))
+	:children({
+	text(playlist.name):style(theme:s():w(nameWidth):text(theme:type("sm")):weight("semibold")
+	:fg(theme:color("text"))),
+	})
+
+	local arrow = div():style(sty():w(arrowWidth):h(arrowHeight))
+	:canvas(function(canvas)
+		canvas:polygon({ 0, 0, canvas.width, 0, canvas.width / 2, canvas.height},
+		theme:color("elevated"))
+	end)
+
+	return div()
+	:style(sty():w(artWidth):h(totalHeight):offset(wrapperX, wrapperY):z(80):column():align("center"))
+	:onMouseMove(function() return nil end)
+	:children({ box, arrow})
+end
+
+return sidebar
