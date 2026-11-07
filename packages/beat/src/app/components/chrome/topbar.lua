@@ -1,8 +1,8 @@
 -- The top bar: back and forward, the search field, and the way into settings.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

@@ -5,8 +5,7 @@
 -- compiled in; what the settings it is handed own is the per-listener session key, so a save from
 -- here is the same save the settings screen makes.
 local core = require("beat-core")
-local credentials = require("beat.app.lastfm_credentials")
-local links = require("beat.app.links")
+local credentials = require("beat.app.services.lastfm.credentials")
 
 local curlOk, curl = pcall(require, "curl-sys")
 
@@ -83,7 +82,9 @@ local function new(settings, handlers, opts)
 	now = opts.now or os.time,
 	apiRoot = opts.apiRoot or API_ROOT,
 	authPage = opts.authPage or AUTH_PAGE,
-	openBrowser = opts.openBrowser or links.open,
+	-- What opens the authorization page comes from outside: the client is the network, not the
+	-- desktop. A caller that leaves it out simply cannot open one.
+	openBrowser = opts.openBrowser or function() return false end,
 	curl = opts.curl or (curlOk and curl or nil),
 	batch = nil,
 	pending = {},

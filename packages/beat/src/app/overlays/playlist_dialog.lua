@@ -1,8 +1,8 @@
 -- The playlist a New playlist button starts: a name, and the tags that make it follow tracks by
 -- themselves rather than only hold what is dropped on it.
 local wonderland = require("wonderland")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

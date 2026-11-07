@@ -2,8 +2,8 @@
 -- differ in the words and the one extra control they offer, not in how the page is built.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

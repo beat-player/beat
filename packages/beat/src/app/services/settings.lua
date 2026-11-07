@@ -4,7 +4,7 @@
 -- than done on every message. Everything else reads `values`; nothing saves on its own.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local Log = require("beat.app.log")
+local Log = require("beat.log")
 
 local time = wonderland.time
 local util = core.util

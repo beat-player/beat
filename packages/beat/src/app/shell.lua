@@ -4,14 +4,14 @@
 -- messages, and never change the app themselves.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local metrics = require("beat.app.metrics")
+local metrics = require("beat.app.components.metrics")
 local surfaces = require("beat.app.surfaces")
-local sidebar = require("beat.app.chrome.sidebar")
-local topbar = require("beat.app.chrome.topbar")
-local playerBar = require("beat.app.chrome.player_bar")
-local mobileNav = require("beat.app.chrome.mobile_nav")
-local scanStatus = require("beat.app.chrome.scan_status")
-local toasts = require("beat.app.chrome.toasts")
+local sidebar = require("beat.app.components.chrome.sidebar")
+local topbar = require("beat.app.components.chrome.topbar")
+local playerBar = require("beat.app.components.chrome.player_bar")
+local mobileNav = require("beat.app.components.chrome.mobile_nav")
+local scanStatus = require("beat.app.components.chrome.scan_status")
+local toasts = require("beat.app.components.chrome.toasts")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

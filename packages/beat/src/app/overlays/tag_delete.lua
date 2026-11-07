@@ -3,7 +3,7 @@
 -- dialog says how many tracks are involved before anything is removed.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local metrics = require("beat.app.metrics")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util

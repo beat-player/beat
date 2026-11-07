@@ -5,14 +5,14 @@
 -- Several readers work at once, which is what matters on a mount where each read is a round trip.
 -- The window never touches the music folder: it reads this process's local JSONL output.
 --
--- It runs in a copy of beat started with BEAT_WORKER=scan (see `beat.app.worker_process`), and starts
+-- It runs in a copy of beat started with BEAT_WORKER=scan (see `beat.workers.process`), and starts
 -- its inspectors the same way.
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
 local core = require("beat-core")
-local Log = require("beat.app.log")
-local workerProcess = require("beat.app.worker_process")
+local Log = require("beat.log")
+local workerProcess = require("beat.workers.process")
 local time = require("wonderland.time")
 local ffi = require("ffi")
 

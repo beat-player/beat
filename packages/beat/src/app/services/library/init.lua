@@ -3,7 +3,7 @@
 -- know when that happened rather than poll it every frame; and because the sort is computed over
 -- the whole library, it is kept until a track actually changes what is in it.
 local core = require("beat-core")
-local LibraryCache = require("beat.app.library_cache")
+local LibraryCache = require("beat.app.services.library.cache")
 local Signal = require("beat.app.signal")
 
 local util = core.util

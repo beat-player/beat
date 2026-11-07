@@ -3,8 +3,8 @@
 local wonderland = require("wonderland")
 local path = require("path")
 local core = require("beat-core")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util

@@ -2,13 +2,13 @@
 -- audio headers, writes track events, and fills the local cover cache. Several of these run at
 -- once so a high-latency mount can keep more than one file read in flight.
 --
--- It runs in a copy of beat started with BEAT_WORKER=inspect (see `beat.app.worker_process`), with
+-- It runs in a copy of beat started with BEAT_WORKER=inspect (see `beat.workers.process`), with
 -- the shard's paths in the environment.
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
 local core = require("beat-core")
-local Log = require("beat.app.log")
+local Log = require("beat.log")
 local audio = require("treble.audio")
 local time = require("wonderland.time")
 

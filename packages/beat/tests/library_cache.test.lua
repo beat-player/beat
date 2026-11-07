@@ -4,7 +4,7 @@
 -- case that only the scan's own answer can be right about.
 local test = require("lde-test")
 local core = require("beat-core")
-local LibraryCache = require("beat.app.library_cache")
+local LibraryCache = require("beat.app.services.library.cache")
 local fs = require("fs")
 
 local configDirectory = os.tmpname() .. "-beat-cache-config"

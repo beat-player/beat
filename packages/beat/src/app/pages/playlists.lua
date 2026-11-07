@@ -2,10 +2,10 @@
 -- name is edited in place here, so the draft and the one being edited belong to this page.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
-local measure = require("beat.app.measure")
-local PlaylistArt = require("beat.app.playlist_art")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
+local measure = require("beat.app.components.measure")
+local PlaylistArt = require("beat.app.components.playlist_art")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util

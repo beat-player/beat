@@ -1,7 +1,7 @@
 -- The volume bubble, opened from the now-playing controls. It is a panel beside the transport
 -- rather than a child of the volume button, and the now-playing screen offsets it there.
 local wonderland = require("wonderland")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 
 local div, sty = wonderland.div, wonderland.sty
 

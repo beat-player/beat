@@ -1,6 +1,6 @@
 local test = require("lde-test")
 local fs = require("fs")
-local picker = require("beat.app.picker")
+local picker = require("beat.app.services.scan.picker")
 
 local function resultFile(value)
 	local file = os.tmpname() .. "-beat-picker-test"

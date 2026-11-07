@@ -4,7 +4,7 @@ local test = require("lde-test")
 local wonderland = require("wonderland")
 local core = require("beat-core")
 local App = require("beat.app")
-local TagStore = require("beat.app.tag_store")
+local TagStore = require("beat.app.services.collections.store")
 local fs = require("fs")
 local style = require("wonderland.style")
 
@@ -183,17 +183,17 @@ test.it("wakes the ticker when navigation starts an animation", function()
 	App.ticker = ticker
 end)
 
-test.it("opens the About link through the platform opener", function()
-	local links = require("beat.app.links")
-	local open, opened = links.open, nil
-	links.open = function(url)
+test.it("opens the About link through the system service", function()
+	local system = App.services.system
+	local open, opened = system.open, nil
+	system.open = function(_, url)
 		opened = url
 		return true
 	end
 
 	App.page = { kind = "settings", state = {}}
 	App:act({ type = "openURL", url = "https://github.com/bycruz/beat"})
-	links.open = open
+	system.open = open
 	test.equal(opened, "https://github.com/bycruz/beat", "the GitHub button asks the desktop to open its URL")
 end)
 
@@ -779,7 +779,7 @@ end)
 
 test.it("switches to the phone shell at narrow widths", function()
 	App:init({ scan = false})
-	local metrics = require("beat.app.metrics")
+	local metrics = require("beat.app.components.metrics")
 	test.truthy(metrics.mobile(App, 390))
 	test.equal(metrics.sidebarWidth(App, 390), 0, "the rail is gone")
 	test.equal(metrics.pad(App, 390), App.services.appearance.theme:space(16))
@@ -1366,7 +1366,7 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 end)
 
 test.it("takes at most two initials from a playlist name", function()
-	local PlaylistArt = require("beat.app.playlist_art")
+	local PlaylistArt = require("beat.app.components.playlist_art")
 	test.equal(PlaylistArt.initials("Maximum Overdrive"), "MO")
 	test.equal(PlaylistArt.initials("Favourites"), "F")
 	test.equal(PlaylistArt.initials("  night   drive  "), "ND")
@@ -1376,7 +1376,7 @@ test.it("takes at most two initials from a playlist name", function()
 end)
 
 test.it("uses only a playlist's real tracks in its mosaic", function()
-	local PlaylistArt = require("beat.app.playlist_art")
+	local PlaylistArt = require("beat.app.components.playlist_art")
 	local tracks = {}
 	for at = 1, 5 do tracks[at] = { id = at} end
 

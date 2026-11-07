@@ -3,8 +3,8 @@
 -- underneath while a transition runs.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 local surfaces = require("beat.app.surfaces")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty

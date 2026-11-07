@@ -2,7 +2,7 @@
 -- dialog, so a name that is no longer wanted is not a trip through the settings.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 local equalizer = require("beat.app.overlays.equalizer")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty

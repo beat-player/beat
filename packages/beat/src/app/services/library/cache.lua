@@ -6,7 +6,7 @@ local fs = require("fs")
 local json = require("json")
 local path = require("path")
 local core = require("beat-core")
-local Log = require("beat.app.log")
+local Log = require("beat.log")
 
 local LibraryCache = {}
 

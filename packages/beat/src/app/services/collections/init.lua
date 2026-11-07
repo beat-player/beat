@@ -2,7 +2,7 @@
 -- under it. They are keyed by track path and saved beside settings rather than in the scan cache,
 -- so a rescan keeps them; this is the one place that writes them, and everything that shows them
 -- hears about a change here rather than being told to redraw.
-local TagStore = require("beat.app.tag_store")
+local TagStore = require("beat.app.services.collections.store")
 local Signal = require("beat.app.signal")
 
 ---@class beat.CollectionsService

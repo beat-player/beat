@@ -1,7 +1,7 @@
 local test = require("lde-test")
 local fs = require("fs")
 local json = require("json")
-local ScanJob = require("beat.app.scan_job")
+local ScanJob = require("beat.app.services.scan.job")
 
 local function writeLines(file, values)
 	local handle = assert(io.open(file, "w"))

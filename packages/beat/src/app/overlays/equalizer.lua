@@ -3,7 +3,7 @@
 -- adjustment, not something that should compete with the transport every frame.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

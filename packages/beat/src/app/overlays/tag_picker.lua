@@ -1,8 +1,8 @@
 -- The tags on the track that is playing, as toggles. Clicking the dark area dismisses it;
 -- clicking the panel itself does not.
 local wonderland = require("wonderland")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

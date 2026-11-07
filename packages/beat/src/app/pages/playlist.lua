@@ -3,9 +3,9 @@
 local wonderland = require("wonderland")
 local core = require("beat-core")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
-local PlaylistArt = require("beat.app.playlist_art")
-local collection = require("beat.app.collection_view")
+local render = require("beat.app.components.ui")
+local PlaylistArt = require("beat.app.components.playlist_art")
+local collection = require("beat.app.components.collection_view")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util
