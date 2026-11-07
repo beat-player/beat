@@ -3,7 +3,7 @@
 local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
@@ -95,7 +95,7 @@ function scanStatus.summary(app, width)
 	local margin = metrics.mobile(app, width) and metrics.pad(app, width) or theme:space(24)
 
 	local detail = summary.skipped > 0
-	and names.count(summary.skipped, "file") .. " skipped"
+	and format.count(summary.skipped, "file") .. " skipped"
 	or "Saved to your library"
 	local detailColour = summary.skipped > 0 and theme:color("danger") or theme:color("muted")
 
@@ -124,7 +124,7 @@ function scanStatus.summary(app, width)
 	text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold")
 	:fg(theme:color("text"))),
 	}),
-	text(names.count(summary.tracks, "track") .. " · " .. names.count(summary.albums, "album")):style(
+	text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(
 	theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))
 	),
 	text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)),

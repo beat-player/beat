@@ -1,67 +1,17 @@
 -- The equalizer panel: preset shapes above five bands, each band a slider and a signed gain. It
 -- is deliberately a panel rather than a permanent row of faders: the controls are a deliberate
--- adjustment, not something that should compete with the transport every frame.
+-- adjustment, not something that should compete with the transport every frame. Which presets
+-- exist, what they hold and what changing one means is the equalizer service's; this file draws
+-- them and sends what was clicked.
 local wonderland = require("wonderland")
-local equalizerBands = require("beat.app.services.playback.equalizer")
 local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+--- A dialog rather than a menu: the action messages the preset chips and faders send are the
+--- equalizer service's to answer, so the panel must stay open while they pass through it.
 ---@type beat.OverlaySurface
-local equalizer = { light = true}
-
---- The built-in shapes and the ones this person has saved, in the order the panel draws them.
----@param app beat.App
----@return beat.EqualizerPreset[]
-function equalizer.presets(app)
-	local list = {}
-	for _, preset in ipairs(equalizerBands.presets) do list[#list + 1] = preset end
-	for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
-			list[#list + 1] = {
-			id = preset.name,
-			name = preset.name,
-			gains = preset.gains,
-			custom = true,
-			}
-		end
-	return list
-end
-
----@param app beat.App
----@param id string?
----@return beat.EqualizerPreset?
-function equalizer.find(app, id)
-	if id == nil then return nil end
-	for _, preset in ipairs(equalizer.presets(app)) do
-			if preset.id == id then return preset end
-		end
-	return nil
-end
-
----@param app beat.App
----@return string
-function equalizer.nextName(app)
-	local used = {}
-	for _, preset in ipairs(equalizer.presets(app)) do used[preset.name] = true end
-	local name = "Custom"
-	local number = 2
-	while used[name] do
-		name = "Custom " .. tostring(number)
-		number = number + 1
-	end
-	return name
-end
-
----@param app beat.App
----@param oldName string
----@param newName string
----@return boolean
-function equalizer.nameFree(app, oldName, newName)
-	for _, preset in ipairs(equalizer.presets(app)) do
-			if preset.name == newName and preset.name ~= oldName then return false end
-		end
-	return true
-end
+local equalizer = {}
 
 function equalizer.new()
 	return {}
@@ -73,59 +23,11 @@ function equalizer.close(app, _overlay)
 	app:focusField(nil)
 end
 
+--- The button that opened the panel closes it rather than opening a second one. Preset actions
+--- are messages the equalizer service answers; the panel does not know what they mean.
 function equalizer.update(app, overlay, message)
-	local kind = message.type
-	if kind == "toggleEqualizer" then
-		-- The equalizer button closes what it opened rather than opening a second panel.
-		app:close(overlay)
-	elseif kind == "equalizerPreset" then
-		local preset = equalizer.find(app, message.id)
-		if preset ~= nil then
-			app.services.settings.values.equalizerPreset = preset.id
-			app.services.settings.values.equalizerGains = equalizerBands.copyGains(preset.gains)
-			app.services.playback.player:setEqualizer(equalizerBands.bands(app.services.settings.values.equalizerGains))
-			app.services.settings:changed()
-			app:refresh()
-		end
-	elseif kind == "newEqualizerPreset" then
-		if #app.services.settings.values.equalizerCustomPresets >= 8 then
-			app.services.toasts:show("That is enough custom presets for now", "error")
-		else
-			local name = equalizer.nextName(app)
-			local gains = equalizerBands.copyGains(app.services.settings.values.equalizerGains)
-			app.services.settings.values.equalizerCustomPresets[#app.services.settings.values.equalizerCustomPresets + 1] = {
-			name = name,
-			gains = gains,
-			}
-			app.services.settings.values.equalizerPreset = name
-			app.services.playback.player:setEqualizer(equalizerBands.bands(gains))
-			app.services.settings:changed()
-			app:refresh()
-		end
-	elseif kind == "editEqualizerPreset" then
-		local preset = equalizer.find(app, message.name)
-		if preset ~= nil and preset.custom then app:open("equalizer_rename", { name = preset.name}) end
-	elseif kind == "equalizerGain" then
-		local band = message.band
-		if type(band) == "number" and band >= 1 and band <= #equalizerBands.frequencies then
-			local gains = equalizerBands.sanitize(app.services.settings.values.equalizerGains)
-			gains[band] = equalizerBands.clamp(message.value or 0)
-			local selected = equalizer.find(app, app.services.settings.values.equalizerPreset)
-			if selected ~= nil and selected.custom then
-				for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
-						if preset.name == selected.id then preset.gains = equalizerBands.copyGains(gains) end
-					end
-			else
-				app.services.settings.values.equalizerPreset = "custom"
-			end
-			app.services.settings.values.equalizerGains = gains
-			app.services.playback.player:setEqualizer(equalizerBands.bands(gains))
-			app.services.settings:changed()
-			app:refresh()
-		end
-	else
-		return false
-	end
+	if message.type ~= "toggleEqualizer" then return false end
+	app:close(overlay)
 	return true
 end
 
@@ -136,7 +38,7 @@ end
 ---@return wonderland.Element
 local function equalizerChip(app, preset, width, height)
 	local theme = app.services.appearance.theme
-	local selected = app.services.settings.values.equalizerPreset == preset.id
+	local selected = app.services.equalizer:selected() == preset.id
 	local textColour = selected and theme.accentInk or theme:color("muted")
 	local resting = selected and theme:color("accent") or theme:color("surface")
 	local hover = selected and theme:color("accent", 0.86) or theme:color("hover")
@@ -160,6 +62,7 @@ end
 ---@return wonderland.Element
 function equalizer.view(app, _overlay, window)
 	local theme = app.services.appearance.theme
+	local service = app.services.equalizer
 	local compact = window.height < theme:px(520)
 	local width = math.min(theme:px(460), window.width - theme:px(24))
 	local padding = compact and theme:px(10) or theme:px(18)
@@ -167,14 +70,14 @@ function equalizer.view(app, _overlay, window)
 	local content = width - padding * 2
 	local chipWidth = compact and theme:px(72) or theme:px(78)
 	local chipHeight = compact and theme:px(22) or theme:px(24)
-	local presets = equalizer.presets(app)
+	local presets = service:presets()
 	local columns = math.max(1, math.floor((content + gap) / (chipWidth + gap)))
 	local presetRows = math.ceil(#presets / columns)
 	local presetHeight = presetRows * chipHeight + (presetRows - 1) * gap
 	local rowHeight = compact and theme:px(26) or theme:px(30)
 	local bandGap = theme:px(3)
-	local bandsHeight = #equalizerBands.frequencies * rowHeight
-	+(#equalizerBands.frequencies - 1) * bandGap
+	local bandsHeight = #service.frequencies * rowHeight
+	+(#service.frequencies - 1) * bandGap
 	local headerHeight = compact and theme:px(22) or theme:px(24)
 	local height = padding * 2 + headerHeight + gap + presetHeight + gap + bandsHeight
 	local panels = {}
@@ -208,20 +111,21 @@ function equalizer.view(app, _overlay, window)
 	local labelWidth = theme:px(60)
 	local valueWidth = theme:px(44)
 	local sliderWidth = content - labelWidth - valueWidth - gap * 2
-	for at = 1, #equalizerBands.frequencies do
-			local band = at
-			local gain = app.services.settings.values.equalizerGains[at] or 0
-			local shown = math.floor(gain + 0.5)
-			local value = shown == 0 and "0 dB" or string.format("%+d dB", shown)
-			panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)
-			:align("center")):children({
-			text(equalizerBands.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
-			:fg(theme:color("muted"))),
-			render.slider(app, {
-			width = sliderWidth,
-			value = gain,
-			min = equalizerBands.minimum,
-			max = equalizerBands.maximum,
+	local gains = service:gains()
+	for at = 1, #service.frequencies do
+		local band = at
+		local gain = gains[at] or 0
+		local shown = math.floor(gain + 0.5)
+		local value = shown == 0 and "0 dB" or string.format("%+d dB", shown)
+		panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)
+		:align("center")):children({
+		text(service.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
+		:fg(theme:color("muted"))),
+		render.slider(app, {
+		width = sliderWidth,
+		value = gain,
+		min = service.minimum,
+		max = service.maximum,
 			origin = 0.5,
 			onchange = function(value_) return { type = "equalizerGain", band = band, value = value_} end,
 			trackColour = theme:color("text", 0.12),

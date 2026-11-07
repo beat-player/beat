@@ -2,8 +2,7 @@
 -- they survive a rescan and are keyed by track path, which is the one identity a track keeps.
 local fs = require("fs")
 local json = require("json")
-local path = require("path")
-local settingsModel = require("beat.app.services.settings.model")
+local paths = require("beat.paths")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
 local Log = require("beat.log")
 
@@ -14,7 +13,7 @@ local VERSION = 1
 ---@param dir string?
 ---@return string
 local function storeFile(dir)
-	return path.join(dir or settingsModel.directory(), "tags.json")
+	return paths.file("tags.json", dir)
 end
 
 ---@param dir string?
@@ -45,7 +44,7 @@ end
 ---@return boolean
 ---@return string?
 function TagStore.save(taxonomy, dir)
-	local folder = dir or settingsModel.directory()
+	local folder = dir or paths.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end

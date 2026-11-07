@@ -3,7 +3,7 @@
 local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 local render = require("beat.app.components.ui")
 local metrics = require("beat.app.components.metrics")
 
@@ -135,7 +135,7 @@ function settings.view(app, page, window)
 	}
 	local scan = app.services.scan
 	if scan.skipped > 0 then
-		libraryRows[#libraryRows + 1] = text(names.count(scan.skipped, "file") .. " skipped"):style(
+		libraryRows[#libraryRows + 1] = text(format.count(scan.skipped, "file") .. " skipped"):style(
 		theme:s():text(theme:type("xs")):fg(theme:color("danger"))
 		)
 		for at, failure in ipairs(scan.errors) do

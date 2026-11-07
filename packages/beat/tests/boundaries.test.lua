@@ -4,9 +4,10 @@
 -- pay for a renderer it cannot draw with. A wonderland module that draws nothing -- its clock --
 -- is a module like any other.
 --
--- The guard is asked of the module doing the requiring rather than of every require in the load:
--- a worker reaches `beat.log`, which still reads the config directory through the settings model.
--- The modules under these two folders must stay free of the app themselves.
+-- The guard follows the whole load, not only the module doing the requiring: a worker reaches
+-- `beat.log`, and the log must not pull the app back in through a dependency of its own. While any
+-- module under these two folders is loading, every require below it is judged by the same rule --
+-- so the check stays true however deep the chain goes.
 local test = require("lde-test")
 local env = require("env")
 local fs = require("fs")
@@ -43,6 +44,9 @@ local function loadsWithoutApp(source)
 	return false
 end
 
+-- The music and worker modules whose load is in progress, innermost last.
+local LOADING = {}
+
 ---@param name string
 ---@return unknown
 local function guardedRequire(name)
@@ -50,11 +54,22 @@ local function guardedRequire(name)
 	local source = info and info.source or ""
 	if source:sub(1, 1) == "@" then source = source:sub(2) end
 
-	if loadsWithoutApp(source) and isForbidden(name) then
-		error(source .. " must load without the app, but requires " .. name, 0)
+	-- A module under the two folders is on the stack, or the requiring module is one of them.
+	local fromRoot = #LOADING > 0 or loadsWithoutApp(source)
+	if fromRoot and isForbidden(name) then
+		local owner = #LOADING > 0 and LOADING[#LOADING] or source
+		error(owner .. " must load without the app, but requires " .. name, 0)
 	end
 
-	return REAL_REQUIRE(name)
+	local tracked = loadsWithoutApp(source)
+	if tracked then LOADING[#LOADING + 1] = source end
+
+	local ok, result = pcall(REAL_REQUIRE, name)
+
+	if tracked then LOADING[#LOADING] = nil end
+	if not ok then error(result, 0) end
+
+	return result
 end
 
 ---@param name string

@@ -3,7 +3,7 @@
 -- album it belongs to -- a track credited "Kanye West, Jay-Z" in a folder of one album -- is the
 -- case that only the scan's own answer can be right about.
 local test = require("lde-test")
-local settingsModel = require("beat.app.services.settings.model")
+local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local LibraryCache = require("beat.app.services.library.cache")
 local fs = require("fs")
@@ -12,11 +12,11 @@ local configDirectory = os.tmpname() .. "-beat-cache-config"
 os.remove(configDirectory)
 fs.mkdirAll(configDirectory)
 
-local realDirectory = settingsModel.directory
-settingsModel.directory = function() return configDirectory end
+local realDirectory = paths.directory
+paths.directory = function() return configDirectory end
 
 test.afterAll(function()
-	settingsModel.directory = realDirectory
+	paths.directory = realDirectory
 	fs.rmdir(configDirectory)
 end)
 

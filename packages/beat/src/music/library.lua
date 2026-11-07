@@ -346,13 +346,4 @@ function Library:search(query)
 	return albums, artists, tracks
 end
 
----@param album beat.Album
----@return string
-function Library:albumMeta(album)
-	local parts = { names.count(#album.tracks, "track")}
-	if album.duration > 0 then parts[#parts + 1] = names.duration(album.duration) end
-	if album.year ~= nil then parts[#parts + 1] = tostring(album.year) end
-	return table.concat(parts, " · ")
-end
-
 return Library

@@ -2,7 +2,7 @@
 -- straight away, but one that has is also what its automatic playlist is built from. The
 -- dialog says how many tracks are involved before anything is removed.
 local wonderland = require("wonderland")
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -80,7 +80,7 @@ function tagDelete.view(app, overlay, window)
 	:children({
 	text("Delete “" .. tag.name .. "”?"):style(theme:s():wrel(1.0):text(theme:type("lg"))
 	:weight("bold"):fg(theme:color("text")):ellipsis()),
-	text("It is used on " .. names.count(tag.count, "track") .. "."):style(
+	text("It is used on " .. format.count(tag.count, "track") .. "."):style(
 	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
 	text("Its automatic playlist will be deleted too."):style(
 	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),

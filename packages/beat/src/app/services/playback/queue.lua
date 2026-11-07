@@ -1,6 +1,5 @@
 -- The playback order: what is playing, what comes next, and how the two ends of the queue behave.
 -- It is state, not a player; `beat.app.services.playback.player` is what hands this order to treble.
-local names = require("beat.music.names")
 
 ---@class beat.Queue
 ---@field tracks beat.Track[]
@@ -227,11 +226,6 @@ function Queue:replace(tracks, index)
 	self.naturalOrder = naturalOrder
 	self.position = math.max(1, math.min(index or 1, #tracks))
 	if self.shuffle then self:shuffleOrder() end
-end
-
----@return string
-function Queue:label()
-	return names.count(#self.tracks, "track") .. " · " .. self.source
 end
 
 return Queue

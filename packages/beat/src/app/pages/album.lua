@@ -1,6 +1,6 @@
 -- The album screen: its cover, its details and its track table. The artist's name opens the
 -- artist's page.
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 local render = require("beat.app.components.ui")
 local collection = require("beat.app.components.collection_view")
 
@@ -50,8 +50,8 @@ function albumPage.view(app, page, window)
 	title = album.title,
 	subtitle = album.artist,
 	subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId}},
-	meta = (album.year and (album.year .. " · ") or "") .. names.count(#album.tracks, "track")
-	.. " · " .. names.duration(album.duration),
+	meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track")
+	.. " · " .. format.duration(album.duration),
 	playAction = thisAlbum and { type = "togglePlay"} or { type = "playAlbum", id = album.id},
 	playIcon = playing and thisAlbum and "pause" or "play",
 	titleOnly = true,

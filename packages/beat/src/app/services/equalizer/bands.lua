@@ -1,7 +1,9 @@
--- The five bands the app's equalizer exposes, and the presets that make them useful without
--- asking someone to know what 910 Hz should sound like. The numbers are gains in dB; they are
--- deliberately gentle enough that the preset names describe a broad shape rather than a
--- caricature, and the two bass presets move different parts of the low end.
+-- The math inside the equalizer service: the five bands it exposes, the presets that make them
+-- useful without asking someone to know what 910 Hz should sound like, and the conversions between
+-- saved gains, preset gains and the bands the audio player takes. Nothing outside the service's
+-- folder needs the numbers without the rules that go with them.
+-- The numbers are gains in dB; they are deliberately gentle enough that the preset names describe a
+-- broad shape rather than a caricature, and the two bass presets move different parts of the low end.
 local equalizer = {}
 
 equalizer.frequencies = { 60, 230, 910, 3600, 14000}

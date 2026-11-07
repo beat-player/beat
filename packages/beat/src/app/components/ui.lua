@@ -2,7 +2,7 @@
 -- the app decides what a click means and the theme decides what everything looks like.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -295,7 +295,7 @@ function render.trackRow(app, track, index, current, playing, onClick, width, sh
 	end
 
 	children[#children + 1] = div():style(sty():w(54):h(48):column():align("start"):justify("center")):children(
-	text(names.clock(track.duration)):style(theme:s():text(theme:type("sm")):fg(muted))
+	text(format.clock(track.duration)):style(theme:s():text(theme:type("sm")):fg(muted))
 	)
 
 	return div()
@@ -781,7 +781,7 @@ function render.progress(app, track, player, width)
 
 	local function clock(value)
 		return div():style(sty():w(clockWidth):h(theme:px(18)):row():align("center"):justify("center"))
-		:children(text(names.clock(value)):style(theme:s():text(theme:type("xs"))
+		:children(text(format.clock(value)):style(theme:s():text(theme:type("xs"))
 		:fg(theme:color("faint"))))
 	end
 

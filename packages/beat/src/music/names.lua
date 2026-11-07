@@ -1,17 +1,10 @@
--- Small things the library and the screens agree on: how a duration is written, how a name is
--- folded for comparison, and what a file name says when a tag does not.
+-- What a collection on disk says about itself: how a name is folded for comparison, how a file
+-- name breaks into a title, and the key an album is grouped by. Nothing here writes for the
+-- screen -- a track time or a counted noun belongs to the components. A scan worker loads this
+-- file without the app, so it must stay free of anything that draws.
 local path = require("path")
 
 local names = {}
-
----@param value number
----@param low number
----@param high number
-function names.clamp(value, low, high)
-	if value < low then return low end
-	if value > high then return high end
-	return value
-end
 
 --- A name folded for search. `string.lower` is ASCII-only, which is the right promise: a query
 --- keeps its own script, and the Latin part of a title is compared without case.
@@ -42,49 +35,6 @@ function names.yearOf(value)
 	local year = tonumber(value:match("%d%d%d%d"))
 
 	return year
-end
-
----@param seconds number
----@return string
-function names.clock(seconds)
-	if seconds == nil or seconds <= 0 then return "--:--" end
-
-	local whole = math.floor(seconds + 0.5)
-	local minutes = math.floor(whole / 60)
-	local rest = whole % 60
-
-	if minutes >= 60 then
-		local hours = math.floor(minutes / 60)
-		return string.format("%d:%02d:%02d", hours, minutes % 60, rest)
-	end
-
-	return string.format("%d:%02d", minutes, rest)
-end
-
----@param seconds number
----@return string
-function names.duration(seconds)
-	if seconds <= 0 then return "unknown length" end
-
-	local minutes = math.floor(seconds / 60 + 0.5)
-
-	if minutes < 60 then
-		return string.format("%d min", math.max(1, minutes))
-	end
-
-	local hours = math.floor(minutes / 60)
-	local rest = minutes % 60
-
-	if rest == 0 then return string.format("%d hr", hours) end
-
-	return string.format("%d hr %d min", hours, rest)
-end
-
----@param count number
----@param singular string
----@param plural string?
-function names.count(count, singular, plural)
-	return string.format("%d %s", count, count == 1 and singular or (plural or singular .. "s"))
 end
 
 ---@param value string
