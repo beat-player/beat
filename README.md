@@ -14,8 +14,8 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 | `packages/beat-core` | Scanning, library grouping, tags and playlists, search, cover caching/downscaling, queue, playback, Last.fm signing |
 | `packages/beat-ui` | Theme tokens, motion, icons and shared drawing primitives |
 | `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width |
-| `packages/beat/tools/scan-worker.lua` | Source entry point for the background scanner; a compiled binary runs its bundled copy |
-| `packages/beat/src/app/scan_worker.lua` | The bundled scanner coordinator and its inspector entry |
+| `packages/beat/src/app/worker_process.lua` | Starts a background worker as a copy of beat: the executable again, or `lde run` of the package from source |
+| `packages/beat/src/app/scan_worker.lua` | The scanner coordinator and its inspector entry |
 | `packages/beat/tools/shots.lua` | Renders the screenshot matrix into `packages/beat/docs/screens/` |
 | `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
 | `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
@@ -45,9 +45,9 @@ separate window — zenity or kdialog on Linux, the Finder chooser on macOS. The
 while the dialog is open, polls its result, and starts the scan when a folder is chosen. **Browse**
 is the in-app fallback, and dropping a folder on the window also starts a scan.
 
-Scanning runs as a separate coordinator process. A source checkout starts it from
-`packages/beat/tools/scan-worker.lua`; a compiled executable runs itself again, so the release needs
-no `lde` or tools directory. It walks the folder once, then starts a small pool of inspector
+Scanning runs as a separate coordinator process: beat started again with `BEAT_WORKER=scan` — the
+compiled executable itself, or `lde run` of the package in a source checkout — so it needs no extra
+scripts on disk. It walks the folder once, then starts a small pool of inspector
 processes (`BEAT_SCAN_WORKERS`, four by default) so a high-latency mount keeps several file reads in
 flight. The library grows as tracks report, so albums,
 search and playback are usable before the scan finishes. The inspectors also write one downscaled

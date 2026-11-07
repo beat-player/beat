@@ -2,8 +2,8 @@
 -- audio headers, writes track events, and fills the local cover cache. Several of these run at
 -- once so a high-latency mount can keep more than one file read in flight.
 --
--- The source checkout runs this through `tools/scan-inspect-worker.lua`; a compiled executable runs
--- it in a copy of itself, with the shard's paths in the environment.
+-- It runs in a copy of beat started with BEAT_WORKER=inspect (see `beat.app.worker_process`), with
+-- the shard's paths in the environment.
 local env = require("env")
 local fs = require("fs")
 local json = require("json")

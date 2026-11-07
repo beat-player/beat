@@ -5,15 +5,14 @@
 -- Several readers work at once, which is what matters on a mount where each read is a round trip.
 -- The window never touches the music folder: it reads this process's local JSONL output.
 --
--- The source checkout runs this through `tools/scan-worker.lua`; a compiled executable runs it by
--- spawning itself with BEAT_WORKER=scan, because the bundle carries this module and no tools
--- directory travels beside the binary.
+-- It runs in a copy of beat started with BEAT_WORKER=scan (see `beat.app.worker_process`), and starts
+-- its inspectors the same way.
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
 local core = require("beat-core")
-local process = require("process")
 local Log = require("beat.app.log")
+local workerProcess = require("beat.app.worker_process")
 local time = require("wonderland.time")
 local ffi = require("ffi")
 
@@ -272,16 +271,12 @@ local ok, err = pcall(function()
 			for _, entry in ipairs(shardEntries) do listing:write(json.encode(entry), "\n") end
 			listing:close()
 
-			local child, spawnErr = process.spawn(assert(env.execPath()), {}, {
-				env = {
-					BEAT_WORKER = "inspect",
-					BEAT_SCAN_MANIFEST = manifest,
-					BEAT_SCAN_OUTPUT = shardOutput,
-					BEAT_SCAN_CANCEL = cancelFile,
-					BEAT_SCAN_ROOT = root,
-				},
-				stdout = "null",
-				stderr = "null",
+			local child, spawnErr = workerProcess.spawn({
+				BEAT_WORKER = "inspect",
+				BEAT_SCAN_MANIFEST = manifest,
+				BEAT_SCAN_OUTPUT = shardOutput,
+				BEAT_SCAN_CANCEL = cancelFile,
+				BEAT_SCAN_ROOT = root,
 			})
 			if child == nil then
 				error("could not start scan inspector " .. at .. ": " .. tostring(spawnErr))
