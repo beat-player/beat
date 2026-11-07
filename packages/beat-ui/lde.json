@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"dependencies": {
 		"utf8": { "version": "^0.1.0" },
-		"wonderland": { "version": "^0.1.6" }
+		"wonderland": { "version": "^0.1.8" }
 	},
 	"devDependencies": {
 		"lde-test": {
