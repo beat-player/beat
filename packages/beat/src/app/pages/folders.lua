@@ -4,8 +4,8 @@ local wonderland = require("wonderland")
 local fs = require("fs")
 local path = require("path")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local button = require("beat.app.components.button")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -81,14 +81,31 @@ function folders.view(app, page, window)
 	local pad = metrics.pad(app, window.width)
 	local rows = {}
 
-	local choose = render.button(app, "Choose folder…", { type = "chooseFolder"},
-	{ primary = true, height = theme:px(30), width = theme:px(142)})
-	local up = render.button(app, "Up", { type = "folderUp"},
-	{ height = theme:px(30), width = theme:px(48)})
-	local select = render.button(app, "Select this folder", { type = "folderSelect", path = state.path},
-	{ height = theme:px(30), width = theme:px(150)})
-	local cancel = app.services.library.current ~= nil and render.button(app, "Cancel", { type = "cancelFolders"},
-	{ height = theme:px(30), width = theme:px(80)}) or nil
+	local choose = button.view(app, {
+	label = "Choose folder…",
+	onClick = { type = "chooseFolder"},
+	primary = true,
+	height = theme:px(30),
+	width = theme:px(142),
+	})
+	local up = button.view(app, {
+	label = "Up",
+	onClick = { type = "folderUp"},
+	height = theme:px(30),
+	width = theme:px(48),
+	})
+	local select = button.view(app, {
+	label = "Select this folder",
+	onClick = { type = "folderSelect", path = state.path},
+	height = theme:px(30),
+	width = theme:px(150),
+	})
+	local cancel = app.services.library.current ~= nil and button.view(app, {
+	label = "Cancel",
+	onClick = { type = "cancelFolders"},
+	height = theme:px(30),
+	width = theme:px(80),
+	}) or nil
 
 	if mobile then
 		local second = { select}

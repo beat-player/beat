@@ -1,9 +1,13 @@
 -- The artist screen: a hero of their first cover, their top tracks, and every album.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
+local format = require("beat.app.components.helpers.format")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local albumCard = require("beat.app.components.album_card")
+local cover = require("beat.app.components.cover")
+local emptyState = require("beat.app.components.empty_state")
+local section = require("beat.app.components.section")
+local trackRow = require("beat.app.components.track_row")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -25,8 +29,12 @@ end
 function artistPage.view(app, page, window)
 	local artist = app.services.library.current ~= nil and app.services.library.current:artist(page.id) or nil
 	if artist == nil then
-		return render.empty(app, "Artist not found", "The scan no longer has them.", "Library",
-		{ type = "navigate", page = { kind = "library"}})
+		return emptyState.view(app, {
+		title = "Artist not found",
+		copy = "The scan no longer has them.",
+		actionLabel = "Library",
+		action = { type = "navigate", page = { kind = "library"}},
+		})
 	end
 	---@cast artist beat.Artist
 	local theme = app.services.appearance.theme
@@ -37,7 +45,7 @@ function artistPage.view(app, page, window)
 	local columns = metrics.gridColumns(content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
-	local cardHeight = render.albumCardHeight(app, cardWidth)
+	local cardHeight = albumCard.height(app, { width = cardWidth })
 	local topCount = math.min(6, #artist.tracks)
 	local topHeight = theme:px(24) + topCount * theme:px(48)
 	local albumRows = math.ceil(#artist.albums / columns)
@@ -57,7 +65,7 @@ function artistPage.view(app, page, window)
 
 	local hero = div():style(sty():row():wrel(1.0):h(heroHeight):pad(0, 0, 0, 0):gap(theme:space(24))
 	:align("center")):children({
-	album ~= nil and render.cover(app, album, heroSize, theme:radius("lg"), true)
+	album ~= nil and cover.view(app, { album = album, size = heroSize, radius = theme:radius("lg"), glow = true })
 	or div():style(sty():size(heroSize, heroSize):radius(theme:radius("lg")):bg(theme:color("elevated"))),
 	div():style(sty():column():h(heroHeight):justify("center"):gap(theme:px(8))):children({
 	text("ARTIST"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
@@ -80,9 +88,15 @@ function artistPage.view(app, page, window)
 	local top = {}
 	for index, track in ipairs(artist.tracks) do
 			if index > 6 then break end
-			top[#top + 1] = render.trackRow(app, track, index,
-			app.services.playback:current() ~= nil and app.services.playback:current().id == track.id, app.services.playback.player:isPlaying(),
-			{ type = "playTrack", trackId = track.id, artistId = artist.id}, content, true)
+			top[#top + 1] = trackRow.view(app, {
+			track = track,
+			index = index,
+			current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+			playing = app.services.playback.player:isPlaying(),
+			onClick = { type = "playTrack", trackId = track.id, artistId = artist.id},
+			width = content,
+			showAlbum = true,
+			})
 		end
 
 	local rows = {}
@@ -91,9 +105,12 @@ function artistPage.view(app, page, window)
 	for at = first, last do
 			local release = artist.albums[at]
 			if release ~= nil then
-				row[#row + 1] = render.albumCard(app, release, cardWidth,
-				{ type = "navigate", page = { kind = "album", id = release.id}},
-				{ type = "playAlbum", id = release.id})
+				row[#row + 1] = albumCard.view(app, {
+				album = release,
+				width = cardWidth,
+				onOpen = { type = "navigate", page = { kind = "album", id = release.id}},
+				onPlay = { type = "playAlbum", id = release.id},
+				})
 			end
 			if #row == columns or at == last then
 				rows[#rows + 1] = div():style(sty():row():wrel(1.0):h("auto"):gap(gap)):children(row)
@@ -103,9 +120,9 @@ function artistPage.view(app, page, window)
 
 	return div():style(sty():column():wrel(1.0):h(contentHeight):gap(theme:space(24))):children({
 	hero,
-	render.section(app, "Top tracks"),
+	section.view(app, { title = "Top tracks" }),
 	div():style(sty():column():wrel(1.0):h(topHeight):gap(2)):children(top),
-	render.section(app, "Albums"),
+	section.view(app, { title = "Albums" }),
 	div():style(sty():column():wrel(1.0):h(albumsHeight):gap(gap)):children(rows),
 	})
 end

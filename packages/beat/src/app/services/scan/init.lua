@@ -70,6 +70,17 @@ function Scan:needsFolder()
 	return self.settings.values.root == nil
 end
 
+--- How far the running scan has got, from nothing to done. The two cards that draw it and the
+--- home screen's placeholder all ask the scan rather than working the fraction out themselves.
+---@return number
+function Scan:fraction()
+	local job = self.job
+	if job == nil then return 0 end
+	local progress = job:progress()
+	if progress.files <= 0 then return 0 end
+	return math.max(0, math.min(1, progress.inspected / progress.files))
+end
+
 --- A launch draws the last complete scan, so it only scans when there is nothing to draw; a
 --- manual Rescan replaces what is there. `App:init` used to decide this before anything had a
 --- chance to draw.

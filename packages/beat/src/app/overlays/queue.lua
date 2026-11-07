@@ -1,6 +1,6 @@
 -- The queue, as a panel opened from the now-playing screen's queue button.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
+local format = require("beat.app.components.helpers.format")
 local nowPlaying = require("beat.app.overlays.now_playing")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty

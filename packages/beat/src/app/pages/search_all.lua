@@ -1,9 +1,13 @@
 -- Everything search found in one category, scrolled as a grid of albums or a list of artists or
 -- tracks.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local format = require("beat.app.components.helpers.format")
+local albumCard = require("beat.app.components.album_card")
+local cover = require("beat.app.components.cover")
+local emptyState = require("beat.app.components.empty_state")
+local tagPills = require("beat.app.components.tag_pills")
+local trackRow = require("beat.app.components.track_row")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -27,9 +31,15 @@ local function searchTagFilter(app, width)
 	local theme = app.services.appearance.theme
 	local search = app.services.search
 	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
-	local pills = render.tagPills(app, tags, search.tagFilter, function(tag)
+	local pills = tagPills.view(app, {
+	tags = tags,
+	selected = search.tagFilter,
+	action = function(tag)
 		return { type = "toggleTagFilter", id = tag.id}
-	end, width, columns)
+	end,
+	width = width,
+	columns = columns,
+	})
 	if pills == nil then return nil, 0 end
 
 	local headerActions = {}
@@ -66,12 +76,18 @@ function searchAll.view(app, page, window)
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
-		return render.empty(app, "Search your library", "Choose a folder first.", "Choose a folder",
-		{ type = "chooseFolder"})
+		return emptyState.view(app, {
+		title = "Search your library",
+		copy = "Choose a folder first.",
+		actionLabel = "Choose a folder",
+		action = { type = "chooseFolder"},
+		})
 	end
 	if search.query == "" then
-		return render.empty(app, "Search your library", "Artists, albums and tracks are all one field.",
-		nil, nil)
+		return emptyState.view(app, {
+		title = "Search your library",
+		copy = "Artists, albums and tracks are all one field.",
+		})
 	end
 
 	local albums, artists, tracks = search:results()
@@ -81,7 +97,7 @@ function searchAll.view(app, page, window)
 	local gap = theme:space(16)
 	local columns = metrics.gridColumns(width)
 	local cardWidth = math.max(120, math.floor((width - gap * (columns - 1)) / columns))
-	local cardHeight = render.albumCardHeight(app, cardWidth)
+	local cardHeight = albumCard.height(app, { width = cardWidth })
 	local headerHeight = theme:px(58) + filterHeight
 	local listStart = headerHeight + gap + (filter ~= nil and gap or 0)
 	local rowHeight, perRow
@@ -124,9 +140,12 @@ function searchAll.view(app, page, window)
 		for at = first, last do
 				local album = albums[at]
 				if album ~= nil then
-					row[#row + 1] = render.albumCard(app, album, cardWidth,
-					{ type = "navigate", page = { kind = "album", id = album.id}},
-					{ type = "playAlbum", id = album.id})
+					row[#row + 1] = albumCard.view(app, {
+					album = album,
+					width = cardWidth,
+					onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
+					onPlay = { type = "playAlbum", id = album.id},
+					})
 				end
 				if #row == columns or at == last then
 					list[#list + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)
@@ -144,8 +163,8 @@ function searchAll.view(app, page, window)
 					:radius(theme:radius("sm")):bg(theme:color("hover")))
 					:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
 					:children({
-					artist.albums[1] ~= nil and render.cover(app, artist.albums[1], theme:px(44),
-					theme:radius("full")) or div():style(sty():size(theme:px(44), theme:px(44))
+					artist.albums[1] ~= nil and cover.view(app, { album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") })
+					or div():style(sty():size(theme:px(44), theme:px(44))
 					:radius(theme:radius("full")):bg(theme:color("elevated"))),
 					text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold")
 					:fg(theme:color("text")):ellipsis()),
@@ -157,9 +176,15 @@ function searchAll.view(app, page, window)
 				local track = tracks[at]
 				if track ~= nil then
 					list[#list + 1] = div():style(sty():wrel(1.0):h(rowHeight)):children({
-					render.trackRow(app, track, at,
-					app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
-					app.services.playback.player:isPlaying(), { type = "playTrack", trackId = track.id}, width, true),
+					trackRow.view(app, {
+					track = track,
+					index = at,
+					current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+					playing = app.services.playback.player:isPlaying(),
+					onClick = { type = "playTrack", trackId = track.id},
+					width = width,
+					showAlbum = true,
+					}),
 					})
 				end
 			end

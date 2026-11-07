@@ -3,7 +3,7 @@
 local wonderland = require("wonderland")
 local utf8 = require("utf8")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
+local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -107,18 +107,22 @@ function PlaylistArt.mosaicTracks(tracks)
 	return picked
 end
 
+---@class beat.components.PlaylistArtProps
+---@field tracks beat.Track[] # The playlist's tracks, in order
+---@field size number # The square's width and height
+---@field radius number? # Default theme:radius("sm")
+---@field name string # The playlist's name, reduced to its initials
+
 --- A playlist's square: four evenly spread album pictures behind the playlist's initials. A
 --- one-track playlist is one cover, and two or three leave their remaining cells black. The
 --- rounded parent clips whatever the cells do, so every playlist has the same outer shape.
 ---@param app beat.App
----@param tracks beat.Track[]
----@param size number
----@param radius number?
----@param name string
+---@param props beat.components.PlaylistArtProps
 ---@return wonderland.Element
-function PlaylistArt.art(app, tracks, size, radius, name)
+function PlaylistArt.view(app, props)
+	local tracks, size, name = props.tracks, props.size, props.name
 	local theme = app.services.appearance.theme
-	local artRadius = radius or theme:radius("sm")
+	local artRadius = props.radius or theme:radius("sm")
 	local picked = PlaylistArt.mosaicTracks(tracks)
 	local initials = PlaylistArt.initials(name)
 	local badgeSize = math.floor(size * (#initials > 1 and 0.46 or 0.5))
@@ -138,7 +142,7 @@ function PlaylistArt.art(app, tracks, size, radius, name)
 		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
 		if album ~= nil then
 			---@cast album beat.Album
-			root:children({ render.cover(app, album, size, 0)})
+			root:children({ cover.view(app, { album = album, size = size, radius = 0 }) })
 		end
 		root:children({ badge})
 		return root
@@ -150,7 +154,7 @@ function PlaylistArt.art(app, tracks, size, radius, name)
 		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
 		if album ~= nil then
 			---@cast album beat.Album
-			return render.cover(app, album, cell, 0)
+			return cover.view(app, { album = album, size = cell, radius = 0 })
 		end
 		return div():style(sty():size(cell, cell):bg("#000000"))
 	end
@@ -163,10 +167,14 @@ function PlaylistArt.art(app, tracks, size, radius, name)
 	return root
 end
 
+---@class beat.components.PlaylistIconsProps
+---@field playlist beat.Playlist
+
 ---@param app beat.App
----@param playlist beat.Playlist
+---@param props beat.components.PlaylistIconsProps
 ---@return wonderland.Element
-function PlaylistArt.icons(app, playlist)
+function PlaylistArt.icons(app, props)
+	local playlist = props.playlist
 	local theme = app.services.appearance.theme
 	local children = {}
 	if playlist.smart and #playlist.tagIds > 0 then

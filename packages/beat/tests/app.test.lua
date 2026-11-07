@@ -782,7 +782,7 @@ end)
 
 test.it("switches to the phone shell at narrow widths", function()
 	App:init({ scan = false})
-	local metrics = require("beat.app.components.metrics")
+	local metrics = require("beat.app.components.helpers.metrics")
 	test.truthy(metrics.mobile(App, 390))
 	test.equal(metrics.sidebarWidth(App, 390), 0, "the rail is gone")
 	test.equal(metrics.pad(App, 390), App.services.appearance.theme:space(16))

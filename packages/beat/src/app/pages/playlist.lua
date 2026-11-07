@@ -1,11 +1,11 @@
 -- The playlist screen: the collection view with its own cover, its kind, and the control
 -- that adds more to it.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
+local format = require("beat.app.components.helpers.format")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
+local emptyState = require("beat.app.components.empty_state")
 local PlaylistArt = require("beat.app.components.playlist_art")
-local collection = require("beat.app.components.collection_view")
+local collection = require("beat.app.components.collection")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -27,8 +27,11 @@ end
 function playlistPage.view(app, page, window)
 	local playlist = app.services.collections.taxonomy:playlist(page.id --[[@as number]])
 	if playlist == nil then
-		return render.empty(app, "Playlist not found", nil, "Playlists",
-		{ type = "navigate", page = { kind = "playlists"}})
+		return emptyState.view(app, {
+		title = "Playlist not found",
+		actionLabel = "Playlists",
+		action = { type = "navigate", page = { kind = "playlists"}},
+		})
 	end
 	---@cast playlist beat.Playlist
 	local tracks = PlaylistArt.tracks(app, playlist)
@@ -62,10 +65,18 @@ function playlistPage.view(app, page, window)
 	app.services.appearance.theme:s():text(app.services.appearance.theme:type("sm")):fg(app.services.appearance.theme:color("muted"))),
 	})
 
-	return collection.page(app, window, {
+	return collection.view(app, {
+	window = window,
 	label = "PLAYLIST",
-	icons = PlaylistArt.icons(app, playlist),
-	cover = function(size) return PlaylistArt.art(app, tracks, size, app.services.appearance.theme:radius("lg"), playlist.name) end,
+	icons = PlaylistArt.icons(app, { playlist = playlist }),
+	cover = function(size)
+		return PlaylistArt.view(app, {
+		tracks = tracks,
+		size = size,
+		radius = app.services.appearance.theme:radius("lg"),
+		name = playlist.name,
+		})
+	end,
 	title = playlist.name,
 	subtitle = subtitle,
 	meta = format.count(#tracks, "track")

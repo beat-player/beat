@@ -2,20 +2,24 @@
 -- name a row gives back while the pointer is on it.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local format = require("beat.app.components.format")
-local metrics = require("beat.app.components.metrics")
-local measure = require("beat.app.components.measure")
+local format = require("beat.app.components.helpers.format")
+local metrics = require("beat.app.components.helpers.metrics")
+local measure = require("beat.app.components.helpers.measure")
 local PlaylistArt = require("beat.app.components.playlist_art")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local sidebar = {}
 
+---@class beat.components.chrome.SidebarProps
+---@field width number # The window's width
+---@field height number # The room the rail has
+
 ---@param app beat.App
----@param width number
----@param height number
+---@param props beat.components.chrome.SidebarProps
 ---@return wonderland.Element
-function sidebar.view(app, width, height)
+function sidebar.view(app, props)
+	local width, height = props.width, props.height
 	local theme = app.services.appearance.theme
 	local collapsed = app.services.settings.values.sidebarCollapsed or width < 1040
 	local side = metrics.sidebarWidth(app, width)
@@ -97,7 +101,7 @@ function sidebar.view(app, width, height)
 
 			local row = div():style(style):hover(over)
 			:onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id}})
-			:children(PlaylistArt.art(app, tracks, artSize, nil, playlist.name))
+			:children(PlaylistArt.view(app, { tracks = tracks, size = artSize, name = playlist.name }))
 
 			if not collapsed then
 				row:children(text(format.count(#tracks, "track")):style(theme:s():text(theme:type("xs"))
@@ -210,11 +214,15 @@ end
 
 --- The name a sidebar playlist hides until it is pointed at. It is drawn over the page rather
 --- than inside the narrow sidebar, and clamped so the last row's label stays on screen.
+---@class beat.components.chrome.SidebarTooltipProps
+---@field width number # The window's width
+---@field height number # The window's height
+
 ---@param app beat.App
----@param width number
----@param height number
+---@param props beat.components.chrome.SidebarTooltipProps
 ---@return wonderland.Element?
-function sidebar.tooltip(app, width, height)
+function sidebar.tooltip(app, props)
+	local width = props.width
 	local hover = app.services.sidebar.hover
 	if hover == nil or app.services.collections.taxonomy == nil then return nil end
 	local playlist = app.services.collections.taxonomy:playlist(hover.id)

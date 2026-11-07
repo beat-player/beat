@@ -1,8 +1,11 @@
 -- The album shelf: every album in the library, as cards or as rows, windowed as it scrolls.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local format = require("beat.app.components.helpers.format")
+local albumCard = require("beat.app.components.album_card")
+local button = require("beat.app.components.button")
+local cover = require("beat.app.components.cover")
+local emptyState = require("beat.app.components.empty_state")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -30,8 +33,12 @@ function libraryPage.view(app, page, window)
 	local theme = app.services.appearance.theme
 	local library = app.services.library.current
 	if library == nil then
-		return render.empty(app, "Awkward. Nothing's here.", nil, "Choose a folder",
-		{ type = "chooseFolder"}, "😬")
+		return emptyState.view(app, {
+		title = "Awkward. Nothing's here.",
+		actionLabel = "Choose a folder",
+		action = { type = "chooseFolder"},
+		icon = "😬",
+		})
 	end
 	local content = metrics.contentWidth(app, window.width)
 	local albums = app.services.library:sorted(app.services.settings.values.sort)
@@ -74,11 +81,18 @@ function libraryPage.view(app, page, window)
 	local sort = app.services.settings.values.sort
 	local controls = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
 	:justify(stacked and "start" or "end")):children({
-	render.button(app, sortWidth < theme:px(130) and "Sort" or ("Sort: " .. (SORT_LABELS[sort] or sort)),
-	{ type = "open", overlay = "sort_menu"},
-	{ height = theme:px(32), width = sortWidth}),
-	render.button(app, list and "Grid" or "List", { type = "toggleView"},
-	{ height = theme:px(32), width = viewWidth}),
+	button.view(app, {
+	label = sortWidth < theme:px(130) and "Sort" or ("Sort: " .. (SORT_LABELS[sort] or sort)),
+	onClick = { type = "open", overlay = "sort_menu"},
+	height = theme:px(32),
+	width = sortWidth,
+	}),
+	button.view(app, {
+	label = list and "Grid" or "List",
+	onClick = { type = "toggleView"},
+	height = theme:px(32),
+	width = viewWidth,
+	}),
 	})
 
 	local header = div()
@@ -91,11 +105,15 @@ function libraryPage.view(app, page, window)
 	})
 
 	if #albums == 0 then
-		return render.empty(app, "Awkward. Nothing's here.", nil, "Choose a folder",
-		{ type = "chooseFolder"}, "😬")
+		return emptyState.view(app, {
+		title = "Awkward. Nothing's here.",
+		actionLabel = "Choose a folder",
+		action = { type = "chooseFolder"},
+		icon = "😬",
+		})
 	end
 
-	local cardHeight = render.albumCardHeight(app, cardWidth)
+	local cardHeight = albumCard.height(app, { width = cardWidth })
 	local rowHeight = list and theme:px(64) or (cardHeight + theme:space(12))
 	local totalRows = list and #albums or math.ceil(#albums / columns)
 	local contentHeight = headerHeight + theme:space(18) + totalRows * rowHeight
@@ -126,7 +144,7 @@ function libraryPage.view(app, page, window)
 					return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
 				end)
 				:children({
-				render.cover(app, album, theme:px(48), theme:radius("sm")),
+				cover.view(app, { album = album, size = theme:px(48), radius = theme:radius("sm") }),
 				div():style(sty():column():w(content - theme:px(mobile and 80 or 190))):children({
 				text(album.title):style(theme:s():wrel(1.0):text(theme:type("base"))
 				:weight("semibold"):fg(theme:color("text")):ellipsis()),
@@ -145,9 +163,12 @@ function libraryPage.view(app, page, window)
 		local row = {}
 		for at = first, last do
 				local album = albums[at]
-				row[#row + 1] = render.albumCard(app, album, cardWidth,
-				{ type = "navigate", page = { kind = "album", id = album.id}},
-				{ type = "playAlbum", id = album.id})
+				row[#row + 1] = albumCard.view(app, {
+				album = album,
+				width = cardWidth,
+				onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
+				onPlay = { type = "playAlbum", id = album.id},
+				})
 				if #row == columns or at == last then
 					children[#children + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)
 					row = {}

@@ -1,10 +1,13 @@
 -- The playlists page: the playlists to open and the tags that make the smart ones. A tag's
 -- name is edited in place here, so the draft and the one being edited belong to this page.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
-local measure = require("beat.app.components.measure")
+local format = require("beat.app.components.helpers.format")
+local button = require("beat.app.components.button")
+local field = require("beat.app.components.field")
+local iconButton = require("beat.app.components.icon_button")
+local section = require("beat.app.components.section")
+local metrics = require("beat.app.components.helpers.metrics")
+local measure = require("beat.app.components.helpers.measure")
 local PlaylistArt = require("beat.app.components.playlist_art")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -110,10 +113,19 @@ function playlists.view(app, page, window)
 	---@cast tags beat.Tag[]
 
 	local headerActions = {
-	render.button(app, "New playlist", { type = "open", overlay = "playlist_dialog", smart = false},
-	{ primary = true, height = theme:px(30), width = theme:px(128)}),
-	render.button(app, "New tag", { type = "open", overlay = "tag_dialog"},
-	{ height = theme:px(30), width = theme:px(92)}),
+	button.view(app, {
+	label = "New playlist",
+	onClick = { type = "open", overlay = "playlist_dialog", smart = false},
+	primary = true,
+	height = theme:px(30),
+	width = theme:px(128),
+	}),
+	button.view(app, {
+	label = "New tag",
+	onClick = { type = "open", overlay = "tag_dialog"},
+	height = theme:px(30),
+	width = theme:px(92),
+	}),
 	}
 	local headerHeight = theme:px(mobile and 92 or 44)
 	local actionRow = div():style(sty():row():wrel(1.0):h(theme:px(30)):gap(theme:px(8))
@@ -153,7 +165,7 @@ function playlists.view(app, page, window)
 			return { type = "open", overlay = "playlist_menu", id = playlist.id, x = windowX, y = windowY}
 		end)
 		:children({
-		PlaylistArt.art(app, tracks, theme:px(54), nil, playlist.name),
+		PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }),
 		div():style(sty():column():w(infoWidth):hrel(1.0):justify("center")
 		:gap(theme:px(4))):children({
 		-- The type marks sit against the end of the name rather than at the far edge of
@@ -161,13 +173,13 @@ function playlists.view(app, page, window)
 		div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({
 		text(playlist.name):style(theme:s():w(nameWidth)
 		:text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-		PlaylistArt.icons(app, playlist),
+		PlaylistArt.icons(app, { playlist = playlist }),
 		}),
 		text(format.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(
 		theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs"))
 		:fg(theme:color("muted")):ellipsis()),
 		}),
-		render.iconButton(app, "play", theme:px(30), { type = "playPlaylist", id = playlist.id}),
+		iconButton.view(app, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id} }),
 		})
 	end
 
@@ -226,15 +238,20 @@ function playlists.view(app, page, window)
 				usedWidth = editWidth
 				local fieldWidth = math.max(theme:px(80),
 				editWidth - theme:px(20) - theme:px(24) * 2 - theme:px(8))
-				local field = render.field(app, "tagName", state.tagEditDraft, tag.name,
-				function(value) return { type = "tagEditDraft", value = value} end,
-				function() return { type = "renameTag"} end, fieldWidth)
+				local nameField = field.view(app, {
+				name = "tagName",
+				value = state.tagEditDraft,
+				placeholder = tag.name,
+				oninput = function(value) return { type = "tagEditDraft", value = value} end,
+				onsubmit = function() return { type = "renameTag"} end,
+				width = fieldWidth,
+				})
 				pill = div():style(sty():row():w(editWidth):h(theme:px(34)):gap(theme:px(4))
 				:pad(0, theme:px(8), 0, theme:px(8)):align("center"):radius(theme:radius("full"))
 				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))):children({
-				field,
-				render.iconButton(app, "check", theme:px(24), { type = "renameTag"}),
-				render.iconButton(app, "close", theme:px(22), { type = "cancelTagEdit"}),
+				nameField,
+				iconButton.view(app, { name = "check", size = theme:px(24), onClick = { type = "renameTag"} }),
+				iconButton.view(app, { name = "close", size = theme:px(22), onClick = { type = "cancelTagEdit"} }),
 				})
 			else
 				pill = div()
@@ -279,7 +296,7 @@ function playlists.view(app, page, window)
 	return div():style(sty():column():wrel(1.0):h(height):gap(theme:space(18))):children({
 	header,
 	div():style(sty():column():wrel(1.0):h(playlistHeight):gap(theme:px(8))):children(rows),
-	render.section(app, "Tags"),
+	section.view(app, { title = "Tags" }),
 	div():style(sty():column():wrel(1.0):h(tagHeight):gap(theme:px(8))):children(tagRows),
 	})
 end

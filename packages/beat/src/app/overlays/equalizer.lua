@@ -4,7 +4,8 @@
 -- exist, what they hold and what changing one means is the equalizer service's; this file draws
 -- them and sends what was clicked.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
+local iconButton = require("beat.app.components.icon_button")
+local slider = require("beat.app.components.slider")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -88,8 +89,8 @@ function equalizer.view(app, _overlay, window)
 	:fg(theme:color("text"))),
 	div():style(sty():row():w(theme:px(24) * 2 + theme:px(4)):h(headerHeight)
 	:gap(theme:px(4)):align("center")):children({
-	render.iconButton(app, "add", theme:px(24), { type = "newEqualizerPreset"}),
-	render.iconButton(app, "close", theme:px(24), { type = "dismiss"}),
+	iconButton.view(app, { name = "add", size = theme:px(24), onClick = { type = "newEqualizerPreset"} }),
+	iconButton.view(app, { name = "close", size = theme:px(24), onClick = { type = "dismiss"} }),
 	}),
 	})
 	panels[#panels + 1] = header
@@ -121,18 +122,18 @@ function equalizer.view(app, _overlay, window)
 		:align("center")):children({
 		text(service.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
 		:fg(theme:color("muted"))),
-		render.slider(app, {
+		slider.view(app, {
 		width = sliderWidth,
 		value = gain,
 		min = service.minimum,
 		max = service.maximum,
-			origin = 0.5,
-			onchange = function(value_) return { type = "equalizerGain", band = band, value = value_} end,
-			trackColour = theme:color("text", 0.12),
-			fillColour = theme:color("accent"),
-			thumbColour = theme:color("text"),
-			thumbSize = theme:px(12),
-			}),
+		origin = 0.5,
+		onchange = function(value_) return { type = "equalizerGain", band = band, value = value_} end,
+		trackColour = theme:color("text", 0.12),
+		fillColour = theme:color("accent"),
+		thumbColour = theme:color("text"),
+		thumbSize = theme:px(12),
+		}),
 			text(value):style(theme:s():w(valueWidth):text(theme:type("xs"))
 			:fg(theme:color("text"))),
 			})

@@ -1,17 +1,21 @@
 -- The top bar: back and forward, the search field, and the way into settings.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local iconButton = require("beat.app.components.icon_button")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local topbar = {}
 
+---@class beat.components.chrome.TopbarProps
+---@field width number # The window's width
+
 ---@param app beat.App
----@param width number
+---@param props beat.components.chrome.TopbarProps
 ---@return wonderland.Element
-function topbar.view(app, width)
+function topbar.view(app, props)
+	local width = props.width
 	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, width)
 	local focused = app.layoutPlugin ~= nil and app.window ~= nil
@@ -67,7 +71,7 @@ function topbar.view(app, width)
 	end
 
 	local function navButton(name, action, enabled)
-		return render.iconButton(app, name, iconSize, enabled and action or nil, enabled)
+		return iconButton.view(app, { name = name, size = iconSize, onClick = enabled and action or nil, active = enabled })
 	end
 
 	local searchStyle = sty():row():w(searchWidth):h(pillHeight):radius(theme:radius("full"))
@@ -100,7 +104,7 @@ function topbar.view(app, width)
 	:gap(theme:px(10)):align("center"):justify("space-between"))
 	:children({
 	left,
-	render.iconButton(app, "settings", iconSize, { type = "navigate", page = { kind = "settings"}}),
+	iconButton.view(app, { name = "settings", size = iconSize, onClick = { type = "navigate", page = { kind = "settings"} } }),
 	})
 end
 

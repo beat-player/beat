@@ -2,16 +2,20 @@
 -- just happened.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local measure = require("beat.app.components.measure")
+local measure = require("beat.app.components.helpers.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local toasts = {}
 
+---@class beat.components.chrome.ToastsProps
+---@field window wonderland.RenderWindow
+
 ---@param app beat.App
----@param window wonderland.RenderWindow
+---@param props beat.components.chrome.ToastsProps
 ---@return wonderland.Element? overlay
-function toasts.view(app, window)
+function toasts.view(app, props)
+	local window = props.window
 	if #app.services.toasts.list == 0 then return nil end
 	local theme = app.services.appearance.theme
 	local now = wonderland.time.now()

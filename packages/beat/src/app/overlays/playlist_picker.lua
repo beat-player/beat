@@ -1,7 +1,7 @@
 -- Where a track or a whole album goes: one row per playlist, with how many tracks it would hold.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
-local metrics = require("beat.app.components.metrics")
+local format = require("beat.app.components.helpers.format")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
