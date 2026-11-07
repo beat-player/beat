@@ -2,8 +2,8 @@
 -- audio headers, writes track events, and fills the local cover cache. Several of these run at
 -- once so a high-latency mount can keep more than one file read in flight.
 --
--- The source checkout runs this through `tools/scan-inspect-worker.lua`; a compiled executable runs
--- it in a copy of itself, with the shard's paths in the environment.
+-- It runs in a copy of beat started with BEAT_WORKER=inspect (see `beat.app.worker_process`), with
+-- the shard's paths in the environment.
 local env = require("env")
 local fs = require("fs")
 local json = require("json")
@@ -17,7 +17,7 @@ local outputPath = assert(env.var("BEAT_SCAN_OUTPUT"), "no scan output")
 local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local cacheRoot = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 
-local file = assert(io.open(outputPath, "w"))
+local file = assert(io.open(outputPath, "wb"))
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()
@@ -29,6 +29,19 @@ end
 ---@return string
 local function clean(value)
 	return (tostring(value):gsub("[%z\1-\31\127-\255]", "?"))
+end
+
+-- A tag value that is not UTF-8 cannot travel as JSON. treble decodes ID3 text to UTF-8, but a
+-- WAV's RIFF INFO chunk and a Vorbis comment are handed over as the bytes the file stores, and a
+-- tagger can write those in any code page. Such a value is dropped, and the track falls back to
+-- its file name for it, rather than the event taking the whole shard down.
+---@param info table
+local function dropUnsendableTags(info)
+	local tags = info.tags
+	if type(tags) ~= "table" then return end
+	for key, value in pairs(tags) do
+		if type(value) == "string" and not pcall(json.encode, value) then tags[key] = nil end
+	end
 end
 
 local COVER_SIZE = 512
@@ -94,8 +107,17 @@ local function inspect(entry)
 		if coverCache ~= nil then cached[key] = coverCache end
 	end
 
+	dropUnsendableTags(info)
+	local sent, encoded = pcall(json.encode,
+		{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	if not sent then
+		recordError(entry.path, "skipped: its tags are not UTF-8")
+		return
+	end
+
 	tracks = tracks + 1
-	emit({ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	file:write(encoded, "\n")
+	file:flush()
 end
 
 local started = time.now()

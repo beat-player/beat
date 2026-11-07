@@ -1,9 +1,9 @@
 local env = require("env")
 local worker = env.var("BEAT_WORKER")
 
--- A compiled executable carries the scan workers as modules but no tools directory. The app starts
--- a coordinator by running this same executable with BEAT_WORKER=scan, and that coordinator starts
--- its inspectors the same way with BEAT_WORKER=inspect.
+-- The scan workers are this same program started again: the app starts a coordinator with
+-- BEAT_WORKER=scan, and that coordinator starts its inspectors with BEAT_WORKER=inspect. See
+-- `beat.app.worker_process` for how a compiled executable and a source run each start the copy.
 local function main()
 	if worker == "scan" then
 		require("beat.app.scan_worker")

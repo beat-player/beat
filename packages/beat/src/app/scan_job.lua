@@ -4,12 +4,10 @@
 -- has arrived since the last tick and hands the app the tracks. The window keeps drawing, playing
 -- and searching while the worker waits on a slow filesystem. Nothing here is persisted: the two
 -- files live in the temporary directory and are removed when the job ends.
-local env = require("env")
 local fs = require("fs")
 local json = require("json")
-local process = require("process")
 local Log = require("beat.app.log")
-local jit = require("jit")
+local workerProcess = require("beat.app.worker_process")
 
 -- How much of the worker's output one tick may read, and how many decoded tracks may wait.
 -- A scan can write a whole library in a fraction of a second; reading it whole would hold every
@@ -17,10 +15,6 @@ local jit = require("jit")
 -- nearly empty.
 local READ_CHUNK = 32 * 1024
 local QUEUE_LIMIT = 256
-
--- A source run passes the script's path as `arg[0]`; a compiled executable passes its own. That is
--- what says whether the tools are on disk or the program has to start its worker from itself.
-local compiled = arg == nil or (arg[0] ~= nil and arg[0]:match("%.lua$") == nil)
 
 local ScanJob = {}
 ScanJob.__index = ScanJob
@@ -37,32 +31,9 @@ ScanJob.__index = ScanJob
 ---@field cancelled boolean
 ---@field error string?
 ---@field changed boolean
----@field child process.Child? # The worker this process started, where the executable runs itself
+---@field child process.Child? # The coordinator process, until it exits
+---@field exitCode number? # How the coordinator exited, once it has
 ---@field decodeErrors number # Lines the worker wrote that were not JSON this could read
-
----@param value string
----@return string
-local function quote(value)
-	if jit.os == "Windows" then
-		return '"' .. value:gsub('"', '\\"') .. '"'
-	end
-	return "'" .. value:gsub("'", "'\\''") .. "'"
-end
-
----@param root string
----@param output string
----@param cancelFile string
----@return string
-local function commandFor(root, output, cancelFile)
-	local worker = "tools/scan-worker.lua"
-	local osName = jit.os or ""
-	if osName == "Windows" then
-		return 'start "" /b lde run ' .. worker .. " " .. quote(root) .. " " .. quote(output) .. " "
-		.. quote(cancelFile)
-	end
-	return "lde run " .. worker .. " " .. quote(root) .. " " .. quote(output) .. " " .. quote(cancelFile)
-	.. " >/dev/null 2>&1 &"
-end
 
 --- A job over an already-known output path, which is also what the tests write by hand.
 ---@param root string
@@ -90,6 +61,7 @@ function ScanJob.new(root, output, cancelFile)
 	cancelled = false,
 	error = nil,
 	changed = false,
+	decodeErrors = 0,
 	}, ScanJob)
 end
 
@@ -102,53 +74,44 @@ function ScanJob.start(root)
 	fs.delete(cancelFile)
 
 	local job = ScanJob.new(root, output, cancelFile)
-	-- A compiled executable has no `lde` or `tools/` beside it: it starts its worker by running
-	-- itself again with the paths in the environment. A source run keeps using the tools, where
-	-- `lde run` is the thing that already exists.
-	if compiled then
-		local child, err = process.spawn(assert(env.execPath()), {}, {
-			env = {
-				BEAT_WORKER = "scan",
-				BEAT_SCAN_ROOT = root,
-				BEAT_SCAN_OUTPUT = output,
-				BEAT_SCAN_CANCEL = cancelFile,
-			},
-			stdout = "null",
-			stderr = "null",
-		})
+	local child, err = workerProcess.spawn({
+		BEAT_WORKER = "scan",
+		BEAT_SCAN_ROOT = root,
+		BEAT_SCAN_OUTPUT = output,
+		BEAT_SCAN_CANCEL = cancelFile,
+	})
 
-		if child == nil then
-			job.done = true
-			job.error = "could not start the scan: " .. tostring(err)
-			return job
-		end
-
-		job.child = child
-	else
-		os.execute(commandFor(root, output, cancelFile))
+	if child == nil then
+		job.done = true
+		job.error = "could not start the scan: " .. tostring(err)
+		return job
 	end
 
+	job.child = child
 	return job
 end
 
 --- Reads what the worker wrote since the last poll, keeping a partial last line for the next one.
 ---@param self beat.ScanJob
+---@return boolean more # Whether there may be output left: something was read, or the queue is full
 function ScanJob:read()
-	if #self.queued >= QUEUE_LIMIT then return end
+	if #self.queued >= QUEUE_LIMIT then return true end
 
-	local file = io.open(self.output, "r")
-	if file == nil then return end
+	-- Binary, so the offset counts bytes: text mode on Windows reads "\r\n" as one character, and
+	-- an offset that falls behind the file re-reads the end of what was already taken.
+	local file = io.open(self.output, "rb")
+	if file == nil then return false end
 
 	file:seek("set", self.offset)
 	local data = file:read(READ_CHUNK) or ""
 	file:close()
-	if data == "" then return end
+	if data == "" then return false end
 
 	self.offset = self.offset + #data
 	self.buffer = self.buffer .. data
 
 	while true do
-		local line, rest = self.buffer:match("^(.-)\n(.*)$")
+		local line, rest = self.buffer:match("^(.-)\r?\n(.*)$")
 		if line == nil then break end
 		self.buffer = rest
 
@@ -187,6 +150,7 @@ function ScanJob:read()
 			end
 		end
 	end
+	return true
 end
 
 --- The tracks and progress the app has not seen yet. At most `limit` events are handed over in
@@ -200,17 +164,23 @@ function ScanJob:poll(limit)
 
 	if self.child ~= nil then
 		local code = self.child:poll()
-
 		if code ~= nil then
 			if code ~= 0 then
 				Log.write("error", "scan worker exited with code " .. tostring(code))
 			end
 
 			self.child = nil
+			self.exitCode = code
 		end
 	end
 
-	self:read()
+	-- A worker that exits without saying it finished -- it crashed, or never started its scan --
+	-- leaves nothing more to wait for once its output has been read to the end.
+	if not self:read() and self.exitCode ~= nil and not self.done then
+		self.done = true
+		self.error = "the scan stopped unexpectedly (exit code " .. tostring(self.exitCode) .. ")"
+		self.changed = true
+	end
 
 	local events = {}
 	while #events < limit and #self.queued > 0 do
