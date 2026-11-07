@@ -4,7 +4,7 @@
 -- is kept alive by moving its expiry forward each tick, which is why the service needs the pointer
 -- and not the window.
 local wonderland = require("wonderland")
-local Log = require("beat.app.log")
+local Log = require("beat.log")
 
 local time = wonderland.time
 

@@ -1,8 +1,8 @@
 -- The album shelf: every album in the library, as cards or as rows, windowed as it scrolls.
 local wonderland = require("wonderland")
 local core = require("beat-core")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util

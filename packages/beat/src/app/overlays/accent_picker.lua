@@ -1,7 +1,7 @@
 -- A small confirmable colour grid, opened by the Appearance section's Custom button.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

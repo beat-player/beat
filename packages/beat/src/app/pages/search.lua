@@ -1,8 +1,8 @@
 -- Search is one field over artists, albums and tracks; with nothing typed it shows what was just
 -- added, narrowed by whichever tags are selected.
 local wonderland = require("wonderland")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

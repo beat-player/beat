@@ -1,7 +1,7 @@
 -- The panel that adds albums to a playlist, opened from the playlist's own +.
 local wonderland = require("wonderland")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

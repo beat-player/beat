@@ -1,7 +1,7 @@
 -- The sort choices, anchored under the library's sort button.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local metrics = require("beat.app.metrics")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

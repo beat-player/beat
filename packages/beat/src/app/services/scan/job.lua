@@ -6,8 +6,8 @@
 -- files live in the temporary directory and are removed when the job ends.
 local fs = require("fs")
 local json = require("json")
-local Log = require("beat.app.log")
-local workerProcess = require("beat.app.worker_process")
+local Log = require("beat.log")
+local workerProcess = require("beat.workers.process")
 
 -- How much of the worker's output one tick may read, and how many decoded tracks may wait.
 -- A scan can write a whole library in a fraction of a second; reading it whole would hold every

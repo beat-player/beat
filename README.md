@@ -10,12 +10,14 @@ window. Last.fm scrobbling is optional and only talks to Last.fm when an account
 
 | Path | What it is |
 |---|---|
-| `packages/beat/src/` | The app package: state, actions, the shell and every page |
+| `packages/beat/src/` | The app package. `app.lua` is the router and message pump; `app/` holds its machinery and one folder per kind of code |
+| `packages/beat/src/app/services/` | App state with a lifecycle: one module or folder per service, built in dependency order |
+| `packages/beat/src/app/pages/`, `overlays/` | The screens the router shows and the panels it opens over them |
+| `packages/beat/src/app/components/` | Stateless view pieces, including the shell's chrome |
+| `packages/beat/src/workers/` | Background programs started as copies of beat: the scan coordinator and its inspectors |
 | `packages/beat-core` | Scanning, library grouping, tags and playlists, search, cover caching/downscaling, queue, playback, Last.fm signing |
 | `packages/beat-ui` | Theme tokens, motion, icons and shared drawing primitives |
 | `packages/beat/tests/` | Headless app tests: pages, search input, library windowing, Last.fm, theme and sidebar width |
-| `packages/beat/src/app/worker_process.lua` | Starts a background worker as a copy of beat: the executable again, or `lde run` of the package from source |
-| `packages/beat/src/app/scan_worker.lua` | The scanner coordinator and its inspector entry |
 | `packages/beat/tools/shots.lua` | Renders the screenshot matrix into `packages/beat/docs/screens/` |
 | `packages/beat/tools/bench-scan.lua` | Measures directory enumeration and header inspection on a real folder |
 | `packages/beat/tools/layout-debug.lua` | Solves a page headlessly, saves devtools boxes, and writes a text box table |
@@ -106,7 +108,7 @@ listener does not configure anything:
 Each account gets its own session key. It is kept in `settings.json`; disconnecting clears it.
 Because the shared secret is carried by a desktop binary, it can be extracted; the key identifies
 beat, and the session key is what can act on a listener's account. The app credentials live in
-`src/app/lastfm_credentials.lua` and should be replaced there when they are rotated. While
+`src/app/services/lastfm/credentials.lua` and should be replaced there when they are rotated. While
 connected, beat sends `track.updateNowPlaying` when playback starts and submits a scrobble after
 the track has been heard halfway, or for four minutes, whichever comes first. Tracks shorter than
 30 seconds are not scrobbled. Requests go through the `curl-sys` multi interface, so the window

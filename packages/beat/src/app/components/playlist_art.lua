@@ -3,7 +3,7 @@
 local wonderland = require("wonderland")
 local utf8 = require("utf8")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

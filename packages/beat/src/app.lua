@@ -16,6 +16,7 @@ local iconData = require("beat.app.icon")
 local SERVICES = {
 	"settings", "motion", "appearance", "toasts", "scroll",
 	"library", "covers", "collections", "sidebar", "playback", "scan", "search",
+	"lastfm", "system",
 }
 
 --- Where a navigation goes: a page kind and what picks the one page of that kind. `App:go` turns

@@ -1,12 +1,11 @@
 -- The settings screen: theme, accent, scale, motion, sidebar, the folder the library is read from,
--- Last.fm and the About links.
+-- Last.fm and the About section.
 local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
 local core = require("beat-core")
-local render = require("beat.app.ui")
-local metrics = require("beat.app.metrics")
-local links = require("beat.app.links")
+local render = require("beat.app.components.ui")
+local metrics = require("beat.app.components.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util
@@ -15,21 +14,6 @@ local GITHUB = "https://github.com/bycruz/beat"
 
 ---@type beat.PageSurface
 local settings = {}
-
---- The one message the settings screen answers itself: a link it shows. The folder, playback and
---- Last.fm controls belong to the services that own that state.
-function settings.update(app, page, message)
-	local kind = message.type
-	if kind == "openURL" then
-		local ok, opened = pcall(links.open, message.url)
-		if not ok or not opened then
-			app.services.toasts:show("Could not open the link", "error")
-		end
-	else
-		return false
-	end
-	return true
-end
 
 ---@param app beat.App
 ---@param page beat.PageInstance
@@ -171,7 +155,7 @@ function settings.view(app, page, window)
 	),
 	})
 
-	local lastfm = app.services.playback.lastfm
+	local lastfm = app.services.lastfm.client
 	local lastfmTone = lastfm:statusTone()
 	local lastfmColour = lastfmTone == "success" and theme:color("success")
 	or (lastfmTone == "danger" and theme:color("danger") or theme:color("muted"))

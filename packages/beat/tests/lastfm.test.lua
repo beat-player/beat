@@ -1,5 +1,5 @@
 local test = require("lde-test")
-local Lastfm = require("beat.app.lastfm")
+local Lastfm = require("beat.app.services.lastfm.client")
 
 ---@class TestBatch
 ---@field order table[]

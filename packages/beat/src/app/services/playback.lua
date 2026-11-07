@@ -1,18 +1,16 @@
--- Everything that makes a sound: the audio player, the spectrum the bar draws, Last.fm and the
--- scrobbler. They are one service because they are one act -- a track starts, the queue advances,
--- a listen counts, a scrobble leaves -- and because none of them means anything without the others.
--- Views read `player`, `spectrum` and `lastfm` to draw the bar; nothing outside changes them, so
--- every control that moves playback arrives here as a message.
+-- Everything that makes a sound: the audio player, the queue and the spectrum the bar draws. They
+-- are one service because they are one act -- a track starts, the queue advances, a listen counts
+-- -- and because none of them means anything without the others. Views read `player` and
+-- `spectrum` to draw the bar; nothing outside changes them, so every control that moves playback
+-- arrives here as a message. Last.fm is deliberately not here: it watches what this plays from
+-- its own service, and nothing about playing depends on it.
 local core = require("beat-core")
-local LastfmClient = require("beat.app.lastfm")
 
 local util = core.util
 
 ---@class beat.PlaybackService
 ---@field player beat.Player
 ---@field spectrum beat.Spectrum
----@field scrobbler beat.Scrobbler
----@field lastfm beat.LastfmClient
 ---@field lastListenedTrackId number? # The track a listen has already been counted for
 ---@field settings beat.SettingsService
 ---@field library beat.LibraryService
@@ -24,7 +22,6 @@ Playback.needs = { "settings", "library", "collections", "toasts"}
 Playback.handles = {
 	"togglePlay", "next", "previous", "seek", "volume", "mute", "shuffle", "repeat",
 	"playAlbum", "playTrack", "playArtist", "playPlaylist", "playPlaylistTrack", "jumpTrack",
-	"lastfmConnect", "lastfmCancel", "lastfmOpenAuth", "lastfmDisconnect", "lastfmEnabled",
 }
 
 ---@param deps {
@@ -41,7 +38,6 @@ function Playback.new(deps)
 		collections = deps.collections,
 		toasts = deps.toasts,
 		player = core.Player.new(),
-		scrobbler = core.Scrobbler.new(),
 		spectrum = core.Spectrum.new(),
 		lastListenedTrackId = nil,
 	}, Playback)
@@ -56,12 +52,6 @@ function Playback.new(deps)
 	self.player:setVolume(values.volume)
 	self.player.isMuted = values.isMuted
 	self.player:setEqualizer(core.equalizer.bands(values.equalizerGains))
-	-- Last.fm keeps its own authorisation state, so the handlers are the only way it says anything
-	-- to the rest of the app: a toast, and a request to write what it just changed in settings.
-	self.lastfm = LastfmClient.new(values, {
-		onToast = function(text, tone) self.toasts:show(text, tone) end,
-		onSave = function() self.settings:save() end,
-	})
 
 	return self
 end
@@ -221,25 +211,12 @@ function Playback:update(message)
 		self:playPlaylistTrack(message.playlistId --[[@as number]], message.trackId --[[@as number]])
 	elseif kind == "jumpTrack" then
 		self.player:jump(message.trackId)
-	elseif kind == "lastfmConnect" then
-		self.lastfm:connect()
-	elseif kind == "lastfmCancel" then
-		self.lastfm:cancelAuth()
-	elseif kind == "lastfmOpenAuth" then
-		if not self.lastfm:openAuthPage() then
-			self.toasts:show("Could not open a browser for Last.fm", "error")
-		end
-	elseif kind == "lastfmDisconnect" then
-		self.lastfm:disconnect()
-	elseif kind == "lastfmEnabled" then
-		self.settings.values.lastfmEnabled = message.value == true
-		self.settings:changed()
 	end
 end
 
 --- A listen is counted once per track, when playback has actually started it: that is what the
---- playlist it came from, its album and its tags remember. Scrobbling is the same track seen by
---- Last.fm, so it is fed every tick rather than once.
+--- playlist it came from, its album and its tags remember. Whether the same track is scrobbled is
+--- the Last.fm service's question; it reads the player for itself.
 function Playback:step(now)
 	local changed = false
 
@@ -259,8 +236,6 @@ function Playback:step(now)
 		changed = true
 	end
 
-	self.scrobbler:update(current, self.player:position(), playing, os.time())
-	if self.lastfm:update(current, playing, self.scrobbler:take()) then changed = true end
 	if self.spectrum:step(now) then changed = true end
 
 	local err = self.player:takeError()
@@ -270,13 +245,12 @@ function Playback:step(now)
 		changed = true
 	end
 
-	return changed, playing or self.lastfm:isBusy()
+	return changed, playing
 end
 
---- The old player and libcurl handle go when the app is set up again, so a test that makes many
---- apps does not keep one of each alive per app.
+--- The old player goes when the app is set up again, so a test that makes many apps does not keep
+--- one alive per app.
 function Playback:close()
-	self.lastfm:close()
 	self.player:close()
 	self.spectrum:clear()
 end

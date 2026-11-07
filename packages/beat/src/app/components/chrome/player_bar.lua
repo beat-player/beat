@@ -2,7 +2,7 @@
 -- volume, and the phone's one row that opens the individual track view.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.ui")
+local render = require("beat.app.components.ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

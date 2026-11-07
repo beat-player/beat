@@ -2,7 +2,7 @@
 -- just happened.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local measure = require("beat.app.measure")
+local measure = require("beat.app.components.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 

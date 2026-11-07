@@ -1,8 +1,8 @@
 -- The album screen: its cover, its details and its track table. The artist's name opens the
 -- artist's page.
 local core = require("beat-core")
-local render = require("beat.app.ui")
-local collection = require("beat.app.collection_view")
+local render = require("beat.app.components.ui")
+local collection = require("beat.app.components.collection_view")
 
 local util = core.util
 

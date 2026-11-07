@@ -2,8 +2,8 @@
 -- the two cards over the corner that say how far it has got. The scan is the only thing that makes
 -- a library appear, so it also owns the folder the library was chosen from and the question the
 -- first launch asks -- everything a view needs to say "no folder yet" comes from here.
-local Picker = require("beat.app.picker")
-local ScanJob = require("beat.app.scan_job")
+local Picker = require("beat.app.services.scan.picker")
+local ScanJob = require("beat.app.services.scan.job")
 
 ---@class beat.ScanSummary
 ---@field tracks number
