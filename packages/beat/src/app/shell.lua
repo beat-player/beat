@@ -4,7 +4,7 @@
 -- messages, and never change the app themselves.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local metrics = require("beat.app.components.metrics")
+local metrics = require("beat.app.components.helpers.metrics")
 local surfaces = require("beat.app.surfaces")
 local sidebar = require("beat.app.components.chrome.sidebar")
 local topbar = require("beat.app.components.chrome.topbar")
@@ -163,27 +163,29 @@ function shell.view(app, window)
 		end)
 	end
 	main:children({
-	topbar.view(app, width),
+	topbar.view(app, { width = width}),
 	div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip}),
 	})
 
 	local shellChildren = { main}
-	if not mobile then table.insert(shellChildren, 1, sidebar.view(app, width, pageHeight)) end
+	if not mobile then
+		table.insert(shellChildren, 1, sidebar.view(app, { width = width, height = pageHeight }))
+	end
 	local frame = div():style(sty():row():wrel(1.0):h(pageHeight)):children(shellChildren)
 
 	local rootChildren = { frame}
 	if mobile then
-		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, width) end
-		rootChildren[#rootChildren + 1] = mobileNav.view(app, width)
+		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, { width = width }) end
+		rootChildren[#rootChildren + 1] = mobileNav.view(app, { width = width })
 	elseif bar > 0 then
-		rootChildren[#rootChildren + 1] = playerBar.view(app, width)
+		rootChildren[#rootChildren + 1] = playerBar.view(app, { width = width })
 	end
-	local scanIsland = scanStatus.island(app, width)
+	local scanIsland = scanStatus.island(app, { width = width })
 	if scanIsland ~= nil then rootChildren[#rootChildren + 1] = scanIsland end
-	local scanSummary = scanStatus.summary(app, width)
+	local scanSummary = scanStatus.summary(app, { width = width })
 	if scanSummary ~= nil then rootChildren[#rootChildren + 1] = scanSummary end
 	if not mobile then
-		local tooltip = sidebar.tooltip(app, width, height)
+		local tooltip = sidebar.tooltip(app, { width = width, height = height })
 		if tooltip ~= nil then rootChildren[#rootChildren + 1] = tooltip end
 	end
 
@@ -192,7 +194,7 @@ function shell.view(app, window)
 	:font(theme.fontFamily))
 	:children(rootChildren)
 
-	local toastLayer = toasts.view(app, window)
+	local toastLayer = toasts.view(app, { window = window })
 	if toastLayer ~= nil then root:children(toastLayer) end
 
 	for _, overlay in ipairs(overlays(app, window, 1)) do root:children({ overlay}) end

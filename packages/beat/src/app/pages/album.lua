@@ -1,8 +1,9 @@
 -- The album screen: its cover, its details and its track table. The artist's name opens the
 -- artist's page.
-local format = require("beat.app.components.format")
-local render = require("beat.app.components.ui")
-local collection = require("beat.app.components.collection_view")
+local format = require("beat.app.components.helpers.format")
+local cover = require("beat.app.components.cover")
+local emptyState = require("beat.app.components.empty_state")
+local collection = require("beat.app.components.collection")
 
 ---@type beat.PageSurface
 local albumPage = {}
@@ -35,15 +36,22 @@ end
 function albumPage.view(app, page, window)
 	local album = app.services.library.current ~= nil and app.services.library.current:album(page.id) or nil
 	if album == nil then
-		return render.empty(app, "Album not found", "The scan no longer has it.", "Library",
-		{ type = "navigate", page = { kind = "library"}})
+		return emptyState.view(app, {
+		title = "Album not found",
+		copy = "The scan no longer has it.",
+		actionLabel = "Library",
+		action = { type = "navigate", page = { kind = "library"}},
+		})
 	end
 	---@cast album beat.Album
 	local thisAlbum = app.services.playback:current() ~= nil and app.services.playback:current().albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
-	return collection.page(app, window, {
+	return collection.view(app, {
+	window = window,
 	label = "ALBUM",
-	cover = function(size) return render.cover(app, album, size, app.services.appearance.theme:radius("lg"), true) end,
+	cover = function(size)
+		return cover.view(app, { album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true })
+	end,
 	coverMenu = function(_, _, _, _, _, windowX, windowY)
 		return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
 	end,

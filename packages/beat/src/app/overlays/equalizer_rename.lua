@@ -4,7 +4,8 @@
 -- what the player hears afterwards are the equalizer service's rules, reached by the one message
 -- each button sends.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
+local button = require("beat.app.components.button")
+local field = require("beat.app.components.field")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -67,18 +68,35 @@ function equalizerRename.view(app, overlay, window)
 	:children({
 	text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold")
 	:fg(theme:color("text"))),
-	render.field(app, "equalizerPresetName", state.draft, "Preset name",
-	function(value) return { type = "equalizerEditDraft", value = value} end,
-	function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end),
+	field.view(app, {
+	name = "equalizerPresetName",
+	value = state.draft,
+	placeholder = "Preset name",
+	oninput = function(value) return { type = "equalizerEditDraft", value = value} end,
+	onsubmit = function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end,
+	}),
 	div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
 	:justify("end")):children({
-	render.button(app, "Cancel", { type = "cancelEqualizerPresetRename"},
-	{ height = theme:px(30), width = theme:px(80)}),
-	render.button(app, "Save", { type = "saveEqualizerPresetRename", name = name, value = state.draft},
-	{ primary = true, height = theme:px(30), width = theme:px(74)}),
+	button.view(app, {
+	label = "Cancel",
+	onClick = { type = "cancelEqualizerPresetRename"},
+	height = theme:px(30),
+	width = theme:px(80),
 	}),
-	render.button(app, "Delete preset", { type = "deleteEqualizerPreset", name = name},
-	{ height = theme:px(30), width = width - padding * 2}),
+	button.view(app, {
+	label = "Save",
+	onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft},
+	primary = true,
+	height = theme:px(30),
+	width = theme:px(74),
+	}),
+	}),
+	button.view(app, {
+	label = "Delete preset",
+	onClick = { type = "deleteEqualizerPreset", name = name},
+	height = theme:px(30),
+	width = width - padding * 2,
+	}),
 	})
 
 	return div()

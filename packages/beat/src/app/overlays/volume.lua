@@ -1,7 +1,8 @@
 -- The volume bubble, opened from the now-playing controls. It is a panel beside the transport
 -- rather than a child of the volume button, and the now-playing screen offsets it there.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
+local iconButton = require("beat.app.components.icon_button")
+local slider = require("beat.app.components.slider")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -62,8 +63,8 @@ function volume.view(app, overlay, _window)
 	:border(theme:px(1), theme:color("border")))
 	:onClick({ type = "keep"})
 	:children({
-	render.iconButton(app, muted and "mute" or "volume", muteSize, { type = "mute"}),
-	render.slider(app, {
+	iconButton.view(app, { name = muted and "mute" or "volume", size = muteSize, onClick = { type = "mute"} }),
+	slider.view(app, {
 	width = sliderWidth,
 	value = muted and 0 or app.services.settings.values.volume,
 	min = 0,

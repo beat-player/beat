@@ -1,8 +1,13 @@
 -- Search is one field over artists, albums and tracks; with nothing typed it shows what was just
 -- added, narrowed by whichever tags are selected.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local albumCard = require("beat.app.components.album_card")
+local cover = require("beat.app.components.cover")
+local emptyState = require("beat.app.components.empty_state")
+local section = require("beat.app.components.section")
+local tagPills = require("beat.app.components.tag_pills")
+local trackRow = require("beat.app.components.track_row")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -33,9 +38,15 @@ local function searchTagFilter(app, width)
 	local theme = app.services.appearance.theme
 	local search = app.services.search
 	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
-	local pills = render.tagPills(app, tags, search.tagFilter, function(tag)
+	local pills = tagPills.view(app, {
+	tags = tags,
+	selected = search.tagFilter,
+	action = function(tag)
 		return { type = "toggleTagFilter", id = tag.id}
-	end, width, columns)
+	end,
+	width = width,
+	columns = columns,
+	})
 	if pills == nil then return nil, 0 end
 
 	local headerActions = {}
@@ -71,8 +82,12 @@ function searchPage.view(app, page, window)
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
-		return render.empty(app, "Search your library", "Choose a folder first.", "Choose a folder",
-		{ type = "chooseFolder"})
+		return emptyState.view(app, {
+		title = "Search your library",
+		copy = "Choose a folder first.",
+		actionLabel = "Choose a folder",
+		action = { type = "chooseFolder"},
+		})
 	end
 
 	local content = metrics.contentWidth(app, window.width)
@@ -80,7 +95,7 @@ function searchPage.view(app, page, window)
 	local columns = metrics.gridColumns(content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
-	local cardHeight = render.albumCardHeight(app, cardWidth)
+	local cardHeight = albumCard.height(app, { width = cardWidth })
 
 	if search.query == "" then
 		local recent = library:recentlyAdded(columns)
@@ -100,9 +115,12 @@ function searchPage.view(app, page, window)
 		local cards = {}
 		for _, album in ipairs(recent) do
 				---@cast album beat.Album
-				cards[#cards + 1] = render.albumCard(app, album, cardWidth,
-				{ type = "navigate", page = { kind = "album", id = album.id}},
-				{ type = "playAlbum", id = album.id})
+				cards[#cards + 1] = albumCard.view(app, {
+				album = album,
+				width = cardWidth,
+				onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
+				onPlay = { type = "playAlbum", id = album.id},
+				})
 			end
 		return div():style(sty():column():wrel(1.0):h(cardHeight + theme:px(150)):gap(gap)):children({
 		text("Search your library"):style(theme:s():text(theme:type("xxl")):weight("bold")
@@ -110,7 +128,7 @@ function searchPage.view(app, page, window)
 		text("Artists, albums and tracks are all one field."):style(
 		theme:s():text(theme:type("sm")):fg(theme:color("muted"))
 		),
-		render.section(app, "Recently added"),
+		section.view(app, { title = "Recently added" }),
 		div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards),
 		})
 	end
@@ -142,18 +160,23 @@ function searchPage.view(app, page, window)
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then
-		children[#children + 1] = render.section(app, "Albums",
-		#albums > albumLimit and { type = "navigate",
-		page = { kind = "searchAll", category = "albums"}} or nil)
+		children[#children + 1] = section.view(app, {
+		title = "Albums",
+		action = #albums > albumLimit and { type = "navigate",
+		page = { kind = "searchAll", category = "albums"}} or nil,
+		})
 		for rowAt = 1, albumRows do
 				local row = {}
 				for columnAt = 1, columns do
 						local at = (rowAt - 1) * columns + columnAt
 						local album = albums[at]
 						if album ~= nil and at <= albumLimit then
-							row[#row + 1] = render.albumCard(app, album, cardWidth,
-							{ type = "navigate", page = { kind = "album", id = album.id}},
-							{ type = "playAlbum", id = album.id})
+							row[#row + 1] = albumCard.view(app, {
+							album = album,
+							width = cardWidth,
+							onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
+							onPlay = { type = "playAlbum", id = album.id},
+							})
 						end
 					end
 				children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(row)
@@ -161,9 +184,11 @@ function searchPage.view(app, page, window)
 	end
 
 	if artistLimit > 0 then
-		children[#children + 1] = render.section(app, "Artists",
-		#artists > artistLimit and { type = "navigate",
-		page = { kind = "searchAll", category = "artists"}} or nil)
+		children[#children + 1] = section.view(app, {
+		title = "Artists",
+		action = #artists > artistLimit and { type = "navigate",
+		page = { kind = "searchAll", category = "artists"}} or nil,
+		})
 		for at, artist in ipairs(artists) do
 				if at > artistLimit then break end
 				children[#children + 1] = div()
@@ -172,8 +197,8 @@ function searchPage.view(app, page, window)
 				:bg(theme:color("hover")))
 				:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
 				:children({
-				artist.albums[1] ~= nil and render.cover(app, artist.albums[1], theme:px(44),
-				theme:radius("full")) or div():style(sty():size(theme:px(44), theme:px(44))
+				artist.albums[1] ~= nil and cover.view(app, { album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") })
+				or div():style(sty():size(theme:px(44), theme:px(44))
 				:radius(theme:radius("full")):bg(theme:color("elevated"))),
 				text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold")
 				:fg(theme:color("text"))),
@@ -182,22 +207,34 @@ function searchPage.view(app, page, window)
 	end
 
 	if trackLimit > 0 then
-		children[#children + 1] = render.section(app, "Tracks",
-		#tracks > trackLimit and { type = "navigate",
-		page = { kind = "searchAll", category = "tracks"}} or nil)
+		children[#children + 1] = section.view(app, {
+		title = "Tracks",
+		action = #tracks > trackLimit and { type = "navigate",
+		page = { kind = "searchAll", category = "tracks"}} or nil,
+		})
 		for at, track in ipairs(tracks) do
 				if at > trackLimit then break end
-				children[#children + 1] = render.trackRow(app, track, at,
-				app.services.playback:current() ~= nil and app.services.playback:current().id == track.id, app.services.playback.player:isPlaying(),
-				{ type = "playTrack", trackId = track.id}, content, true)
+				children[#children + 1] = trackRow.view(app, {
+				track = track,
+				index = at,
+				current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+				playing = app.services.playback.player:isPlaying(),
+				onClick = { type = "playTrack", trackId = track.id},
+				width = content,
+				showAlbum = true,
+				})
 			end
 	end
 
 	if #albums + #artists + #tracks == 0 then
 		height = height + theme:px(300) + sectionGap
 		children[#children + 1] = div():style(sty():wrel(1.0):h(theme:px(300))):children({
-		render.empty(app, "No results", "Try a different artist, album or title.",
-		"Clear search", { type = "clearSearch"}),
+		emptyState.view(app, {
+		title = "No results",
+		copy = "Try a different artist, album or title.",
+		actionLabel = "Clear search",
+		action = { type = "clearSearch"},
+		}),
 		})
 	end
 

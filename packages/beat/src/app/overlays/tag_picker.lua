@@ -1,8 +1,9 @@
 -- The tags on the track that is playing, as toggles. Clicking the dark area dismisses it;
 -- clicking the panel itself does not.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local button = require("beat.app.components.button")
+local tagPills = require("beat.app.components.tag_pills")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -52,9 +53,15 @@ function tagPicker.view(app, overlay, window)
 	local panelWidth = metrics.panelWidth(app, window, 380)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2
-	local pills = render.tagPills(app, tags, selected, function(tag)
+	local pills = tagPills.view(app, {
+	tags = tags,
+	selected = selected,
+	action = function(tag)
 		return { type = "toggleTrackTag", id = tag.id}
-	end, content, 2)
+	end,
+	width = content,
+	columns = 2,
+	})
 
 	local children = {
 	text("Tags on this track"):style(theme:s():text(theme:type("lg")):weight("bold")
@@ -68,8 +75,12 @@ function tagPicker.view(app, overlay, window)
 	) end
 	children[#children + 1] = div():style(sty():row():h(theme:px(32)):gap(theme:px(8))
 	:align("center"):justify("end")):children({
-	render.button(app, "New tag", { type = "open", overlay = "tag_dialog"},
-	{ height = theme:px(30), width = theme:px(92)}),
+	button.view(app, {
+	label = "New tag",
+	onClick = { type = "open", overlay = "tag_dialog"},
+	height = theme:px(30),
+	width = theme:px(92),
+	}),
 	})
 	local pillRows = math.max(1, math.min(8, #tags))
 	local pillsHeight = pills ~= nil and (math.ceil(pillRows / 2) * theme:px(28)

@@ -7,10 +7,14 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local mobileNav = {}
 
+---@class beat.components.chrome.MobileNavProps
+---@field width number # The window's width
+
 ---@param app beat.App
----@param width number
+---@param props beat.components.chrome.MobileNavProps
 ---@return wonderland.Element
-function mobileNav.view(app, width)
+function mobileNav.view(app, props)
+	local width = props.width
 	local theme = app.services.appearance.theme
 	local height = theme:px(58)
 	local items = {

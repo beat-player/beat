@@ -1,7 +1,8 @@
 -- A new tag's name, typed once and created on Enter or on the button.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local button = require("beat.app.components.button")
+local field = require("beat.app.components.field")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -66,13 +67,27 @@ function tagDialog.view(app, overlay, window)
 	text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
 	text("Tag tracks so playlists and search can find them."):style(
 	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-	render.field(app, "newTag", state.draft, "Tag name",
-	function(value) return { type = "tagDraft", value = value} end,
-	function() return { type = "createTag"} end),
+	field.view(app, {
+	name = "newTag",
+	value = state.draft,
+	placeholder = "Tag name",
+	oninput = function(value) return { type = "tagDraft", value = value} end,
+	onsubmit = function() return { type = "createTag"} end,
+	}),
 	div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end")):children({
-	render.button(app, "Cancel", { type = "dismiss"}, { height = theme:px(30), width = theme:px(80)}),
-	render.button(app, "Create", { type = "createTag"}, { primary = true, height = theme:px(30),
-	width = theme:px(86)}),
+	button.view(app, {
+	label = "Cancel",
+	onClick = { type = "dismiss"},
+	height = theme:px(30),
+	width = theme:px(80),
+	}),
+	button.view(app, {
+	label = "Create",
+	onClick = { type = "createTag"},
+	primary = true,
+	height = theme:px(30),
+	width = theme:px(86),
+	}),
 	}),
 	})
 

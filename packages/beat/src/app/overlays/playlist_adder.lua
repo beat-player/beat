@@ -1,7 +1,9 @@
 -- The panel that adds albums to a playlist, opened from the playlist's own +.
 local wonderland = require("wonderland")
-local render = require("beat.app.components.ui")
-local metrics = require("beat.app.components.metrics")
+local cover = require("beat.app.components.cover")
+local field = require("beat.app.components.field")
+local iconButton = require("beat.app.components.icon_button")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -73,14 +75,14 @@ function playlistAdder.view(app, overlay, window)
 			0, theme:px(6)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover")))
 			:onClick({ type = "playlistAddAlbum", id = album.id})
 			:children({
-			render.cover(app, album, theme:px(32), theme:radius("sm")),
+			cover.view(app, { album = album, size = theme:px(32), radius = theme:radius("sm") }),
 			div():style(sty():column():w(rowWidth - theme:px(78)):gap(0)):children({
 			text(album.title):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("semibold")
 			:fg(theme:color("text")):ellipsis()),
 			text(album.artist):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("muted"))
 			:ellipsis()),
 			}),
-			render.iconButton(app, "add", theme:px(26), { type = "playlistAddAlbum", id = album.id}),
+			iconButton.view(app, { name = "add", size = theme:px(26), onClick = { type = "playlistAddAlbum", id = album.id} }),
 			})
 		end
 
@@ -94,11 +96,15 @@ function playlistAdder.view(app, overlay, window)
 	div():style(sty():row():wrel(1.0):h(theme:px(28)):gap(theme:px(8)):align("center")):children({
 	text("Add to " .. playlist.name):style(theme:s():w(rowWidth - theme:px(28)):text(theme:type("lg"))
 	:weight("bold"):fg(theme:color("text")):ellipsis()),
-	render.iconButton(app, "close", theme:px(28), { type = "dismiss" }),
+	iconButton.view(app, { name = "close", size = theme:px(28), onClick = { type = "dismiss"} }),
 	}),
-	render.field(app, "playlistAddSearch", state.query, "Search albums",
-	function(value) return { type = "playlistAdderQuery", value = value} end,
-	function() return nil end),
+	field.view(app, {
+	name = "playlistAddSearch",
+	value = state.query,
+	placeholder = "Search albums",
+	oninput = function(value) return { type = "playlistAdderQuery", value = value} end,
+	onsubmit = function() return nil end,
+	}),
 	div():style(sty():column():wrel(1.0):h(theme:px(8 * 44)):gap(theme:px(2))):children(rows),
 	text(#albums > 8 and "Showing the first 8; search to narrow the list."
 	or "Click an album to add every track in it."):style(theme:s():text(theme:type("xs"))

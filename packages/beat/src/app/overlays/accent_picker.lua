@@ -1,7 +1,7 @@
 -- A small confirmable colour grid, opened by the Appearance section's Custom button.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local render = require("beat.app.components.ui")
+local button = require("beat.app.components.button")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -35,7 +35,8 @@ for tone = 1, 3 do
 				local value = tone == 3 and 0.72 or 1
 				ACCENT_GRID[#ACCENT_GRID + 1] = hsvColour(hue / 12, saturation, value)
 			end
-	end
+	end
+
 
 ---@class beat.AccentPickerState
 ---@field draft string
@@ -134,8 +135,12 @@ function accentPicker.view(app, overlay, window)
 	div():style(sty():column():h(gridHeight):gap(gap)):children(cells),
 	div():style(sty():row():h(footerHeight):gap(theme:px(8)):align("center")
 	:justify("end")):children({
-	render.button(app, "Cancel", { type = "dismiss"},
-	{ height = theme:px(32), width = theme:px(82)}),
+	button.view(app, {
+	label = "Cancel",
+	onClick = { type = "dismiss"},
+	height = theme:px(32),
+	width = theme:px(82),
+	}),
 	div():style(sty():row():w(theme:px(112)):h(theme:px(32))
 	:radius(theme:radius("full")):bg(draft):align("center"):justify("center"))
 	:onClick({ type = "confirmAccent"})
@@ -149,6 +154,7 @@ function accentPicker.view(app, overlay, window)
 	:bg(theme:color("overlay")))
 	:onClick({ type = "dismiss"})
 	:children({ panel})
-end
+end
+
 
 return accentPicker

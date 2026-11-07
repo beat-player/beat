@@ -2,8 +2,8 @@
 -- straight away, but one that has is also what its automatic playlist is built from. The
 -- dialog says how many tracks are involved before anything is removed.
 local wonderland = require("wonderland")
-local format = require("beat.app.components.format")
-local metrics = require("beat.app.components.metrics")
+local format = require("beat.app.components.helpers.format")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
