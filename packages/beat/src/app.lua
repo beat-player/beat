@@ -795,7 +795,8 @@ function App:act(message)
 	if kind ~= "toggleVolume" and kind ~= "volumeKeep" and kind ~= "volume" and kind ~= "mute" then
 		self.volumeOpen = false
 	end
-	if kind ~= "toggleQueue" and kind ~= "queueKeep" and kind ~= "openQueue" then
+	if kind ~= "toggleQueue" and kind ~= "queueKeep" and kind ~= "openQueue"
+	and not (kind == "scroll" and message.key == "queue") then
 		self.queueOpen = false
 	end
 	if kind ~= "toggleMore" and kind ~= "moreKeep" then
@@ -891,13 +892,15 @@ function App:act(message)
 		self:refresh()
 	elseif kind == "volumeKeep" then
 		-- The bubble itself is a click target, so a press on its padding does not close it.
-	elseif kind == "toggleQueue" then
-		self.queueOpen = not self.queueOpen
+	elseif kind == "toggleQueue" or kind == "openQueue" then
+		local open = kind == "openQueue" or not self.queueOpen
+		-- A queue opens at its next track, not where it was last scrolled to.
+		if open and not self.queueOpen then
+			self.scroll.queue = 0
+			self.scrollTargets.queue = nil
+		end
+		self.queueOpen = open
 		self.volumeOpen = false
-		self.moreOpen = false
-		self:refresh()
-	elseif kind == "openQueue" then
-		self.queueOpen = true
 		self.moreOpen = false
 		self:refresh()
 	elseif kind == "closeQueue" then
@@ -1484,9 +1487,10 @@ function App:act(message)
 		self:markSettingsDirty()
 		self:refresh()
 	elseif kind == "scroll" then
-		local key = self:pageKey()
+		-- A box that scrolls by itself names its key and how far it goes; anything else is the page.
+		local key = message.key or self:pageKey()
 		local offset = self.scroll[key] or 0
-		local limit = self.scrollMax
+		local limit = message.key ~= nil and message.max or self.scrollMax
 		---@param value number
 		local function clampScroll(value)
 			value = math.max(0, value)
