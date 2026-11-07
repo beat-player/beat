@@ -231,6 +231,101 @@ test.it("keeps an error toast under the pointer", function()
 	test.greater(App.toasts[1].expires, now, "its expiry moved forward")
 end)
 
+test.it("opens the in-app folder browser where the platform has no dialog", function()
+	local winit = require("winit")
+	local path = require("path")
+	local root = os.tmpname() .. "-beat-browse"
+	os.remove(root)
+	fs.mkdirAll(path.join(root, "Albums"))
+
+	App:init({ scan = false})
+	App.settings.root = root
+	App.page = { kind = "home"}
+	App.history = {}
+	local dialog = winit.FileDialog
+	winit.FileDialog = nil
+
+	App:act({ type = "chooseFolder"})
+	App:tick(0, { width = 1200, height = 720, shouldRedraw = false})
+	test.equal(App.page.kind, "folders", "Choose folder opens the browser instead of a dialog")
+	test.equal(App.folderAsk, nil, "no dialog is asked for")
+	test.equal(App.folderPath, path.normalize(root), "the browser starts at the library folder")
+	test.equal(App.folderEntries[1] and App.folderEntries[1].name, "Albums")
+
+	App:act({ type = "chooseFolder"})
+	test.equal(#App.history, 1, "choosing again from the browser does not stack another copy")
+
+	App:act({ type = "cancelFolders"})
+	test.equal(App.page.kind, "home", "Cancel returns to the page the browser was opened from")
+
+	winit.FileDialog = dialog
+	App.settings.root = nil
+	App.player:close()
+	fs.rmdir(root)
+end)
+
+test.it("asks the platform's dialog for a folder, on the tick rather than in the click", function()
+	local winit = require("winit")
+	local path = require("path")
+	local root = os.tmpname() .. "-beat-dialog"
+	os.remove(root)
+	fs.mkdirAll(root)
+
+	App:init({ scan = false})
+	App.settings.root = root
+	App.page = { kind = "home"}
+	local dialog = winit.FileDialog
+	local asked, scanned = nil, nil
+	winit.FileDialog = {
+		pickFolder = function(window, opts)
+			asked = { window = window, title = opts and opts.title}
+			return root
+		end,
+	}
+	local startScan = App.startScan
+	App.startScan = function(_, chosen) scanned = chosen end
+
+	App:act({ type = "chooseFolder"})
+	test.equal(asked, nil, "the click does not open the dialog from inside the message being handled")
+	test.equal(App.folderAsk, true, "it is asked for on the next tick")
+
+	App:tick(0, { width = 1200, height = 720, shouldRedraw = false})
+	test.equal(asked and asked.title, "Choose music folder")
+	test.equal(scanned, root, "and the folder it answers with is scanned")
+
+	App.startScan = startScan
+	winit.FileDialog = dialog
+	App.settings.root = nil
+	App.player:close()
+	fs.rmdir(root)
+end)
+
+test.it("climbs from a drive to the drive list and takes a typed path", function()
+	local folders = require("beat.app.folders")
+	local windows, drives = folders.windows, folders.drives
+	folders.windows = true
+	folders.drives = function() return { "C:\\", "D:\\"} end
+
+	App:init({ scan = false})
+	App:readFolder("C:\\Users")
+	App:act({ type = "folderUp"})
+	test.equal(App.folderPath, "C:\\", "Up from a top folder lands on the drive root, not its current directory")
+	App:act({ type = "folderUp"})
+	test.equal(App.folderPath, nil, "Up from a drive lists the drives")
+	test.equal(App.folderEntries[2] and App.folderEntries[2].path, "D:\\")
+	App:act({ type = "folderSelect"})
+	test.equal(App.scan, nil, "the list of drives is not a folder to scan")
+
+	App:act({ type = "folderDraft", value = "d:/Music"})
+	test.equal(App.folderDraft, "d:/Music", "the field keeps what is typed")
+	App:act({ type = "folderGo"})
+	test.equal(App.folderPath, "D:\\Music", "return opens the typed path")
+	test.equal(App.folderDraft, "D:\\Music")
+
+	folders.windows, folders.drives = windows, drives
+	App.player:close()
+end)
+
 test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	App:init({ scan = false})
 	App.settings.root = "/beat-fixtures"

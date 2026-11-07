@@ -8,6 +8,7 @@ local path = require("path")
 local Covers = require("beat.app.covers")
 local pages = require("beat.app.pages")
 local Picker = require("beat.app.picker")
+local folders = require("beat.app.folders")
 local ScanJob = require("beat.app.scan_job")
 local LibraryCache = require("beat.app.library_cache")
 local Log = require("beat.app.log")
@@ -62,12 +63,13 @@ local util = core.util
 ---@field scrollMax number? # The furthest the page built last frame can scroll, where it knows
 ---@field lastTick number
 ---@field ticker table?
----@field folderPath string?
+---@field folderPath string? # nil while the browser lists the drives, on Windows
+---@field folderDraft string # What the path field holds, typed or not
 ---@field folderEntries { name: string, path: string }[]
 ---@field folderError string?
 ---@field scanSkipped number
 ---@field scanErrors { path: string, message: string }[]
----@field folderPick beat.FolderPick?
+---@field folderAsk boolean? # Whether the system folder dialog is to be opened on the next tick
 ---@field scanIslandOpen boolean
 ---@field scanSummary { tracks: number, albums: number, skipped: number, at: number }?
 ---@field expanded boolean
@@ -178,7 +180,7 @@ function App:init(opts)
 	self.hoverPlaylist = nil
 	self.playlistAdder = nil
 	self.lastListenedTrackId = nil
-	self.folderPick = nil
+	self.folderAsk = nil
 	self.scan = nil
 	self.library = nil
 	self.sortedAlbums = nil
@@ -238,15 +240,34 @@ function App:needsFolder()
 	return self.settings.root == nil
 end
 
----@param pathname string
+--- The in-app folder browser, for platforms without a native dialog. The first-run screen
+--- already is that browser. It opens on the current library folder.
+function App:browseFolders()
+	if self:needsFolder() or self.page.kind == "folders" then return end
+	self:readFolder(self.settings.root or HOME)
+	self:go({ kind = "folders"})
+end
+
+--- Lists a folder in the browser, or the drives with nil. A typed path is taken from the folder
+--- shown, and a folder that cannot be read keeps its path so the field can be corrected.
+---@param pathname string?
 function App:readFolder(pathname)
-	if pathname:sub(1, 1) == "~" then pathname = HOME .. pathname:sub(2) end
-	self.folderPath = path.normalize(pathname)
 	self.folderEntries = {}
 	self.folderError = nil
+	self.scroll.folders = 0
 
-	local folder = self.folderPath
-	if folder == nil then return end
+	if pathname == nil then
+		self.folderPath = nil
+		self.folderDraft = ""
+		for _, drive in ipairs(folders.drives()) do
+				self.folderEntries[#self.folderEntries + 1] = { name = drive, path = drive}
+			end
+		return
+	end
+
+	local folder = folders.normalize(pathname, self.folderPath or HOME, HOME)
+	self.folderPath = folder
+	self.folderDraft = folder
 	local iterator = fs.readdir(folder)
 	if iterator == nil then
 		self.folderError = "Cannot read this folder"
@@ -257,13 +278,12 @@ function App:readFolder(pathname)
 			if entry.type == "dir" and entry.name:sub(1, 1) ~= "." then
 				self.folderEntries[#self.folderEntries + 1] = {
 				name = entry.name,
-				path = path.join(self.folderPath, entry.name),
+				path = folders.join(folder, entry.name),
 				}
 			end
 		end
 
 	table.sort(self.folderEntries, function(a, b) return a.name:lower() < b.name:lower() end)
-	self.scroll.folders = 0
 end
 
 function App:refresh()
@@ -342,8 +362,7 @@ end
 ---@param root string
 function App:startScan(root)
 	self.sortOpen = false
-	Picker.cancel(self.folderPick)
-	self.folderPick = nil
+	self.folderAsk = nil
 	if self.scan ~= nil then self.scan:cancel() end
 	self.player:close()
 	self.spectrum:clear()
@@ -1059,24 +1078,40 @@ function App:act(message)
 		self.motion:animate("nowPlaying", self.expanded and 1 or 0, 0.28,
 		self.expanded and ui.motion.ease.outBack or ui.motion.ease.inCubic)
 	elseif kind == "chooseFolder" then
-		if self.folderPick == nil then
-			self.folderPick = Picker.start(self.window)
+		if self.folderPick == nil and not self.folderAsk then
+			-- Asked for on the next tick rather than here: the dialog runs a message loop of its own
+			-- until it is answered, and one started from inside the click that asked for it is a loop
+			-- inside this app's own -- every message it hands over arrives in the middle of the one
+			-- being handled. A tick has no message being handled.
+			self.folderAsk = true
 		end
+	elseif kind == "cancelFolders" then
+		self:back()
 	elseif kind == "folderOpen" then
 		self:readFolder(message.path)
 		self:refresh()
 	elseif kind == "folderGo" then
-		if type(message.path) == "string" and message.path ~= "" then
-			self:readFolder(message.path)
+		local typed = message.path or self.folderDraft
+		if type(typed) == "string" and typed:match("%S") then
+			self:readFolder(typed)
 			self:refresh()
 		end
-	elseif kind == "folderUp" then
-		local folder = self.folderPath or HOME
-		self:readFolder(path.dirname(folder))
+	elseif kind == "folderDraft" then
+		self.folderDraft = message.value or ""
 		self:refresh()
+	elseif kind == "folderUp" then
+		local folder = self.folderPath
+		if folder ~= nil then
+			local parent = folders.parent(folder)
+			-- Above a Windows drive are the drives; "/" has nothing above it.
+			if parent ~= nil or folders.windows then
+				self:readFolder(parent)
+				self:refresh()
+			end
+		end
 	elseif kind == "folderSelect" then
-		local chosen = message.path or self.folderPath or HOME
-		self:startScan(chosen)
+		local chosen = message.path or self.folderPath
+		if chosen ~= nil then self:startScan(chosen) end
 	elseif kind == "rescan" then
 		local root = self.settings.root
 		if root ~= nil then self:startScan(root) end
@@ -1618,17 +1653,22 @@ function App:tick(now, window)
 		changed = true
 	end
 
+	if self.folderAsk then
+		self.folderAsk = nil
+		self.folderPick = Picker.start(self.window)
+	end
+
 	if self.folderPick ~= nil then
 		local chosen, status = Picker.poll(self.folderPick)
+
 		if chosen ~= nil then
 			self.folderPick = nil
 			self:startScan(chosen)
 			changed = true
 		elseif status ~= nil then
 			self.folderPick = nil
-			if status == "no-picker" then
-				self:toast("No system folder dialog is available on this machine", "error")
-			end
+			-- Where the platform has no dialog of its own, the app's browser is the one there is.
+			if status == "no-picker" then self:browseFolders() end
 			changed = true
 		end
 	end

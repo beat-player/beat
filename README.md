@@ -40,10 +40,12 @@ lde sync -C packages/beat
 lde run -C packages/beat
 ```
 
-The first launch asks for a music folder. **Choose folder…** opens the desktop's own dialog in a
-separate window — zenity or kdialog on Linux, the Finder chooser on macOS. The app keeps running
-while the dialog is open, polls its result, and starts the scan when a folder is chosen. **Browse**
-is the in-app fallback, and dropping a folder on the window also starts a scan.
+The first launch asks for a music folder with the desktop's own chooser — winit's file dialog, which is
+the Windows one, the Finder's on macOS and a GTK or portal dialog on Linux. **Choose folder…** opens
+it; the app waits while it is up and starts the scan when a folder is chosen. Where a platform has no
+dialog of its own, **Choose folder…** opens the app's browser instead, which is also where a typed or
+pasted path is given, and where on Windows **Up** from a drive lists every drive. Dropping a folder on
+the window also starts a scan.
 
 Scanning runs as a separate coordinator process. A source checkout starts it from
 `packages/beat/tools/scan-worker.lua`; a compiled executable runs itself again, so the release needs

@@ -7,6 +7,7 @@ local path = require("path")
 local ui = require("beat-ui")
 local core = require("beat-core")
 local render = require("beat.app.ui")
+local winit = require("winit")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local util = core.util
@@ -2524,27 +2525,34 @@ local function foldersPage(app, window)
 	local entries = app.folderEntries
 	local rows = {}
 
-	local choose = render.button(app, "Choose folder…", { type = "chooseFolder"},
-	{ primary = true, height = theme:px(30), width = theme:px(142)})
-	local up = render.button(app, "Up", { type = "folderUp"},
-	{ height = theme:px(30), width = theme:px(48)})
-	local select = render.button(app, "Select this folder", { type = "folderSelect", path = app.folderPath},
-	{ height = theme:px(30), width = theme:px(150)})
+	-- Without a native dialog this page is the picker; the button would only lead back here.
+	local choose = winit.FileDialog ~= nil and render.button(app, "Choose folder…", { type = "chooseFolder"},
+	{ primary = true, height = theme:px(30), width = theme:px(142)}) or nil
+	-- The list of drives is not a folder: nothing above it, and nothing to scan.
+	local listing = app.folderPath ~= nil
+	local up = listing and render.button(app, "Up", { type = "folderUp"},
+	{ height = theme:px(30), width = theme:px(48)}) or nil
+	local select = listing and render.button(app, "Select this folder", { type = "folderSelect", path = app.folderPath},
+	{ height = theme:px(30), width = theme:px(150)}) or nil
 	local cancel = app.library ~= nil and render.button(app, "Cancel", { type = "cancelFolders"},
 	{ height = theme:px(30), width = theme:px(80)}) or nil
 
-	if mobile then
-		local second = { select}
-		if cancel ~= nil then second[#second + 1] = cancel end
-		rows[#rows + 1] = div():style(sty():column():h(theme:px(76)):gap(theme:px(8))):children({
-		div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children({ choose, up}),
-		div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children(second),
-		})
-	else
-		local actions = { choose, up, select}
-		if cancel ~= nil then actions[#actions + 1] = cancel end
-		rows[#rows + 1] = div():style(sty():row():h(theme:px(38)):gap(theme:px(8)):align("center"))
-		:children(actions)
+	-- A phone stacks the buttons in two lines; either may be empty in the list of drives.
+	local lines = mobile and { { choose, up}, { select, cancel}} or { { choose, up, select, cancel}}
+	local actionRows = {}
+	for _, line in ipairs(lines) do
+			local buttons = {}
+			for at = 1, 4 do
+					if line[at] then buttons[#buttons + 1] = line[at] end
+				end
+			if #buttons > 0 then
+				actionRows[#actionRows + 1] = div():style(sty():row():h(theme:px(30)):gap(theme:px(8))
+				:align("center")):children(buttons)
+			end
+		end
+	if #actionRows > 0 then
+		rows[#rows + 1] = div():style(sty():column():h(theme:px(30 * #actionRows + 8 * (#actionRows - 1) + 8))
+		:gap(theme:px(8))):children(actionRows)
 	end
 
 	for _, entry in ipairs(entries) do
@@ -2567,15 +2575,9 @@ local function foldersPage(app, window)
 	or "Everything under it is scanned. Nothing is uploaded anywhere."):style(
 	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
 	),
-	text(app.folderPath or ""):style(theme:s():wrel(1.0):h(theme:px(24)):pad(theme:px(5), theme:px(8),
-	theme:px(5), theme:px(8)):radius(theme:radius("sm")):bg(theme:color("surface"))
-	:text(theme:type("xs")):fg(theme:color("faint")):ellipsis())
-	:input({
-	name = "folderPath",
-	value = app.folderPath or "",
-	oninput = function() end,
-	onsubmit = function(value) return { type = "folderGo", path = value} end,
-	}),
+	dialogField(app, "folderPath", app.folderDraft, "Type a folder path",
+	function(value) return { type = "folderDraft", value = value} end,
+	function() return { type = "folderGo"} end),
 	})
 	if app.folderError ~= nil then
 		content:children(text(app.folderError):style(
