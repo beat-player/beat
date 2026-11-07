@@ -17,8 +17,8 @@ local sidebar = {}
 ---@param height number
 ---@return wonderland.Element
 function sidebar.view(app, width, height)
-	local theme = app.theme
-	local collapsed = app.settings.sidebarCollapsed or width < 1040
+	local theme = app.services.appearance.theme
+	local collapsed = app.services.settings.values.sidebarCollapsed or width < 1040
 	local side = metrics.sidebarWidth(app, width)
 	local current = app.page
 
@@ -65,7 +65,7 @@ function sidebar.view(app, width, height)
 
 	local rowGap = theme:px(3)
 	local sectionGap = theme:px(4)
-	local playlists = app:recentPlaylists(3)
+	local playlists = app.services.collections:recentPlaylists(3)
 	---@cast playlists beat.Playlist[]
 	local rowCount = #playlists + 1
 	local headerHeight = collapsed and theme:px(0) or theme:px(24)
@@ -161,7 +161,7 @@ function sidebar.view(app, width, height)
 
 		-- A message is a frame: moving inside one row, or over anything that has no shortcut,
 		-- asks for nothing when the tooltip is already in the state that movement means.
-		local old = app.hoverPlaylist
+		local old = app.services.sidebar.hover
 		if hovered == nil then
 			if old == nil then return nil end
 			return { type = "hoverPlaylist", id = nil}
@@ -216,12 +216,12 @@ end
 ---@param height number
 ---@return wonderland.Element?
 function sidebar.tooltip(app, width, height)
-	local hover = app.hoverPlaylist
-	if hover == nil or app.taxonomy == nil then return nil end
-	local playlist = app.taxonomy:playlist(hover.id)
+	local hover = app.services.sidebar.hover
+	if hover == nil or app.services.collections.taxonomy == nil then return nil end
+	local playlist = app.services.collections.taxonomy:playlist(hover.id)
 	if playlist == nil then return nil end
 
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local pad = theme:px(8)
 	local nameStyle = theme:s():text(theme:type("sm")):weight("semibold")
 	local measured = measure.width(app, playlist.name, nameStyle)

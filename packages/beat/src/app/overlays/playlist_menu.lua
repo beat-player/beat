@@ -14,7 +14,7 @@ local playlistMenu = { light = true}
 
 ---@param params { id: number, x: number?, y: number? }
 function playlistMenu.new(app, params)
-	local playlist = app.taxonomy:playlist(params.id)
+	local playlist = app.services.collections.taxonomy:playlist(params.id)
 	if playlist == nil then return nil end
 	---@type beat.PlaylistMenuState
 	return { id = playlist.id, x = params.x or 0, y = params.y or 0}
@@ -24,7 +24,7 @@ function playlistMenu.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.PlaylistMenuState]]
 	if message.type == "deletePlaylist" then
 		app:close(overlay)
-		app:deletePlaylist(state.id)
+		app.services.collections:deletePlaylist(state.id)
 		app:refresh()
 		return true
 	end
@@ -33,10 +33,10 @@ end
 
 function playlistMenu.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.PlaylistMenuState]]
-	local playlist = app.taxonomy:playlist(state.id)
+	local playlist = app.services.collections.taxonomy:playlist(state.id)
 	if playlist == nil then return nil end
 
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local width = theme:px(196)
 	local rowHeight = theme:px(34)
 	local height = theme:px(8 * 2 + 34)

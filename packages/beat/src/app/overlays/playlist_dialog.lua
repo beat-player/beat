@@ -52,14 +52,14 @@ function playlistDialog.update(app, overlay, message)
 		local tagIds = {}
 		for id in pairs(state.tagIds) do tagIds[#tagIds + 1] = id end
 		table.sort(tagIds)
-		local playlist = app.taxonomy:addPlaylist(state.name, #tagIds > 0, tagIds,
+		local playlist = app.services.collections.taxonomy:addPlaylist(state.name, #tagIds > 0, tagIds,
 		state.match, { manual = true})
 		if playlist == nil then
-			app:toast("Choose a playlist name", "error")
+			app.services.toasts:show("Choose a playlist name", "error")
 		else
-			app:saveTaxonomy()
+			app.services.collections:save()
 			app:close(overlay)
-			app:toast("Playlist created · " .. playlist.name)
+			app.services.toasts:show("Playlist created · " .. playlist.name)
 		end
 		app:refresh()
 		return true
@@ -69,8 +69,8 @@ end
 
 function playlistDialog.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.PlaylistDialogState]]
-	local theme = app.theme
-	local tags = app.taxonomy:visibleTags()
+	local theme = app.services.appearance.theme
+	local tags = app.services.collections.taxonomy:visibleTags()
 	local panelWidth = metrics.panelWidth(app, window, 440)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2

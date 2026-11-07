@@ -16,48 +16,15 @@ local GITHUB = "https://github.com/bycruz/beat"
 ---@type beat.PageSurface
 local settings = {}
 
---- The messages the settings screen sends; the ones the app answers for every screen (choosing a
---- folder, the sidebar and volume controls) are left to the app.
+--- The one message the settings screen answers itself: a link it shows. The folder, playback and
+--- Last.fm controls belong to the services that own that state.
 function settings.update(app, page, message)
 	local kind = message.type
-	if kind == "theme" then
-		app.settings.theme = message.name
-		app:themeChanged()
-	elseif kind == "accent" then
-		app.settings.accent = message.name
-		app:themeChanged()
-	elseif kind == "uiScale" then
-		app.settings.uiScale = message.value
-		app:themeChanged()
-	elseif kind == "reduceMotion" then
-		app.settings.reduceMotion = message.value == true
-		app.motion.reduce = app.settings.reduceMotion
-		app:markSettingsDirty()
-	elseif kind == "rescan" then
-		local root = app.settings.root
-		if root ~= nil then app:startScan(root) end
-	elseif kind == "lastfmConnect" then
-		app.lastfm:connect()
-		app:refresh()
-	elseif kind == "lastfmCancel" then
-		app.lastfm:cancelAuth()
-		app:refresh()
-	elseif kind == "lastfmOpenAuth" then
-		if not app.lastfm:openAuthPage() then
-			app:toast("Could not open a browser for Last.fm", "error")
-		end
-	elseif kind == "openURL" then
+	if kind == "openURL" then
 		local ok, opened = pcall(links.open, message.url)
 		if not ok or not opened then
-			app:toast("Could not open the link", "error")
+			app.services.toasts:show("Could not open the link", "error")
 		end
-	elseif kind == "lastfmDisconnect" then
-		app.lastfm:disconnect()
-		app:refresh()
-	elseif kind == "lastfmEnabled" then
-		app.settings.lastfmEnabled = message.value == true
-		app:markSettingsDirty()
-		app:refresh()
 	else
 		return false
 	end
@@ -69,7 +36,7 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function settings.view(app, page, window)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 
 	local function section(title, copy, rows, height)
 		local content = {
@@ -89,7 +56,7 @@ function settings.view(app, page, window)
 			themeChips[#themeChips + 1] = render.button(app,
 			name:sub(1, 1):upper() .. name:sub(2),
 			{ type = "theme", name = name},
-			{ primary = app.settings.theme == name, height = theme:px(30), width = theme:px(narrowTheme and 120 or 92)})
+			{ primary = app.services.settings.values.theme == name, height = theme:px(30), width = theme:px(narrowTheme and 120 or 92)})
 		end
 	local themeRow
 	if narrowTheme then
@@ -100,7 +67,7 @@ function settings.view(app, page, window)
 
 	local accents = {}
 	for _, name in ipairs(ui.theme.accents()) do
-			local active = app.settings.accent == name
+			local active = app.services.settings.values.accent == name
 			accents[#accents + 1] = div()
 			:style(sty():size(theme:px(narrowTheme and 20 or 28), theme:px(narrowTheme and 20 or 28))
 			:radius(theme:radius("full"))
@@ -125,18 +92,18 @@ function settings.view(app, page, window)
 	:gap(theme:px(narrowTheme and 4 or 8)):align("center")):children({
 	text("Scale"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 	render.button(app, "90%", { type = "uiScale", value = 0.9}, { height = theme:px(28),
-	width = theme:px(narrowTheme and 38 or 60), primary = app.settings.uiScale == 0.9}),
+	width = theme:px(narrowTheme and 38 or 60), primary = app.services.settings.values.uiScale == 0.9}),
 	render.button(app, "100%", { type = "uiScale", value = 1}, { height = theme:px(28),
-	width = theme:px(narrowTheme and 40 or 62), primary = app.settings.uiScale == 1}),
+	width = theme:px(narrowTheme and 40 or 62), primary = app.services.settings.values.uiScale == 1}),
 	render.button(app, "125%", { type = "uiScale", value = 1.25}, { height = theme:px(28),
-	width = theme:px(narrowTheme and 40 or 62), primary = app.settings.uiScale == 1.25}),
+	width = theme:px(narrowTheme and 40 or 62), primary = app.services.settings.values.uiScale == 1.25}),
 	})
 
 	local motionRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")):children({
 	text("Motion"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	render.button(app, app.settings.reduceMotion and "Motion reduced" or "Reduce motion",
-	{ type = "reduceMotion", value = not app.settings.reduceMotion}, { height = theme:px(28),
-	width = theme:px(narrowTheme and 130 or 150), primary = app.settings.reduceMotion}),
+	render.button(app, app.services.settings.values.reduceMotion and "Motion reduced" or "Reduce motion",
+	{ type = "reduceMotion", value = not app.services.settings.values.reduceMotion}, { height = theme:px(28),
+	width = theme:px(narrowTheme and 130 or 150), primary = app.services.settings.values.reduceMotion}),
 	})
 
 	local mobileSidebar = metrics.mobile(app, window.width)
@@ -149,16 +116,16 @@ function settings.view(app, page, window)
 	elseif window.width >= 1040 then
 		sidebarControls[#sidebarControls + 1] = render.button(app, "Narrow",
 		{ type = "sidebarWidth", width = 220},
-		{ height = theme:px(28), width = theme:px(74), primary = app.settings.sidebarWidth == 220})
+		{ height = theme:px(28), width = theme:px(74), primary = app.services.settings.values.sidebarWidth == 220})
 		sidebarControls[#sidebarControls + 1] = render.button(app, "Balanced",
 		{ type = "sidebarWidth", width = 264},
-		{ height = theme:px(28), width = theme:px(86), primary = app.settings.sidebarWidth == 264})
+		{ height = theme:px(28), width = theme:px(86), primary = app.services.settings.values.sidebarWidth == 264})
 		sidebarControls[#sidebarControls + 1] = render.button(app, "Wide",
 		{ type = "sidebarWidth", width = 320},
-		{ height = theme:px(28), width = theme:px(64), primary = app.settings.sidebarWidth == 320})
+		{ height = theme:px(28), width = theme:px(64), primary = app.services.settings.values.sidebarWidth == 320})
 		sidebarControls[#sidebarControls + 1] = render.button(app,
-		app.settings.sidebarCollapsed and "Expand" or "Collapse", { type = "toggleSidebar"},
-		{ height = theme:px(28), width = theme:px(76), primary = app.settings.sidebarCollapsed})
+		app.services.settings.values.sidebarCollapsed and "Expand" or "Collapse", { type = "toggleSidebar"},
+		{ height = theme:px(28), width = theme:px(76), primary = app.services.settings.values.sidebarCollapsed})
 	else
 		sidebarControls[#sidebarControls + 1] = text("Icon rail below 1040 px"):style(
 		theme:s():text(theme:type("xs")):fg(theme:color("faint"))
@@ -168,7 +135,7 @@ function settings.view(app, page, window)
 	:children(sidebarControls)
 
 	local libraryRows = {
-	text(app.settings.root or "No folder chosen"):style(theme:s():text(theme:type("sm"))
+	text(app.services.settings.values.root or "No folder chosen"):style(theme:s():text(theme:type("sm"))
 	:fg(theme:color("muted")):ellipsis()),
 	(function()
 		local buttons = {
@@ -183,11 +150,12 @@ function settings.view(app, page, window)
 		return div():style(sty():row():h("auto"):gap(theme:px(8))):children(buttons)
 	end)(),
 	}
-	if app.scanSkipped > 0 then
-		libraryRows[#libraryRows + 1] = text(util.count(app.scanSkipped, "file") .. " skipped"):style(
+	local scan = app.services.scan
+	if scan.skipped > 0 then
+		libraryRows[#libraryRows + 1] = text(util.count(scan.skipped, "file") .. " skipped"):style(
 		theme:s():text(theme:type("xs")):fg(theme:color("danger"))
 		)
-		for at, failure in ipairs(app.scanErrors) do
+		for at, failure in ipairs(scan.errors) do
 				if at > 3 then break end
 				libraryRows[#libraryRows + 1] = text(path.basename(failure.path) .. " · " .. failure.message):style(
 				theme:s():text(theme:type("xs")):fg(theme:color("muted")):ellipsis()
@@ -198,12 +166,12 @@ function settings.view(app, page, window)
 	local audioRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(12)):align("center")):children({
 	text("Volume"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 	render.volume(app, theme:px(narrowTheme and 80 or 200)),
-	text(tostring(math.floor((app.settings.isMuted and 0 or app.settings.volume) * 100)) .. "%"):style(
+	text(tostring(math.floor((app.services.settings.values.isMuted and 0 or app.services.settings.values.volume) * 100)) .. "%"):style(
 	theme:s():text(theme:type("xs")):fg(theme:color("faint"))
 	),
 	})
 
-	local lastfm = app.lastfm
+	local lastfm = app.services.playback.lastfm
 	local lastfmTone = lastfm:statusTone()
 	local lastfmColour = lastfmTone == "success" and theme:color("success")
 	or (lastfmTone == "danger" and theme:color("danger") or theme:color("muted"))
@@ -239,10 +207,10 @@ function settings.view(app, page, window)
 	local lastfmToggleRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"))
 	:children({
 	text("Scrobbling"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	render.button(app, app.settings.lastfmEnabled and "Enabled" or "Paused",
-	{ type = "lastfmEnabled", value = not app.settings.lastfmEnabled},
+	render.button(app, app.services.settings.values.lastfmEnabled and "Enabled" or "Paused",
+	{ type = "lastfmEnabled", value = not app.services.settings.values.lastfmEnabled},
 	{ height = theme:px(28), width = theme:px(narrowTheme and 76 or 88),
-	primary = app.settings.lastfmEnabled}),
+	primary = app.services.settings.values.lastfmEnabled}),
 	})
 
 	local lastfmRows = { lastfmStatusRow, lastfmToggleRow}
@@ -264,7 +232,7 @@ function settings.view(app, page, window)
 
 	local appearanceHeight = (narrowTheme and 342 or 268) + 32 + 12
 	local libraryHeight = (narrowTheme and 210 or 170)
-	+(app.scanSkipped > 0 and (12 + math.min(#app.scanErrors, 3) * 16) or 0)
+	+(scan.skipped > 0 and (12 + math.min(#scan.errors, 3) * 16) or 0)
 	local aboutHeight = narrowTheme and 196 or 156
 	return div():style(sty():column():wrel(1.0):h(theme:px(32 + appearanceHeight + 136 + libraryHeight
 	+134 + lastfmHeight + aboutHeight + 6 * 16 + 24))

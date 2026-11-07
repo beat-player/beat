@@ -23,11 +23,18 @@ function playlists.new()
 	return { tagEditId = nil, tagEditDraft = "", hoverTagId = nil}
 end
 
+--- Leaving puts an edited tag's pill back: the edit is about this page while it is looked at.
+function playlists.leave(_, page)
+	local state = page.state --[[@as beat.PlaylistsState]]
+	state.tagEditId = nil
+	state.hoverTagId = nil
+end
+
 function playlists.update(app, page, message)
 	local state = page.state --[[@as beat.PlaylistsState]]
 	local kind = message.type
 	if kind == "editTag" then
-		local tag = app.taxonomy.tagById[tonumber(message.id)]
+		local tag = app.services.collections.taxonomy.tagById[tonumber(message.id)]
 		if tag ~= nil and not tag.hidden then
 			state.tagEditId = tag.id
 			state.tagEditDraft = tag.name
@@ -46,15 +53,15 @@ function playlists.update(app, page, message)
 		app:refresh()
 		return true
 	elseif kind == "renameTag" then
-		local tag = app.taxonomy:renameTag(state.tagEditId --[[@as number]], state.tagEditDraft)
+		local tag = app.services.collections.taxonomy:renameTag(state.tagEditId --[[@as number]], state.tagEditDraft)
 		if tag == nil then
-			app:toast("Choose a tag name that is not already used", "error")
+			app.services.toasts:show("Choose a tag name that is not already used", "error")
 		else
-			app:saveTaxonomy()
+			app.services.collections:save()
 			state.tagEditId = nil
 			state.tagEditDraft = ""
 			app:focusField(nil)
-			app:toast("Tag renamed · " .. tag.name)
+			app.services.toasts:show("Tag renamed · " .. tag.name)
 		end
 		app:refresh()
 		return true
@@ -66,20 +73,25 @@ function playlists.update(app, page, message)
 		return true
 	elseif kind == "deleteTag" then
 		local id = tonumber(message.id)
-		local tag = id ~= nil and app.taxonomy.tagById[id] or nil
+		local tag = id ~= nil and app.services.collections.taxonomy.tagById[id] or nil
 		if tag ~= nil then
 			-- A tag a track uses asks first; an empty one only removes its own list.
 			if tag.count > 0 then
 				app:open("tag_delete", { id = tag.id})
 			else
-				app:deleteTag(tag.id)
+				-- The row's hover and the name field if this tag was being edited belong to this
+				-- page, so they go with the tag here; the search service drops it from its filter
+				-- when collections announce the change.
+				if state.tagEditId == tag.id then
+					state.tagEditId = nil
+					state.tagEditDraft = ""
+					app:focusField(nil)
+				end
+				if state.hoverTagId == tag.id then state.hoverTagId = nil end
+				app.services.collections:deleteTag(tag.id)
 				app:refresh()
 			end
 		end
-		return true
-	elseif kind == "playPlaylist" then
-		app:playPlaylist(message.id --[[@as number]], message.shuffle == true)
-		app:refresh()
 		return true
 	end
 	return false
@@ -91,9 +103,9 @@ end
 ---@return wonderland.Element
 function playlists.view(app, page, window)
 	local state = page.state --[[@as beat.PlaylistsState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, window.width)
-	local taxonomy = app.taxonomy
+	local taxonomy = app.services.collections.taxonomy
 	local content = metrics.contentWidth(app, window.width)
 	local tags = taxonomy:visibleTags()
 	---@cast tags beat.Tag[]

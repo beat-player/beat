@@ -24,17 +24,17 @@ end
 function playlistPicker.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.PlaylistPickerState]]
 	if message.type ~= "addToPlaylist" then return false end
-	local playlist = app.taxonomy:playlist(message.playlistId)
-	if playlist ~= nil and app.library ~= nil then
+	local playlist = app.services.collections.taxonomy:playlist(message.playlistId)
+	if playlist ~= nil and app.services.library.current ~= nil then
 		if state.kind == "album" then
-			local album = app.library:album(state.id)
-			if album ~= nil then app.taxonomy:setPlaylistAlbum(playlist, album) end
+			local album = app.services.library.current:album(state.id)
+			if album ~= nil then app.services.collections.taxonomy:setPlaylistAlbum(playlist, album) end
 		else
-			local track = app.library:track(state.id)
-			if track ~= nil then app.taxonomy:setPlaylistTrack(playlist, track.path, true) end
+			local track = app.services.library.current:track(state.id)
+			if track ~= nil then app.services.collections.taxonomy:setPlaylistTrack(playlist, track.path, true) end
 		end
-		app:saveTaxonomy()
-		app:toast("Added to " .. playlist.name)
+		app.services.collections:save()
+		app.services.toasts:show("Added to " .. playlist.name)
 	end
 	app:close(overlay)
 	app:refresh()
@@ -43,14 +43,14 @@ end
 
 function playlistPicker.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.PlaylistPickerState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local manual = {}
-	for _, playlist in ipairs(app.taxonomy.playlists) do
+	for _, playlist in ipairs(app.services.collections.taxonomy.playlists) do
 			manual[#manual + 1] = playlist
 		end
 	local rows = {}
 	for _, playlist in ipairs(manual) do
-			local count = app.library ~= nil and #app.taxonomy:playlistTracks(playlist, app.library) or 0
+			local count = #app.services.collections:playlistTracks(playlist)
 			rows[#rows + 1] = div()
 			:style(sty():row():wrel(1.0):h(theme:px(38)):pad(0, theme:px(10), 0, theme:px(10))
 			:gap(theme:px(8)):radius(theme:radius("sm")):align("center"):justify("space-between"))

@@ -42,38 +42,38 @@ function equalizerRename.update(app, overlay, message)
 		local oldName = state.name
 		local newName = state.draft:match("^%s*(.-)%s*$")
 		if newName == "" then
-			app:toast("Choose a preset name", "error")
+			app.services.toasts:show("Choose a preset name", "error")
 		elseif not equalizer.nameFree(app, oldName, newName) then
-			app:toast("Choose a preset name that is not already used", "error")
+			app.services.toasts:show("Choose a preset name that is not already used", "error")
 		else
 			local found
-			for _, preset in ipairs(app.settings.equalizerCustomPresets) do
+			for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
 					if preset.name == oldName then found = preset end
 				end
 			if found ~= nil then
 				found.name = newName
-				if app.settings.equalizerPreset == oldName then
-					app.settings.equalizerPreset = newName
+				if app.services.settings.values.equalizerPreset == oldName then
+					app.services.settings.values.equalizerPreset = newName
 				end
 				app:close(overlay)
-				app:markSettingsDirty()
+				app.services.settings:changed()
 			end
 		end
 	elseif kind == "deleteEqualizerPreset" then
 		local name = message.name or state.name
 		local found
-		for at, preset in ipairs(app.settings.equalizerCustomPresets) do
+		for at, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
 				if preset.name == name then found = at; break end
 			end
 		if found ~= nil then
-			table.remove(app.settings.equalizerCustomPresets, found)
-			if app.settings.equalizerPreset == name then
-				app.settings.equalizerPreset = "flat"
-				app.settings.equalizerGains = core.equalizer.presetGains("flat")
-				app.player:setEqualizer(core.equalizer.bands(app.settings.equalizerGains))
+			table.remove(app.services.settings.values.equalizerCustomPresets, found)
+			if app.services.settings.values.equalizerPreset == name then
+				app.services.settings.values.equalizerPreset = "flat"
+				app.services.settings.values.equalizerGains = core.equalizer.presetGains("flat")
+				app.services.playback.player:setEqualizer(core.equalizer.bands(app.services.settings.values.equalizerGains))
 			end
 			app:close(overlay)
-			app:markSettingsDirty()
+			app.services.settings:changed()
 		end
 	else
 		return false
@@ -88,7 +88,7 @@ end
 function equalizerRename.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.EqualizerRenameState]]
 	local name = state.name
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local width = math.min(theme:px(340), window.width - theme:px(32))
 	local padding = theme:px(16)
 	local height = theme:px(220)

@@ -19,29 +19,6 @@ function playlistPage.key(page)
 	return "playlist:" .. tostring(page.id)
 end
 
-function playlistPage.update(app, page, message)
-	if message.type == "playPlaylist" then
-		app:playPlaylist(message.id --[[@as number]], message.shuffle == true)
-		app:refresh()
-		return true
-	elseif message.type == "playPlaylistTrack" then
-		local playlist = app.taxonomy:playlist(message.playlistId --[[@as number]])
-		if playlist ~= nil and app.library ~= nil then
-			local tracks = app.taxonomy:playlistTracks(playlist, app.library)
-			local index = 1
-			for at, track in ipairs(tracks) do
-				if track.id == message.trackId then index = at; break end
-			end
-			if #tracks > 0 then
-				app.player:playTracks(tracks, index, { source = "playlist:" .. tostring(playlist.id)})
-			end
-		end
-		app:refresh()
-		return true
-	end
-	return false
-end
-
 --- Read from the taxonomy each frame: a page kept in the history outlives the playlist that
 --- was deleted while it waited.
 ---@param app beat.App
@@ -49,7 +26,7 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function playlistPage.view(app, page, window)
-	local playlist = app.taxonomy:playlist(page.id --[[@as number]])
+	local playlist = app.services.collections.taxonomy:playlist(page.id --[[@as number]])
 	if playlist == nil then
 		return render.empty(app, "Playlist not found", nil, "Playlists",
 		{ type = "navigate", page = { kind = "playlists"}})
@@ -59,7 +36,7 @@ function playlistPage.view(app, page, window)
 	---@cast tracks beat.Track[]
 	local tagNames = {}
 	for _, id in ipairs(playlist.tagIds) do
-			local tag = app.taxonomy.tagById[id]
+			local tag = app.services.collections.taxonomy.tagById[id]
 			if tag ~= nil then tagNames[#tagNames + 1] = tag.name end
 		end
 	local duration = 0
@@ -72,24 +49,24 @@ function playlistPage.view(app, page, window)
 		subtitle = "Smart playlist · " .. table.concat(tagNames, playlist.match == "any" and " or " or " · ")
 	end
 
-	local current = app:currentTrack()
-	local source = app.player.queue and app.player.queue.source or nil
+	local current = app.services.playback:current()
+	local source = app.services.playback.player.queue and app.services.playback.player.queue.source or nil
 	local thisPlaylist = current ~= nil and source == "playlist:" .. tostring(playlist.id)
-	local playing = app.player:isPlaying()
+	local playing = app.services.playback.player:isPlaying()
 
 	local empty = div():style(sty():column():wrel(1.0):h(120):align("center"):justify("center")
 	:gap(10)):children({
-	ui.icons.element("playlists", app.theme:px(34), app.theme:color("faint")),
-	text("This playlist is empty"):style(app.theme:s():text(app.theme:type("lg"))
-	:weight("bold"):fg(app.theme:color("text"))),
+	ui.icons.element("playlists", app.services.appearance.theme:px(34), app.services.appearance.theme:color("faint")),
+	text("This playlist is empty"):style(app.services.appearance.theme:s():text(app.services.appearance.theme:type("lg"))
+	:weight("bold"):fg(app.services.appearance.theme:color("text"))),
 	text("Use + to add albums, or right-click a track and add it here."):style(
-	app.theme:s():text(app.theme:type("sm")):fg(app.theme:color("muted"))),
+	app.services.appearance.theme:s():text(app.services.appearance.theme:type("sm")):fg(app.services.appearance.theme:color("muted"))),
 	})
 
 	return collection.page(app, window, {
 	label = "PLAYLIST",
 	icons = PlaylistArt.icons(app, playlist),
-	cover = function(size) return PlaylistArt.art(app, tracks, size, app.theme:radius("lg"), playlist.name) end,
+	cover = function(size) return PlaylistArt.art(app, tracks, size, app.services.appearance.theme:radius("lg"), playlist.name) end,
 	title = playlist.name,
 	subtitle = subtitle,
 	meta = util.count(#tracks, "track")

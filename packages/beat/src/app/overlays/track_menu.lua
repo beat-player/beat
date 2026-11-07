@@ -13,7 +13,7 @@ local trackMenu = { light = true}
 
 ---@param params { id: number, x: number?, y: number? }
 function trackMenu.new(app, params)
-	local track = app.library ~= nil and app.library:track(params.id) or nil
+	local track = app.services.library.current ~= nil and app.services.library.current:track(params.id) or nil
 	if track == nil then return nil end
 	---@type beat.TrackMenuState
 	return { id = track.id, x = params.x or 0, y = params.y or 0}
@@ -24,8 +24,8 @@ function trackMenu.update(app, overlay, message)
 	local kind = message.type
 	if kind == "trackMenuPlay" then
 		app:close(overlay)
-		local track = app.library and app.library:track(state.id)
-		if track ~= nil then app.player:playTrack(track) end
+		local track = app.services.library.current and app.services.library.current:track(state.id)
+		if track ~= nil then app.services.playback.player:playTrack(track) end
 		return true
 	elseif kind == "trackMenuPlaylist" then
 		app:close(overlay)
@@ -37,7 +37,7 @@ end
 
 function trackMenu.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.TrackMenuState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local width = theme:px(210)
 	local rowHeight = theme:px(34)
 	local height = theme:px(8 * 2 + 34 * 2 + 2)

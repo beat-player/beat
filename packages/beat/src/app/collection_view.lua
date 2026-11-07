@@ -14,7 +14,7 @@ local collection = {}
 ---@param opts { label: string, icons: wonderland.Element?, cover: fun(size: number): wonderland.Element, coverMenu: fun(x: number, y: number, width: number, height: number, modifiers: any?, windowX: number, windowY: number): any?, title: string, subtitle: string, subtitleAction: any?, meta: string, playAction: any, playIcon: string, shuffleAction: any, addAction: any?, tracks: beat.Track[], trackAction: fun(track: beat.Track, at: number): any, trackIndex: (fun(track: beat.Track, at: number): number)?, empty: wonderland.Element?, titleOnly: boolean? }
 ---@return wonderland.Element
 function collection.page(app, window, opts)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, window.width)
 	local stacked = mobile and window.height >= theme:px(560)
 	local content = metrics.contentWidth(app, window.width)
@@ -41,8 +41,8 @@ function collection.page(app, window, opts)
 	or (opts.empty ~= nil and theme:px(120) or 0)
 	local trackListHeight = theme:space(20) + (hasTracks and theme:px(34) or 0)
 	+rowsHeight + theme:space(24)
-	local current = app:currentTrack()
-	local playing = app.player:isPlaying()
+	local current = app.services.playback:current()
+	local playing = app.services.playback.player:isPlaying()
 
 	local cover = div():style(sty():size(coverSize, coverSize):radius(theme:radius("lg")))
 	if opts.coverMenu ~= nil then cover:onContextMenu(opts.coverMenu) end
@@ -103,9 +103,10 @@ function collection.page(app, window, opts)
 
 	local trackStart = heroHeight + theme:space(20) + (hasTracks and theme:px(34) or 0)
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.scrollMax = math.max(0, heroHeight + trackListHeight + theme:space(20) - viewport)
-	local scroll = app:scrollOffset(app:pageKey())
-	local first, last, top = app:slices(#opts.tracks, 1, theme:px(48),
+	app.services.scroll:setLimit(app:pageKey(),
+	math.max(0, heroHeight + trackListHeight + theme:space(20) - viewport))
+	local scroll = app.services.scroll:offset(app:pageKey())
+	local first, last, top = app.services.scroll.slices(#opts.tracks, 1, theme:px(48),
 	math.max(0, scroll - trackStart), viewport)
 	---@cast first number
 	---@cast last number

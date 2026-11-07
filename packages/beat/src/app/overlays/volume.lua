@@ -1,11 +1,9 @@
 -- The volume bubble, opened from the now-playing controls. It is a panel beside the transport
 -- rather than a child of the volume button, and the now-playing screen offsets it there.
 local wonderland = require("wonderland")
-local core = require("beat-core")
 local render = require("beat.app.ui")
 
 local div, sty = wonderland.div, wonderland.sty
-local util = core.util
 
 ---@class beat.VolumeAnchor
 ---@field width number
@@ -33,15 +31,10 @@ function volume.update(app, overlay, message)
 	elseif kind == "volume" then
 		-- The slider is this panel's own control. A light overlay closes on a message it does not
 		-- take, so a drag keeps the bubble open and the change is made here.
-		app.settings.volume = util.clamp(message.value or 0, 0, 1)
-		app.settings.isMuted = false
-		app.player.isMuted = false
-		app.player:setVolume(app.settings.volume)
-		app:markSettingsDirty()
+		app.services.playback:setVolume(message.value)
 		return true
 	elseif kind == "mute" then
-		app.settings.isMuted = app.player:toggleMute()
-		app:markSettingsDirty()
+		app.services.playback:toggleMute()
 		return true
 	end
 	return false
@@ -55,8 +48,8 @@ function volume.view(app, overlay, _window)
 	local state = overlay.state --[[@as beat.VolumeState]]
 	local opts = state.anchor
 	if opts == nil then return nil end
-	local theme = app.theme
-	local muted = app.settings.isMuted
+	local theme = app.services.appearance.theme
+	local muted = app.services.settings.values.isMuted
 	local padding = theme:px(10)
 	local muteSize = theme:px(22)
 	local gap = theme:px(8)
@@ -72,7 +65,7 @@ function volume.view(app, overlay, _window)
 	render.iconButton(app, muted and "mute" or "volume", muteSize, { type = "mute"}),
 	render.slider(app, {
 	width = sliderWidth,
-	value = muted and 0 or app.settings.volume,
+	value = muted and 0 or app.services.settings.values.volume,
 	min = 0,
 	max = 1,
 	onchange = function(value) return { type = "volume", value = value} end,

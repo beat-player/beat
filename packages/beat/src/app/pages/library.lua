@@ -10,27 +10,35 @@ local util = core.util
 ---@type beat.PageSurface
 local libraryPage = {}
 
+local SORT_LABELS = {
+	title = "Title",
+	artist = "Artist",
+	year = "Year",
+	recent = "Recently added",
+	modified = "File modified",
+}
+
 function libraryPage.update(app, page, message)
 	if message.type == "toggleView" then
-		app.settings.view = app.settings.view == "list" and "grid" or "list"
-		app:markSettingsDirty()
+		app.services.settings.values.view = app.services.settings.values.view == "list" and "grid" or "list"
+		app.services.settings:changed()
 		return true
 	end
 	return false
 end
 
 function libraryPage.view(app, page, window)
-	local theme = app.theme
-	local library = app.library
+	local theme = app.services.appearance.theme
+	local library = app.services.library.current
 	if library == nil then
 		return render.empty(app, "Awkward. Nothing's here.", nil, "Choose a folder",
 		{ type = "chooseFolder"}, "😬")
 	end
 	local content = metrics.contentWidth(app, window.width)
-	local albums = app:albumList()
+	local albums = app.services.library:sorted(app.services.settings.values.sort)
 	local mobile = metrics.mobile(app, window.width)
 
-	local list = app.settings.view == "list"
+	local list = app.services.settings.values.view == "list"
 	local columns
 	if content >= 900 then
 		columns = 5
@@ -64,9 +72,10 @@ function libraryPage.view(app, page, window)
 	),
 	})
 
+	local sort = app.services.settings.values.sort
 	local controls = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
 	:justify(stacked and "start" or "end")):children({
-	render.button(app, sortWidth < theme:px(130) and "Sort" or ("Sort: " .. app:sortLabel()),
+	render.button(app, sortWidth < theme:px(130) and "Sort" or ("Sort: " .. (SORT_LABELS[sort] or sort)),
 	{ type = "open", overlay = "sort_menu"},
 	{ height = theme:px(32), width = sortWidth}),
 	render.button(app, list and "Grid" or "List", { type = "toggleView"},
@@ -92,10 +101,11 @@ function libraryPage.view(app, page, window)
 	local totalRows = list and #albums or math.ceil(#albums / columns)
 	local contentHeight = headerHeight + theme:space(18) + totalRows * rowHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.scrollMax = math.max(0, contentHeight - viewport)
-	local scroll = app:scrollOffset(app:pageKey())
+	app.services.scroll:setLimit(app:pageKey(),
+	math.max(0, contentHeight - viewport))
+	local scroll = app.services.scroll:offset(app:pageKey())
 	local listStart = headerHeight + theme:space(18)
-	local first, last, top = app:slices(#albums, list and 1 or columns, rowHeight,
+	local first, last, top = app.services.scroll.slices(#albums, list and 1 or columns, rowHeight,
 	math.max(0, scroll - listStart), viewport)
 	---@cast first number
 	---@cast last number

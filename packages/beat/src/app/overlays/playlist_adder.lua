@@ -14,8 +14,8 @@ local playlistAdder = {}
 
 ---@param params { playlistId: number }
 function playlistAdder.new(app, params)
-	local playlist = app.taxonomy:playlist(params.playlistId)
-	if playlist == nil or app.library == nil then return nil end
+	local playlist = app.services.collections.taxonomy:playlist(params.playlistId)
+	if playlist == nil or app.services.library.current == nil then return nil end
 	-- The search field is where typing goes the moment the panel opens.
 	app:focusField("playlistAddSearch")
 	---@type beat.PlaylistAdderState
@@ -34,12 +34,13 @@ function playlistAdder.update(app, overlay, message)
 		app:refresh()
 		return true
 	elseif kind == "playlistAddAlbum" then
-		local playlist = app.taxonomy:playlist(state.playlistId)
-		local album = app.library ~= nil and app.library:album(message.id --[[@as number]]) or nil
+		local playlist = app.services.collections.taxonomy:playlist(state.playlistId)
+		local library = app.services.library.current
+		local album = library ~= nil and library:album(message.id --[[@as number]]) or nil
 		if playlist ~= nil and album ~= nil then
-			app.taxonomy:setPlaylistAlbum(playlist, album)
-			app:saveTaxonomy()
-			app:toast("Added " .. album.title .. " to " .. playlist.name)
+			app.services.collections.taxonomy:setPlaylistAlbum(playlist, album)
+			app.services.collections:save()
+			app.services.toasts:show("Added " .. album.title .. " to " .. playlist.name)
 		end
 		app:refresh()
 		return true
@@ -49,17 +50,18 @@ end
 
 function playlistAdder.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.PlaylistAdderState]]
-	local playlist = app.taxonomy:playlist(state.playlistId)
-	if playlist == nil or app.library == nil then return nil end
-	local theme = app.theme
+	local playlist = app.services.collections.taxonomy:playlist(state.playlistId)
+	if playlist == nil or app.services.library.current == nil then return nil end
+	local theme = app.services.appearance.theme
 	local panelWidth = metrics.panelWidth(app, window, 520)
 	local rowWidth = panelWidth - theme:px(32)
 	local albums
 	if state.query == "" then
 		albums = {}
-		for at = 1, math.min(8, #app.library.albums) do albums[#albums + 1] = app.library.albums[at] end
+		local library = app.services.library.current
+		for at = 1, math.min(8, #library.albums) do albums[#albums + 1] = library.albums[at] end
 	else
-		albums = app.library:search(state.query)
+		albums = app.services.library.current:search(state.query)
 	end
 	local rows = {}
 	for at = 1, math.min(8, #albums) do

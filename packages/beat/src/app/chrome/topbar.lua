@@ -12,11 +12,11 @@ local topbar = {}
 ---@param width number
 ---@return wonderland.Element
 function topbar.view(app, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, width)
 	local focused = app.layoutPlugin ~= nil and app.window ~= nil
 	and app.layoutPlugin:getFocusedId(app.window) == "search"
-	local search = app.search
+	local search = app.services.search.query
 	local available = metrics.contentWidth(app, width)
 	local leftWidth = available - theme:px(mobile and 48 or 44)
 	local searchWidth = leftWidth - theme:px(mobile and 50 or 84)

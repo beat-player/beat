@@ -12,13 +12,13 @@ local playerBar = {}
 ---@param width number
 ---@return wonderland.Element
 function playerBar.view(app, width)
-	local theme = app.theme
-	local track = app:currentTrack()
-	local player = app.player
+	local theme = app.services.appearance.theme
+	local track = app.services.playback:current()
+	local player = app.services.playback.player
 	local height = theme:px(88)
 	if track == nil then return div():style(sty():h(0)) end
 
-	local album = app.library and app.library:album(track.albumId)
+	local album = app.services.library.current and app.services.library.current:album(track.albumId)
 	if album == nil then
 		album = {
 		id = 0,
@@ -81,7 +81,7 @@ function playerBar.view(app, width)
 	return div()
 	:style(sty():row():wrel(1.0):h(height):bg(theme:color("surface")))
 	:onMouseMove(function()
-		if app.hoverPlaylist ~= nil then return { type = "hoverPlaylist", id = nil} end
+		if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil} end
 		return nil
 	end)
 	:canvas(function(canvas) render.spectrumBackground(app, canvas) end)
@@ -97,12 +97,12 @@ end
 ---@param width number
 ---@return wonderland.Element
 function playerBar.mobile(app, width)
-	local theme = app.theme
-	local track = app:currentTrack()
+	local theme = app.services.appearance.theme
+	local track = app.services.playback:current()
 	local height = theme:px(64)
 	if track == nil then return div():style(sty():h(0)) end
 
-	local album = app.library and app.library:album(track.albumId)
+	local album = app.services.library.current and app.services.library.current:album(track.albumId)
 	if album == nil then
 		album = {
 		id = 0,
@@ -122,9 +122,9 @@ function playerBar.mobile(app, width)
 	local nextSize = theme:px(32)
 	local gap = theme:space(10)
 	local textWidth = width - pad * 2 - art - playSize - nextSize - gap * 3
-	local playing = app.player:isPlaying()
-	local duration = track.duration > 0 and track.duration or app.player:duration()
-	local position = app.player:position()
+	local playing = app.services.playback.player:isPlaying()
+	local duration = track.duration > 0 and track.duration or app.services.playback.player:duration()
+	local position = app.services.playback.player:position()
 	local fraction = duration > 0 and math.max(0, math.min(1, position / duration)) or 0
 
 	return div()

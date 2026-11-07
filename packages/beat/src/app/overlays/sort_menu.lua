@@ -22,9 +22,8 @@ end
 
 function sortMenu.update(app, overlay, message)
 	if message.type == "sort" then
-		app.settings.sort = message.value or "title"
-		app.sortedAlbums = nil
-		app:markSettingsDirty()
+		app.services.settings.values.sort = message.value or "title"
+		app.services.settings:changed()
 		app:close(overlay)
 		return true
 	end
@@ -32,11 +31,11 @@ function sortMenu.update(app, overlay, message)
 end
 
 function sortMenu.view(app, overlay, window)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local panelWidth = theme:px(210)
 	local rows = {}
 	for _, option in ipairs(SORT_OPTIONS) do
-			local active = app.settings.sort == option.key
+			local active = app.services.settings.values.sort == option.key
 			local rowStyle = sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center")
 			:justify("space-between"):pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("sm"))
 			:fg(active and theme.accentInk or theme:color("text"))

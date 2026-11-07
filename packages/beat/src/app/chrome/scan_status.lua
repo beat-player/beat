@@ -18,12 +18,15 @@ local scanStatus = {}
 ---@param width number
 ---@return wonderland.Element?
 function scanStatus.island(app, width)
-	if app.scan == nil or not app.scanIslandOpen or app.library == nil or #app.library.tracks == 0 then
+	local library = app.services.library
+	local scan = app.services.scan
+	if scan.job == nil or not scan.islandOpen or library.current == nil
+	or #library.current.tracks == 0 then
 		return nil
 	end
 
-	local theme = app.theme
-	local progress = app.scan:progress()
+	local theme = app.services.appearance.theme
+	local progress = scan.job:progress()
 	local fraction = render.scanFraction(progress)
 	local islandWidth = math.min(theme:px(340), width - metrics.pad(app, width) * 2)
 	local islandHeight = theme:px(112)
@@ -81,10 +84,10 @@ end
 ---@param width number
 ---@return wonderland.Element?
 function scanStatus.summary(app, width)
-	local summary = app.scanSummary
+	local summary = app.services.scan.summary
 	if summary == nil then return nil end
 
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local islandWidth = math.min(theme:px(340), width - metrics.pad(app, width) * 2)
 	local islandHeight = theme:px(112)
 	local pad = theme:px(14)

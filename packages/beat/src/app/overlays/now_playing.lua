@@ -16,7 +16,7 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param size number
 ---@return wonderland.Element
 local function volumeButton(app, size)
-	local muted = app.settings.isMuted
+	local muted = app.services.settings.values.isMuted
 	return render.iconButton(app, muted and "mute" or "volume", size,
 	{ type = "toggleVolume"}, app:overlay("volume") ~= nil)
 end
@@ -36,7 +36,7 @@ end
 ---@param room beat.ToolRoom
 ---@return wonderland.Element
 local function toolPanel(app, panel, x, width, height, room)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local gap = theme:px(6)
 	local below = height + gap <= room.below or room.below >= room.above
 	local y = room.top + (below and (theme:px(34) + gap) or -(height + gap))
@@ -67,14 +67,14 @@ local nowPlaying = { fullscreen = true}
 nowPlaying.toolPanel = toolPanel
 
 function nowPlaying.new(app)
-	app.motion:animate("nowPlaying", 1, 0.28, ui.motion.ease.outBack)
+	app.services.motion.clock:animate("nowPlaying", 1, 0.28, ui.motion.ease.outBack)
 	return {}
 end
 
 ---@param app beat.App
 ---@param _overlay beat.OverlayInstance
 function nowPlaying.close(app, _overlay)
-	app.motion:animate("nowPlaying", 0, 0.28, ui.motion.ease.inCubic)
+	app.services.motion.clock:animate("nowPlaying", 0, 0.28, ui.motion.ease.inCubic)
 end
 
 function nowPlaying.update(app, overlay, message)
@@ -102,13 +102,14 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function nowPlaying.view(app, _overlay, window)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, window.width)
 	local stacked = mobile and window.height >= theme:px(560)
-	local track = app:currentTrack()
+	local track = app.services.playback:current()
 	---@type beat.Album?
 	local album
-	if track ~= nil and app.library ~= nil then album = app.library:album(track.albumId) end
+	local library = app.services.library
+	if track ~= nil and library.current ~= nil then album = library.current:album(track.albumId) end
 	local margin = mobile and theme:space(16)
 	or math.max(theme:space(10), math.min(theme:space(28),
 	math.floor(window.width * 0.03), math.floor(window.height * 0.03)))
@@ -164,9 +165,9 @@ function nowPlaying.view(app, _overlay, window)
 		text(album.title .. "  ·  " .. track.artist):style(theme:s():w(progressWidth)
 		:text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis()),
 		}
-		local repeatIcon = app.player.queue and app.player.queue.repeatMode == "one"
+		local repeatIcon = app.services.playback.player.queue and app.services.playback.player.queue.repeatMode == "one"
 		and "repeatOne" or "repeat"
-		local repeatActive = app.player.queue and app.player.queue.repeatMode ~= "off"
+		local repeatActive = app.services.playback.player.queue and app.services.playback.player.queue.repeatMode ~= "off"
 		local toolSize = theme:px(28)
 		local toolGap = theme:px(4)
 		local toolGroupWidth = toolSize * 2 + toolGap
@@ -181,11 +182,11 @@ function nowPlaying.view(app, _overlay, window)
 		div():style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap)
 		:align("center")):children({
 		render.iconButton(app, "shuffle", toolSize, { type = "shuffle"},
-		app.player.queue and app.player.queue.shuffle),
+		app.services.playback.player.queue and app.services.playback.player.queue.shuffle),
 		render.iconButton(app, repeatIcon, toolSize, { type = "repeat"}, repeatActive),
 		}),
 		})
-		textRows[#textRows + 1] = render.progress(app, track, app.player, progressWidth)
+		textRows[#textRows + 1] = render.progress(app, track, app.services.playback.player, progressWidth)
 		local controlHeight = theme:px(54 * transport)
 		-- The transport is centred by a spacer either side rather than by spreading the row: the
 		-- panels below are boxes offset from the row, and a spread row still counts them among the
@@ -203,7 +204,7 @@ function nowPlaying.view(app, _overlay, window)
 		:radius(theme:radius("full")):bg(theme:color("accent"))
 		:align("center"):justify("center"))
 		:onClick({ type = "togglePlay"})
-		:children(ui.icons.element(app.player:isPlaying() and "pause" or "play",
+		:children(ui.icons.element(app.services.playback.player:isPlaying() and "pause" or "play",
 		theme:px(24 * transport), theme.accentInk)),
 		render.iconButton(app, "next", skipSize, { type = "next"}),
 		}),

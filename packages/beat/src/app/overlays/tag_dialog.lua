@@ -36,13 +36,13 @@ function tagDialog.update(app, overlay, message)
 		app:refresh()
 		return true
 	elseif kind == "createTag" then
-		local tag = app.taxonomy:addTag(state.draft)
+		local tag = app.services.collections.taxonomy:addTag(state.draft)
 		if tag == nil then
-			app:toast("Choose a tag name that is not already used", "error")
+			app.services.toasts:show("Choose a tag name that is not already used", "error")
 		else
-			app:saveTaxonomy()
+			app.services.collections:save()
 			app:close(overlay)
-			app:toast("Tag created · " .. tag.name)
+			app.services.toasts:show("Tag created · " .. tag.name)
 		end
 		app:refresh()
 		return true
@@ -52,7 +52,7 @@ end
 
 function tagDialog.view(app, overlay, window)
 	local state = overlay.state --[[@as beat.TagDialogState]]
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local panelWidth = metrics.panelWidth(app, window, 360)
 	local pad = theme:px(18)
 	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32)

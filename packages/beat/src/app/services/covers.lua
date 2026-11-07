@@ -10,7 +10,7 @@ local core = require("beat-core")
 -- it without end.
 local CACHE_LIMIT = 48
 
----@class beat.ui.Covers
+---@class beat.CoversService
 ---@field assets wonderland.Assets?
 ---@field entries table<string, { asset: wonderland.Asset?, colour: { r: number, g: number, b: number }?, failed: boolean?, seen: number }>
 ---@field jobs { key: string, album: beat.Album, size: number, epoch: number, seen: number }[]
@@ -19,9 +19,12 @@ local CACHE_LIMIT = 48
 ---@field jobsByKey table<string, boolean>
 local Covers = {}
 Covers.__index = Covers
+Covers.needs = {}
 
----@return beat.ui.Covers
-function Covers.new()
+-- Nothing is needed: the window's assets arrive through `use` once the shell has a window to draw
+-- in, not when the services are made.
+---@return beat.CoversService
+function Covers.new(_deps)
 	return setmetatable({
 	assets = nil,
 	entries = {},
@@ -122,20 +125,17 @@ function Covers:colourOf(album)
 	return nil
 end
 
----@return boolean
-function Covers:hasPending()
-	return #self.jobs > 0
-end
-
 --- One decode per tick. A cover is a few milliseconds; doing one keeps a grid's first frame
---- responsive while the rest of the page is already laid out.
----@return boolean
+--- responsive while the rest of the page is already laid out. Busy while covers are waiting, so
+--- the ticker comes back for the next one rather than at the idle interval.
+---@return boolean changed
+---@return boolean busy
 function Covers:step()
-	if self.assets == nil or #self.jobs == 0 then return false end
+	if self.assets == nil or #self.jobs == 0 then return false, #self.jobs > 0 end
 
 	local job = table.remove(self.jobs, 1)
 	self.jobsByKey[job.key] = nil
-	if job.epoch ~= self.epoch then return true end
+	if job.epoch ~= self.epoch then return true, #self.jobs > 0 end
 
 	local fitted, colour, err = core.art.forAlbum(job.album, job.size)
 	if fitted ~= nil then
@@ -151,7 +151,7 @@ function Covers:step()
 		end
 	end
 
-	return true
+	return true, #self.jobs > 0
 end
 
 --- Drops what is known about one album, for when a later track brings its embedded picture.

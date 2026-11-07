@@ -11,7 +11,7 @@ local mobileNav = {}
 ---@param width number
 ---@return wonderland.Element
 function mobileNav.view(app, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local height = theme:px(58)
 	local items = {
 	{ kind = "home", icon = "home", label = "Home"},

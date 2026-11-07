@@ -16,7 +16,7 @@ local equalizer = { light = true}
 function equalizer.presets(app)
 	local list = {}
 	for _, preset in ipairs(core.equalizer.presets) do list[#list + 1] = preset end
-	for _, preset in ipairs(app.settings.equalizerCustomPresets) do
+	for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
 			list[#list + 1] = {
 			id = preset.name,
 			name = preset.name,
@@ -81,25 +81,25 @@ function equalizer.update(app, overlay, message)
 	elseif kind == "equalizerPreset" then
 		local preset = equalizer.find(app, message.id)
 		if preset ~= nil then
-			app.settings.equalizerPreset = preset.id
-			app.settings.equalizerGains = core.equalizer.copyGains(preset.gains)
-			app.player:setEqualizer(core.equalizer.bands(app.settings.equalizerGains))
-			app:markSettingsDirty()
+			app.services.settings.values.equalizerPreset = preset.id
+			app.services.settings.values.equalizerGains = core.equalizer.copyGains(preset.gains)
+			app.services.playback.player:setEqualizer(core.equalizer.bands(app.services.settings.values.equalizerGains))
+			app.services.settings:changed()
 			app:refresh()
 		end
 	elseif kind == "newEqualizerPreset" then
-		if #app.settings.equalizerCustomPresets >= 8 then
-			app:toast("That is enough custom presets for now", "error")
+		if #app.services.settings.values.equalizerCustomPresets >= 8 then
+			app.services.toasts:show("That is enough custom presets for now", "error")
 		else
 			local name = equalizer.nextName(app)
-			local gains = core.equalizer.copyGains(app.settings.equalizerGains)
-			app.settings.equalizerCustomPresets[#app.settings.equalizerCustomPresets + 1] = {
+			local gains = core.equalizer.copyGains(app.services.settings.values.equalizerGains)
+			app.services.settings.values.equalizerCustomPresets[#app.services.settings.values.equalizerCustomPresets + 1] = {
 			name = name,
 			gains = gains,
 			}
-			app.settings.equalizerPreset = name
-			app.player:setEqualizer(core.equalizer.bands(gains))
-			app:markSettingsDirty()
+			app.services.settings.values.equalizerPreset = name
+			app.services.playback.player:setEqualizer(core.equalizer.bands(gains))
+			app.services.settings:changed()
 			app:refresh()
 		end
 	elseif kind == "editEqualizerPreset" then
@@ -108,19 +108,19 @@ function equalizer.update(app, overlay, message)
 	elseif kind == "equalizerGain" then
 		local band = message.band
 		if type(band) == "number" and band >= 1 and band <= #core.equalizer.frequencies then
-			local gains = core.equalizer.sanitize(app.settings.equalizerGains)
+			local gains = core.equalizer.sanitize(app.services.settings.values.equalizerGains)
 			gains[band] = core.equalizer.clamp(message.value or 0)
-			local selected = equalizer.find(app, app.settings.equalizerPreset)
+			local selected = equalizer.find(app, app.services.settings.values.equalizerPreset)
 			if selected ~= nil and selected.custom then
-				for _, preset in ipairs(app.settings.equalizerCustomPresets) do
+				for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
 						if preset.name == selected.id then preset.gains = core.equalizer.copyGains(gains) end
 					end
 			else
-				app.settings.equalizerPreset = "custom"
+				app.services.settings.values.equalizerPreset = "custom"
 			end
-			app.settings.equalizerGains = gains
-			app.player:setEqualizer(core.equalizer.bands(gains))
-			app:markSettingsDirty()
+			app.services.settings.values.equalizerGains = gains
+			app.services.playback.player:setEqualizer(core.equalizer.bands(gains))
+			app.services.settings:changed()
 			app:refresh()
 		end
 	else
@@ -135,8 +135,8 @@ end
 ---@param height number
 ---@return wonderland.Element
 local function equalizerChip(app, preset, width, height)
-	local theme = app.theme
-	local selected = app.settings.equalizerPreset == preset.id
+	local theme = app.services.appearance.theme
+	local selected = app.services.settings.values.equalizerPreset == preset.id
 	local textColour = selected and theme.accentInk or theme:color("muted")
 	local resting = selected and theme:color("accent") or theme:color("surface")
 	local hover = selected and theme:color("accent", 0.86) or theme:color("hover")
@@ -159,7 +159,7 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function equalizer.view(app, _overlay, window)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	local compact = window.height < theme:px(520)
 	local width = math.min(theme:px(460), window.width - theme:px(24))
 	local padding = compact and theme:px(10) or theme:px(18)
@@ -210,7 +210,7 @@ function equalizer.view(app, _overlay, window)
 	local sliderWidth = content - labelWidth - valueWidth - gap * 2
 	for at = 1, #core.equalizer.frequencies do
 			local band = at
-			local gain = app.settings.equalizerGains[at] or 0
+			local gain = app.services.settings.values.equalizerGains[at] or 0
 			local shown = math.floor(gain + 0.5)
 			local value = shown == 0 and "0 dB" or string.format("%+d dB", shown)
 			panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)

@@ -16,25 +16,6 @@ function searchAll.key(page)
 	return "searchAll:" .. (page.category or "")
 end
 
-function searchAll.update(app, page, message)
-	local kind = message.type
-	if kind == "toggleTagFilter" then
-		if app.tagFilter[message.id] then app.tagFilter[message.id] = nil
-		else app.tagFilter[message.id] = true end
-		app:refresh()
-		return true
-	elseif kind == "tagFilterMatch" then
-		app.tagFilterMatch = message.value == "any" and "any" or "all"
-		app:refresh()
-		return true
-	elseif kind == "clearTagFilter" then
-		app.tagFilter = {}
-		app:refresh()
-		return true
-	end
-	return false
-end
-
 --- The tag filters under search. Selecting more than one narrows to tracks that have all of
 --- them; the Playlists page has the same idea as a saved smart playlist.
 ---@param app beat.App
@@ -42,22 +23,23 @@ end
 ---@return wonderland.Element?
 ---@return number
 local function searchTagFilter(app, width)
-	local tags = app.taxonomy:visibleTags()
+	local tags = app.services.collections.taxonomy:visibleTags()
 	if #tags == 0 then return nil, 0 end
-	local theme = app.theme
+	local theme = app.services.appearance.theme
+	local search = app.services.search
 	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
-	local pills = render.tagPills(app, tags, app.tagFilter, function(tag)
+	local pills = render.tagPills(app, tags, search.tagFilter, function(tag)
 		return { type = "toggleTagFilter", id = tag.id}
 	end, width, columns)
 	if pills == nil then return nil, 0 end
 
 	local headerActions = {}
-	if next(app.tagFilter) ~= nil then
+	if next(search.tagFilter) ~= nil then
 		headerActions[#headerActions + 1] = text("All"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(app.tagFilterMatch == "all" and theme:color("accent")
+		:weight("semibold"):fg(search.match == "all" and theme:color("accent")
 		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "all"})
 		headerActions[#headerActions + 1] = text("Any"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(app.tagFilterMatch == "any" and theme:color("accent")
+		:weight("semibold"):fg(search.match == "any" and theme:color("accent")
 		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "any"})
 		headerActions[#headerActions + 1] = text("Clear"):style(theme:s():text(theme:type("xs"))
 		:weight("semibold"):fg(theme:color("accent"))):onClick({ type = "clearTagFilter"})
@@ -81,18 +63,19 @@ end
 
 function searchAll.view(app, page, window)
 	local category = page.category
-	local theme = app.theme
-	local library = app.library
+	local theme = app.services.appearance.theme
+	local search = app.services.search
+	local library = app.services.library.current
 	if library == nil then
 		return render.empty(app, "Search your library", "Choose a folder first.", "Choose a folder",
 		{ type = "chooseFolder"})
 	end
-	if app.search == "" then
+	if search.query == "" then
 		return render.empty(app, "Search your library", "Artists, albums and tracks are all one field.",
 		nil, nil)
 	end
 
-	local albums, artists, tracks = app:searchResults(app.search)
+	local albums, artists, tracks = search:results()
 	local items = category == "albums" and albums or category == "artists" and artists or tracks
 	local width = metrics.contentWidth(app, window.width)
 	local filter, filterHeight = searchTagFilter(app, width)
@@ -117,8 +100,8 @@ function searchAll.view(app, page, window)
 	local count = #items
 	local totalRows = category == "albums" and math.ceil(count / columns) or count
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	local scroll = app:scrollOffset(app:pageKey())
-	local first, last, top = app:slices(count, perRow, rowHeight, math.max(0, scroll - listStart), viewport)
+	local scroll = app.services.scroll:offset(app:pageKey())
+	local first, last, top = app.services.scroll.slices(count, perRow, rowHeight, math.max(0, scroll - listStart), viewport)
 	---@cast first number
 	---@cast last number
 	---@cast top number
@@ -128,7 +111,7 @@ function searchAll.view(app, page, window)
 	local headerChildren = {
 	text(label):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
 	text(util.count(count, category == "albums" and "album" or category == "artists" and "artist" or "track")
-	.. " for \"" .. app.search .. "\""):style(theme:s():wrel(1.0):text(theme:type("sm"))
+	.. " for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("sm"))
 	:fg(theme:color("muted")):ellipsis()),
 	}
 	if filter ~= nil then headerChildren[#headerChildren + 1] = filter end
@@ -176,15 +159,16 @@ function searchAll.view(app, page, window)
 				if track ~= nil then
 					list[#list + 1] = div():style(sty():wrel(1.0):h(rowHeight)):children({
 					render.trackRow(app, track, at,
-					app:currentTrack() ~= nil and app:currentTrack().id == track.id,
-					app.player:isPlaying(), { type = "playTrack", trackId = track.id}, width, true),
+					app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+					app.services.playback.player:isPlaying(), { type = "playTrack", trackId = track.id}, width, true),
 					})
 				end
 			end
 	end
 
 	local contentHeight = listStart + totalRows * rowHeight
-	app.scrollMax = math.max(0, contentHeight - metrics.viewportHeight(app, window.width, window.height))
+	app.services.scroll:setLimit(app:pageKey(),
+	math.max(0, contentHeight - metrics.viewportHeight(app, window.width, window.height)))
 	return div():style(sty():column():wrel(1.0):h(contentHeight):gap(gap)):children({
 	header,
 	div():style(sty():column():wrel(1.0):h(totalRows * rowHeight)):children(list),

@@ -8,15 +8,15 @@ local metrics = {}
 ---@param width number
 ---@return boolean
 function metrics.mobile(app, width)
-	return width < app.theme:px(760)
+	return width < app.services.appearance.theme:px(760)
 end
 
 ---@param app beat.App
 ---@param width number?
 ---@return number
 function metrics.pad(app, width)
-	if width ~= nil and metrics.mobile(app, width) then return app.theme:space(16) end
-	return app.theme:space(32)
+	if width ~= nil and metrics.mobile(app, width) then return app.services.appearance.theme:space(16) end
+	return app.services.appearance.theme:space(32)
 end
 
 ---@param app beat.App
@@ -24,8 +24,8 @@ end
 ---@return number
 function metrics.sidebarWidth(app, width)
 	if metrics.mobile(app, width) then return 0 end
-	if app.settings.sidebarCollapsed or width < 1040 then return app.theme:px(76) end
-	return app.theme:px(app.settings.sidebarWidth)
+	if app.services.settings.values.sidebarCollapsed or width < 1040 then return app.services.appearance.theme:px(76) end
+	return app.services.appearance.theme:px(app.services.settings.values.sidebarWidth)
 end
 
 --- The room a page has inside the body: the shell, both paddings, and the scroll bar's strip.
@@ -33,26 +33,26 @@ end
 ---@param width number
 ---@return number
 function metrics.contentWidth(app, width)
-	return width - metrics.sidebarWidth(app, width) - metrics.pad(app, width) * 2 - app.theme:px(8)
+	return width - metrics.sidebarWidth(app, width) - metrics.pad(app, width) * 2 - app.services.appearance.theme:px(8)
 end
 
 ---@param app beat.App
 ---@param width number
 ---@return number
 function metrics.topbarHeight(app, width)
-	return app.theme:px(metrics.mobile(app, width) and 56 or 64)
+	return app.services.appearance.theme:px(metrics.mobile(app, width) and 56 or 64)
 end
 
 ---@param app beat.App
 ---@param width number
 ---@return number
 function metrics.bottomHeight(app, width)
-	local theme = app.theme
+	local theme = app.services.appearance.theme
 	if metrics.mobile(app, width) then
-		local player = app:currentTrack() ~= nil and theme:px(64) or 0
+		local player = app.services.playback:current() ~= nil and theme:px(64) or 0
 		return player + theme:px(58)
 	end
-	return app:currentTrack() ~= nil and theme:px(88) or 0
+	return app.services.playback:current() ~= nil and theme:px(88) or 0
 end
 
 ---@param app beat.App
@@ -81,8 +81,8 @@ end
 ---@param max number
 ---@return number
 function metrics.panelWidth(app, window, max)
-	local gutter = app.theme:space(metrics.mobile(app, window.width) and 16 or 24)
-	return math.min(app.theme:px(max), window.width - gutter * 2)
+	local gutter = app.services.appearance.theme:space(metrics.mobile(app, window.width) and 16 or 24)
+	return math.min(app.services.appearance.theme:px(max), window.width - gutter * 2)
 end
 
 return metrics
