@@ -67,22 +67,100 @@ local function textWidth(value, size, latin)
 	return math.max(1, math.floor(width + 0.5))
 end
 
---- The width Wonderland measures for a line, through the same text plugin that will draw it. A
---- style's automatic width means "fill the room I am given", not "shrink to this text", so the app
---- asks for the measured run and puts that width on the box. The codepoint estimate below is only a
---- fallback for a page built before a window's font manager exists.
+--- The run Wonderland measures for a string, through the same text plugin that will draw it: its
+--- width and, for a string of several lines, its height. Nil before a window's font manager exists.
 ---@param app beat.App
 ---@param value string
 ---@param style wonderland.StyleBuilder
----@return number?
-local function measuredWidth(app, value, style)
+---@return wonderland.font.Run?
+local function measuredRun(app, value, style)
 	local layout = app.layoutPlugin
 	if layout == nil or layout.textPlugin == nil then return nil end
 	local line = wonderland.text(value):style(style)
 	local ok = pcall(layout.textPlugin.measure, layout.textPlugin, line)
 	if not ok or line.run == 0 then return nil end
-	local run = wonderlandElement.runs[line.run]
+	return wonderlandElement.runs[line.run]
+end
+
+--- The width Wonderland measures for a line. A style's automatic width means "fill the room I am
+--- given", not "shrink to this text", so the app asks for the measured run and puts that width on
+--- the box. The codepoint estimate above is only a fallback for a page built before a window's
+--- font manager exists.
+---@param app beat.App
+---@param value string
+---@param style wonderland.StyleBuilder
+---@return number?
+local function measuredWidth(app, value, style)
+	local run = measuredRun(app, value, style)
 	return run and run.width or nil
+end
+
+-- Wrapped strings by width, size and text. A toast is drawn every frame while it fades, and its
+-- lines are only worth working out once.
+local wrapCache, wrapCached = {}, 0
+
+--- The lines a string breaks into to fit `width`: after a space or a path separator, and inside a
+--- word only where the word alone is wider than the line. Wonderland draws the lines it is given
+--- and breaks none itself. Past `most` lines the last one ends in an ellipsis.
+---@param app beat.App
+---@param value string
+---@param style wonderland.StyleBuilder
+---@param size number # The font size, for the estimate used before a font is loaded
+---@param width number
+---@param most number
+---@return string[]
+local function wrapText(app, value, style, size, width, most)
+	local key = width .. ":" .. size .. ":" .. most .. ":" .. value
+	local cached = wrapCache[key]
+	if cached ~= nil then return cached end
+
+	local function fits(line)
+		return (measuredWidth(app, line, style) or textWidth(line, size, 0.55)) <= width
+	end
+	local function trimmed(line) return (line:gsub(" +$", "")) end
+
+	local lines, line = {}, ""
+	for piece in value:gmatch("[^ \\/]*[ \\/]*") do
+			if piece ~= "" then
+				if line == "" or fits(trimmed(line .. piece)) then
+					line = line .. piece
+				else
+					lines[#lines + 1] = trimmed(line)
+					line = piece
+				end
+				-- A word wider than a whole line is cut where it stops fitting.
+				while not fits(trimmed(line)) do
+						local at, cut = 1, nil
+						while at <= #line do
+								local _, nextAt = utf8.decode(line, at)
+								if cut ~= nil and not fits(line:sub(1, nextAt - 1)) then break end
+								cut, at = nextAt - 1, nextAt
+							end
+						lines[#lines + 1] = line:sub(1, cut)
+						line = line:sub(cut + 1)
+					end
+			end
+		end
+	if trimmed(line) ~= "" then lines[#lines + 1] = trimmed(line) end
+
+	if #lines > most then
+		for at = #lines, most + 1, -1 do lines[at] = nil end
+		local last = lines[most]
+		while #last > 0 and not fits(last .. "…") do
+				local at, before = 1, 0
+				while at <= #last do
+						before = at
+						local _, nextAt = utf8.decode(last, at)
+						at = nextAt
+					end
+				last = last:sub(1, before - 1)
+			end
+		lines[most] = trimmed(last) .. "…"
+	end
+
+	if wrapCached >= 64 then wrapCache, wrapCached = {}, 0 end
+	wrapCache[key], wrapCached = lines, wrapCached + 1
+	return lines
 end
 
 -- The sidebar needs the same art and tracks the playlists page does, but it is built before those
@@ -2759,12 +2837,18 @@ function pages.toasts(app, window)
 	local theme = app.theme
 	local now = wonderland.time.now()
 	local children = {}
+	local width = math.min(320, window.width - theme:space(16))
+	local size = theme:type("sm")
+	local textStyle = theme:s():text(size)
+	-- The padding either side, the icon and the gap after it.
+	local lineWidth = width - theme:px(14) * 2 - theme:px(18) - theme:px(10)
 	local top = theme:px(76)
 	local scanCard = (app.scan ~= nil and app.scanIslandOpen and app.library ~= nil
 	and #app.library.tracks > 0) or app.scanSummary ~= nil
 	if scanCard then top = top + theme:px(112) + theme:space(12) end
 
-	for index, toast in ipairs(app.toasts) do
+	local y = top
+	for _, toast in ipairs(app.toasts) do
 			local enter = app.motion.reduce and 1
 			or ui.motion.progress(toast.at, 0.18, now, ui.motion.ease.outCubic)
 			local life = toast.tone == "error" and 8 or 4.5
@@ -2779,10 +2863,15 @@ function pages.toasts(app, window)
 			local lift = (1 - enterStep) * theme:px(8) - (1 - exitStep) * theme:px(8)
 			local tone = toast.tone == "error" and theme:color("danger", alpha)
 			or theme:color("accent", alpha)
-			local width = 320
-			local height = theme:px(48)
+
+			-- A message wraps rather than being cut short: an error is the one toast that has to be
+			-- read whole. Five lines is room for a long path and what went wrong with it.
+			local message = table.concat(wrapText(app, toast.text, textStyle, size, lineWidth, 5), "\n")
+			local run = measuredRun(app, message, textStyle)
+			local _, breaks = message:gsub("\n", "")
+			local textHeight = run and run.height or (breaks + 1) * math.floor(size * 1.35 + 0.5)
+			local height = math.max(theme:px(48), textHeight + theme:px(12) * 2)
 			local x = math.max(theme:space(8), window.width - width - theme:space(24))
-			local y = top + (index - 1) * (height + theme:px(8))
 
 			toast.rect = { x = x, y = y, width = width, height = height }
 
@@ -2795,9 +2884,10 @@ function pages.toasts(app, window)
 			:onClick({ type = "dismissToast", at = toast.at})
 			:children({
 			ui.icons.element(toast.tone == "error" and "close" or "check", theme:px(18), tone),
-			text(toast.text):style(theme:s():wrel(1.0):text(theme:type("sm"))
-			:fg(theme:color("text", alpha)):ellipsis()),
+			text(message):style(theme:s():w(lineWidth):h(textHeight):text(size)
+			:fg(theme:color("text", alpha))),
 			})
+			y = y + height + theme:px(8)
 		end
 
 	return div():style(sty():fill():offset(0, 0):z(90)):children(children)
