@@ -17,7 +17,7 @@ local outputPath = assert(env.var("BEAT_SCAN_OUTPUT"), "no scan output")
 local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local cacheRoot = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 
-local file = assert(io.open(outputPath, "w"))
+local file = assert(io.open(outputPath, "wb"))
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()

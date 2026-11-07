@@ -97,8 +97,10 @@ end
 function ScanJob:read()
 	if #self.queued >= QUEUE_LIMIT then return true end
 
-	local file = io.open(self.output, "r")
-	if file == nil then return end
+	-- Binary, so the offset counts bytes: text mode on Windows reads "\r\n" as one character, and
+	-- an offset that falls behind the file re-reads the end of what was already taken.
+	local file = io.open(self.output, "rb")
+	if file == nil then return false end
 
 	file:seek("set", self.offset)
 	local data = file:read(READ_CHUNK) or ""
@@ -109,7 +111,7 @@ function ScanJob:read()
 	self.buffer = self.buffer .. data
 
 	while true do
-		local line, rest = self.buffer:match("^(.-)\n(.*)$")
+		local line, rest = self.buffer:match("^(.-)\r?\n(.*)$")
 		if line == nil then break end
 		self.buffer = rest
 

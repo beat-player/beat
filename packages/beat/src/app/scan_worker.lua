@@ -42,7 +42,7 @@ else
 	sleep = posixSleep
 end
 
-local file = assert(io.open(output, "w"))
+local file = assert(io.open(output, "wb"))
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()
@@ -168,7 +168,8 @@ local forwarded = 0
 --- Read whatever this shard has written since the last read, forwarding each complete event.
 ---@param worker InspectWorker
 local function readWorker(worker)
-	local input = io.open(worker.output, "r")
+	-- Binary, so the offset is bytes: see `ScanJob:read`.
+	local input = io.open(worker.output, "rb")
 	if input == nil then return end
 
 	input:seek("set", worker.offset)
@@ -180,7 +181,7 @@ local function readWorker(worker)
 	worker.buffer = worker.buffer .. data
 
 	while true do
-		local line, rest = worker.buffer:match("^(.-)\n(.*)$")
+		local line, rest = worker.buffer:match("^(.-)\r?\n(.*)$")
 		if line == nil then break end
 		worker.buffer = rest
 
