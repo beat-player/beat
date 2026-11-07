@@ -87,7 +87,7 @@ test.skipIf(not canRender)("draws every page the app has", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 
 	local pages = {
@@ -114,12 +114,12 @@ test.skipIf(not canRender)("draws every page the app has", function()
 	test.truthy(true, "the see-all tracks page draws")
 	App.search = ""
 
-	App.expanded = true
+	App:open("now_playing")
 	App.motion:set("nowPlaying", 1)
 	screen:draw()
 	test.truthy(true, "the expanded now playing view draws")
 
-	App.expanded = false
+	App:close("now_playing")
 	App.page = { kind = "library"}
 	App.settings.view = "list"
 	screen:draw()
@@ -150,7 +150,7 @@ test.skipIf(not canRender)("reuses the page-transition styles", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 
 	screen:draw()
@@ -191,6 +191,7 @@ test.it("opens the About link through the platform opener", function()
 		return true
 	end
 
+	App.page = { kind = "settings", state = {}}
 	App:act({ type = "openURL", url = "https://github.com/bycruz/beat"})
 	links.open = open
 	test.equal(opened, "https://github.com/bycruz/beat", "the GitHub button asks the desktop to open its URL")
@@ -244,7 +245,7 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, {
 	width = 1200,
 	height = 720,
@@ -261,7 +262,7 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	}
 	screen:draw()
 
-	App:act({ type = "openTagDialog"})
+	App:act({ type = "open", overlay = "tag_dialog"})
 	screen:draw()
 	test.equal(App.layoutPlugin:getFocusedId(screen.window), "newTag")
 	local function key(name, ctrl)
@@ -274,7 +275,7 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 		screen:draw()
 	end
 	key("x")
-	test.equal(App.tagDraft, "x", "typing lands in the tag name without a click")
+	test.equal(App:overlay("tag_dialog").state.draft, "x", "typing lands in the tag name without a click")
 	key("backspace")
 	key("H")
 	key("i")
@@ -287,9 +288,9 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	key("c", true)
 	test.equal(App.layoutPlugin.clipboard.text, "High")
 	key("x", true)
-	test.equal(App.tagDraft, "")
+	test.equal(App:overlay("tag_dialog").state.draft, "")
 	key("v", true)
-	test.equal(App.tagDraft, "High")
+	test.equal(App:overlay("tag_dialog").state.draft, "High")
 
 	local elements = require("wonderland.element")
 	local ctx
@@ -350,7 +351,7 @@ test.skipIf(not canRender)("opens an empty playlist and adds an album", function
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 	App.taxonomy = core.Taxonomy.new()
 	App.saveTaxonomy = function() end
@@ -360,14 +361,14 @@ test.skipIf(not canRender)("opens an empty playlist and adds an album", function
 
 	screen:draw()
 	test.truthy(screen.window.width > 0)
-	App:act({ type = "openPlaylistAdder", id = playlist.id})
+	App:act({ type = "open", overlay = "playlist_adder", playlistId = playlist.id})
 	screen:draw()
 	App:act({ type = "playlistAddAlbum", id = library.albums[1].id})
 	screen:draw()
 	test.equal(#App.taxonomy:playlistTracks(playlist, library), 3,
 	"an album can be added from the empty playlist")
 
-	App:act({ type = "closePlaylistAdder"})
+	App:act({ type = "dismiss"})
 	screen:close()
 	App.player:close()
 end)
@@ -380,6 +381,7 @@ test.it("starts a playlist from its page with shuffle", function()
 	App.saveTaxonomy = function() end
 	local playlist = assert(App.taxonomy:addPlaylist("Mix", false))
 	App.taxonomy:setPlaylistAlbum(playlist, library.albums[1])
+	App.page = { kind = "playlist", id = playlist.id}
 
 	local captured
 	local real = App.player
@@ -434,12 +436,13 @@ test.it("renames and deletes tags without changing their ids", function()
 	App.saveTaxonomy = function() end
 	local tag = assert(App.taxonomy:addTag("Focus"))
 	local auto = App.taxonomy.playlists[1]
+	App.page = { kind = "playlists"}
 	App:act({ type = "editTag", id = tag.id})
 	App:act({ type = "tagEditDraft", value = "Deep Focus"})
 	App:act({ type = "renameTag"})
 	test.equal(App.taxonomy.tagById[tag.id].name, "Deep Focus")
 	test.equal(auto.name, "Deep Focus")
-	test.equal(App.tagEditId, nil)
+	test.equal(App:currentPage().state.tagEditId, nil)
 
 	App:act({ type = "deleteTag", id = tag.id})
 	test.equal(App.taxonomy.tagById[tag.id], nil)
@@ -451,11 +454,11 @@ test.it("deletes a playlist from its row menu", function()
 	App.taxonomy = core.Taxonomy.new()
 	App.saveTaxonomy = function() end
 	local playlist = assert(App.taxonomy:addPlaylist("Temporary", false))
-	App:act({ type = "playlistMenu", id = playlist.id, x = 20, y = 20})
-	test.truthy(App.playlistMenu ~= nil, "the row opens a playlist menu")
+	App:act({ type = "open", overlay = "playlist_menu", id = playlist.id, x = 20, y = 20})
+	test.truthy(App:overlay("playlist_menu") ~= nil, "the row opens a playlist menu")
 	App:act({ type = "deletePlaylist", id = playlist.id})
 	test.equal(App.taxonomy:playlist(playlist.id), nil)
-	test.equal(App.playlistMenu, nil, "deleting closes the menu")
+	test.equal(App:overlay("playlist_menu"), nil, "deleting closes the menu")
 end)
 
 test.it("confirms deleting a tag only when it has been applied", function()
@@ -464,9 +467,10 @@ test.it("confirms deleting a tag only when it has been applied", function()
 	App.saveTaxonomy = function() end
 
 	local unused = assert(App.taxonomy:addTag("Unused"))
+	App.page = { kind = "playlists"}
 	App:act({ type = "deleteTag", id = unused.id})
 	test.equal(App.taxonomy.tagById[unused.id], nil, "an unused tag goes immediately")
-	test.equal(App.tagDeleteId, nil)
+	test.equal(App:overlay("tag_delete"), nil)
 
 	local used = assert(App.taxonomy:addTag("Used"))
 	local auto = App.taxonomy.playlists[#App.taxonomy.playlists]
@@ -474,17 +478,17 @@ test.it("confirms deleting a tag only when it has been applied", function()
 	test.equal(used.count, 1)
 	App:act({ type = "deleteTag", id = used.id})
 	test.truthy(App.taxonomy.tagById[used.id] ~= nil, "a used tag waits for confirmation")
-	test.equal(App.tagDeleteId, used.id)
+	test.equal(App:overlay("tag_delete").state.id, used.id)
 
 	App:act({ type = "cancelDeleteTag"})
 	test.truthy(App.taxonomy.tagById[used.id] ~= nil, "cancelling keeps the tag")
-	test.equal(App.tagDeleteId, nil)
+	test.equal(App:overlay("tag_delete"), nil)
 
 	App:act({ type = "deleteTag", id = used.id})
 	App:act({ type = "confirmDeleteTag"})
 	test.equal(App.taxonomy.tagById[used.id], nil, "confirming removes the used tag")
 	test.equal(App.taxonomy:playlist(auto.id), nil, "and its automatic playlist")
-	test.equal(App.tagDeleteId, nil)
+	test.equal(App:overlay("tag_delete"), nil)
 end)
 
 test.it("filters search results with selected tags", function()
@@ -547,15 +551,15 @@ test.it("creates tags and playlists from the app actions", function()
 	App.taxonomy = core.Taxonomy.new()
 	App.saveTaxonomy = function() end
 
-	App:act({ type = "openTagDialog"})
+	App:act({ type = "open", overlay = "tag_dialog"})
 	App:act({ type = "tagDraft", value = "High Energy"})
 	App:act({ type = "createTag"})
 	local tag = App.taxonomy:visibleTags()[1]
 	test.truthy(tag ~= nil)
 	test.equal(tag.name, "High Energy")
-	test.falsy(App.tagDialogOpen, "creating a tag closes its dialog")
+	test.falsy(App:overlay("tag_dialog"), "creating a tag closes its dialog")
 
-	App:act({ type = "openPlaylistDialog", smart = true})
+	App:act({ type = "open", overlay = "playlist_dialog", smart = true})
 	App:act({ type = "playlistDraft", value = "Night"})
 	App:act({ type = "playlistDraftTag", id = tag.id})
 	App:act({ type = "createPlaylist"})
@@ -571,7 +575,7 @@ test.it("creates tags and playlists from the app actions", function()
 	App.taxonomy:setTag(library.albums[1].tracks[1].path, tag.id, true)
 	test.equal(#App.taxonomy:playlistTracks(smart, library), 1, "the smart playlist follows the tag")
 
-	App:act({ type = "openPlaylistDialog", smart = false})
+	App:act({ type = "open", overlay = "playlist_dialog", smart = false})
 	App:act({ type = "playlistDraft", value = "Favourites"})
 	App:act({ type = "createPlaylist"})
 	local manual
@@ -579,10 +583,12 @@ test.it("creates tags and playlists from the app actions", function()
 			if playlist.name == "Favourites" then manual = playlist end
 		end
 	test.truthy(manual ~= nil)
-	App.playlistPicker = { kind = "album", id = library.albums[2].id}
+	App:act({ type = "open", overlay = "playlist_picker", kind = "album",
+	id = library.albums[2].id})
 	App:act({ type = "addToPlaylist", playlistId = manual.id})
 	test.equal(#App.taxonomy:playlistTracks(manual, library), 3, "an album is added by hand")
-	App.playlistPicker = { kind = "track", id = library.albums[1].tracks[1].id}
+	App:act({ type = "open", overlay = "playlist_picker", kind = "track",
+	id = library.albums[1].tracks[1].id})
 	App:act({ type = "addToPlaylist", playlistId = manual.id})
 	test.equal(#App.taxonomy:playlistTracks(manual, library), 4, "a track is added by hand")
 end)
@@ -600,7 +606,7 @@ test.skipIf(not canRender)("types into the search field and opens search", funct
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, {
 	width = 1200,
 	height = 720,
@@ -666,7 +672,7 @@ test.skipIf(not canRender)("windows the library as it scrolls", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 
 	local elements = require("wonderland.element")
@@ -721,14 +727,14 @@ end)
 
 test.it("switches to the phone shell at narrow widths", function()
 	App:init({ scan = false})
-	local pages = require("beat.app.pages")
-	test.truthy(pages.mobile(App, 390))
-	test.equal(pages.sidebarWidth(App, 390), 0, "the rail is gone")
-	test.equal(pages.pad(App, 390), App.theme:space(16))
-	test.equal(pages.bottomHeight(App, 390), App.theme:px(58), "the bottom tabs fit")
+	local metrics = require("beat.app.metrics")
+	test.truthy(metrics.mobile(App, 390))
+	test.equal(metrics.sidebarWidth(App, 390), 0, "the rail is gone")
+	test.equal(metrics.pad(App, 390), App.theme:space(16))
+	test.equal(metrics.bottomHeight(App, 390), App.theme:px(58), "the bottom tabs fit")
 
 	App.player.queue = core.Queue.new(fixture().albums[1].tracks, 1)
-	test.equal(pages.bottomHeight(App, 390), App.theme:px(64 + 58),
+	test.equal(metrics.bottomHeight(App, 390), App.theme:px(64 + 58),
 	"a track adds the mini player above the tabs")
 end)
 
@@ -747,7 +753,7 @@ test.skipIf(not canRender)("draws the phone shell and switches tabs", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 390, height = 844})
 	screen:draw()
 
@@ -805,7 +811,7 @@ test.skipIf(not canRender)("shows a sidebar playlist name only in its hover tool
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 
 	local elements = require("wonderland.element")
@@ -885,7 +891,7 @@ test.skipIf(not canRender)("opens the playlist dialog from the sidebar tile", fu
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 	screen:draw()
 
@@ -898,15 +904,17 @@ test.skipIf(not canRender)("opens the playlist dialog from the sidebar tile", fu
 			y = y,
 			button = 1,
 			})
-			if candidate ~= nil and candidate.type == "openPlaylistDialog" and candidate.smart == false then
+			if candidate ~= nil and candidate.type == "open"
+			and candidate.overlay == "playlist_dialog" and candidate.smart == false then
 				message = candidate
 				break
 			end
 		end
 	test.truthy(message ~= nil, "the empty playlist tile is a button")
 	App:act(message)
-	test.truthy(App.playlistDialog ~= nil, "it opens the create-playlist dialog")
-	test.equal(App.playlistDialog.smart, false, "the dialog starts on the manual kind")
+	local dialog = App:overlay("playlist_dialog")
+	test.truthy(dialog ~= nil, "it opens the create-playlist dialog")
+	test.equal(dialog.state.smart, false, "the dialog starts on the manual kind")
 
 	screen:close()
 	App.player:close()
@@ -924,7 +932,7 @@ test.skipIf(not canRender)("aligns track times with the TIME header", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 	screen:draw()
 
@@ -986,7 +994,7 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1200, height = 720})
 
 	local elements = require("wonderland.element")
@@ -1093,7 +1101,7 @@ test.skipIf(not canRender)("changes theme without rebuilding the whole app", fun
 		App.window = window
 		App.assets = assets
 		App.covers:use(assets)
-		return require("beat.app.pages").view(App, window)
+		return require("beat.app.shell").view(App, window)
 	end, { width = 1000, height = 640})
 
 	screen:draw()
@@ -1184,17 +1192,17 @@ end)
 test.it("opens and confirms a custom accent colour", function()
 	App:init({ scan = false})
 
-	App:act({ type = "openAccentPicker"})
-	test.equal(App.accentPickerOpen, true, "the Custom button opens the picker")
+	App:act({ type = "open", overlay = "accent_picker"})
+	test.truthy(App:overlay("accent_picker"), "the Custom button opens the picker")
 
 	App:act({ type = "pickAccent", value = "#FF7A66"})
-	test.equal(App.accentDraft, "#ff7a66", "choosing a swatch only changes the draft")
+	test.equal(App:overlay("accent_picker").state.draft, "#ff7a66",
+		"choosing a swatch only changes the draft")
 
 	App:act({ type = "confirmAccent"})
 	test.equal(App.settings.accent, "#ff7a66")
 	test.equal(App.theme.accentColour, "#ff7a66")
-	test.equal(App.accentPickerOpen, false)
-	test.equal(App.accentDraft, nil)
+	test.equal(App:overlay("accent_picker"), nil)
 	App.player:close()
 end)
 
@@ -1204,9 +1212,9 @@ test.it("opens an album context menu and dispatches its actions", function()
 	local album = App.library.albums[1]
 	local queued
 
-	App:act({ type = "albumMenu", id = album.id, x = 40, y = 50})
-	test.truthy(App.contextMenu, "the right click opened a menu")
-	test.equal(App.contextMenu.id, album.id)
+	App:act({ type = "open", overlay = "album_menu", id = album.id, x = 40, y = 50})
+	test.truthy(App:overlay("album_menu"), "the right click opened a menu")
+	test.equal(App:overlay("album_menu").state.id, album.id)
 
 	local real = App.player
 	App.player = {
@@ -1214,7 +1222,7 @@ test.it("opens an album context menu and dispatches its actions", function()
 	}
 	App:act({ type = "albumMenuNext", id = album.id})
 	test.equal(queued, #album.tracks, "Play next receives the album's tracks")
-	test.equal(App.contextMenu, nil, "and the menu closes")
+	test.equal(App:overlay("album_menu"), nil, "and the menu closes")
 	App.player = real
 
 	App.player:close()
@@ -1227,6 +1235,7 @@ test.it("stores equalizer presets and custom band gains", function()
 	setEqualizer = function(_, bands) applied = bands end,
 	}
 
+	App:open("equalizer")
 	App:act({ type = "equalizerPreset", id = "club"})
 	test.equal(App.settings.equalizerPreset, "club")
 	test.equal(App.settings.equalizerGains[1], 5)
@@ -1247,6 +1256,7 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 	App.settings.equalizerGains = { 0, 0, 0, 0, 0}
 	App.player.player = { setEqualizer = function() end}
 
+	App:open("equalizer")
 	App:act({ type = "equalizerGain", band = 1, value = 6})
 	App:act({ type = "newEqualizerPreset"})
 	test.equal(App.settings.equalizerPreset, "Custom")
@@ -1267,6 +1277,7 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 	test.equal(App.settings.equalizerPreset, "Warm", "a rename follows the selected preset")
 	test.equal(App.settings.equalizerCustomPresets[2].name, "Warm")
 
+	App:act({ type = "editEqualizerPreset", name = "Warm"})
 	App:act({ type = "deleteEqualizerPreset", name = "Warm"})
 	test.equal(#App.settings.equalizerCustomPresets, 1)
 	test.equal(App.settings.equalizerPreset, "flat", "deleting the selected preset falls back to Flat")
@@ -1276,28 +1287,28 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 end)
 
 test.it("takes at most two initials from a playlist name", function()
-	local pages = require("beat.app.pages")
-	test.equal(pages.playlistInitials("Maximum Overdrive"), "MO")
-	test.equal(pages.playlistInitials("Favourites"), "F")
-	test.equal(pages.playlistInitials("  night   drive  "), "ND")
-	test.equal(pages.playlistInitials("🎵"), "🎵")
-	test.equal(pages.playlistInitials("🎧 DJ Set"), "🎧D")
-	test.equal(pages.playlistInitials("🇺🇸"), "🇺🇸")
+	local PlaylistArt = require("beat.app.playlist_art")
+	test.equal(PlaylistArt.initials("Maximum Overdrive"), "MO")
+	test.equal(PlaylistArt.initials("Favourites"), "F")
+	test.equal(PlaylistArt.initials("  night   drive  "), "ND")
+	test.equal(PlaylistArt.initials("🎵"), "🎵")
+	test.equal(PlaylistArt.initials("🎧 DJ Set"), "🎧D")
+	test.equal(PlaylistArt.initials("🇺🇸"), "🇺🇸")
 end)
 
 test.it("uses only a playlist's real tracks in its mosaic", function()
-	local pages = require("beat.app.pages")
+	local PlaylistArt = require("beat.app.playlist_art")
 	local tracks = {}
 	for at = 1, 5 do tracks[at] = { id = at} end
 
-	local one = pages.playlistMosaicTracks({ tracks[1]})
+	local one = PlaylistArt.mosaicTracks({ tracks[1]})
 	test.equal(#one, 1, "one track is not repeated")
 	test.equal(one[1].id, 1)
 
-	local two = pages.playlistMosaicTracks({ tracks[1], tracks[2]})
+	local two = PlaylistArt.mosaicTracks({ tracks[1], tracks[2]})
 	test.equal(#two, 2, "two tracks leave the other slots empty")
 
-	local five = pages.playlistMosaicTracks(tracks)
+	local five = PlaylistArt.mosaicTracks(tracks)
 	test.equal(#five, 4)
 	test.equal(five[1].id, 1)
 	test.equal(five[4].id, 5)

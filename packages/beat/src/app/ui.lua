@@ -130,51 +130,6 @@ function render.button(app, label, onClick, opts)
 	:children(children)
 end
 
---- The volume control is a button. Its bubble is a sibling of the transport group rather than a
---- child of the button: a positioned panel inside a size-locked button shifted the row's paint
---- order on short windows, clipping the play control.
----@param app beat.App
----@param size number
----@return wonderland.Element
-function render.volumeButton(app, size)
-	local muted = app.settings.isMuted
-	return render.iconButton(app, muted and "mute" or "volume", size,
-	{ type = "toggleVolume"}, app.volumeOpen)
-end
-
----@param app beat.App
----@param opts { width: number, height: number, x: number, y: number }
----@return wonderland.Element
-function render.volumeBubble(app, opts)
-	local theme = app.theme
-	local muted = app.settings.isMuted
-	local padding = theme:px(10)
-	local muteSize = theme:px(22)
-	local gap = theme:px(8)
-	local sliderWidth = opts.width - padding * 2 - muteSize - gap
-
-	return div()
-	:style(sty():w(opts.width):h(opts.height):offset(opts.x, opts.y)
-	:row():align("center"):gap(gap):pad(0, padding, 0, padding)
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border")))
-	:onClick({ type = "volumeKeep"})
-	:children({
-	render.iconButton(app, muted and "mute" or "volume", muteSize, { type = "mute"}),
-	render.slider(app, {
-	width = sliderWidth,
-	value = muted and 0 or app.settings.volume,
-	min = 0,
-	max = 1,
-	onchange = function(value) return { type = "volume", value = value} end,
-	trackColour = theme:color("text", 0.12),
-	fillColour = theme:color("muted"),
-	thumbColour = theme:color("text"),
-	thumbSize = theme:px(12),
-	}),
-	})
-end
-
 ---@param app beat.App
 ---@param album beat.Album
 ---@param size number
@@ -247,7 +202,7 @@ function render.albumCard(app, album, width, onOpen, onPlay)
 	:hover(sty():w(width):h(height):column():bright(1.08))
 	:onClick(onOpen)
 	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "albumMenu", id = album.id, x = windowX, y = windowY}
+		return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
 	end)
 	:children({
 	div():style(sty():size(width, width)):children({
@@ -351,7 +306,7 @@ function render.trackRow(app, track, index, current, playing, onClick, width, sh
 	:align("center"):radius(theme:radius("sm")):bg(hoverBg))
 	:onClick(onClick)
 	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "trackMenu", id = track.id, x = windowX, y = windowY}
+		return { type = "open", overlay = "track_menu", id = track.id, x = windowX, y = windowY}
 	end)
 	:children(children)
 end
@@ -717,6 +672,163 @@ end
 function render.gridMetrics(width, height, rows, gap)
 	local cell = math.floor((width - gap * (rows - 1)) / rows)
 	return cell, cell
+end
+
+
+--- A named text field for a dialog. The text is a child of the input element rather than a
+--- sibling drawn over it: the caret and a selection are placed from the run inside the field, so
+--- text outside it leaves them at the field's origin with the wrong line height.
+---@param app beat.App
+---@param name string
+---@param value string
+---@param placeholder string
+---@param oninput fun(value: string): any
+---@param onsubmit fun(): any
+---@param width number?
+---@return wonderland.Element
+function render.field(app, name, value, placeholder, oninput, onsubmit, width)
+	local theme = app.theme
+	local focused = app.layoutPlugin ~= nil and app.window ~= nil
+	and app.layoutPlugin:getFocusedId(app.window) == name
+	local shown = value ~= "" and value or (focused and " " or placeholder)
+	local colour = value ~= "" and theme:color("text")
+	or (focused and theme:color("text") or theme:color("faint"))
+	local fieldStyle = sty():h(theme:px(34)):row():align("center")
+	:pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("sm")):bg(theme:color("surface"))
+	:text(theme:type("sm")):fg(theme:color("text"))
+	if width ~= nil then fieldStyle:w(width) else fieldStyle:wrel(1.0) end
+	local field = div():style(fieldStyle)
+	:input({
+	name = name,
+	value = value,
+	oninput = oninput,
+	onsubmit = onsubmit,
+	})
+	field:children(text(shown):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(colour):ellipsis()))
+	return field
+end
+
+--- Lay out tag pills in fixed columns. `action` is a function from a tag to the message its pill
+--- sends, or nil for a read-only pill.
+---@param app beat.App
+---@param tags beat.Tag[]
+---@param selected table<number, boolean>?
+---@param action (fun(tag: beat.Tag): any)?
+---@param width number
+---@param columns number
+---@param limit number?
+---@return wonderland.Element?
+function render.tagPills(app, tags, selected, action, width, columns, limit)
+	if #tags == 0 then return nil end
+	local theme = app.theme
+	local gap = theme:px(8)
+	local pillWidth = math.max(theme:px(80), math.floor((width - gap * (columns - 1)) / columns))
+	local rows = {}
+	local row = {}
+	local shown = 0
+
+	for _, tag in ipairs(tags) do
+			if limit ~= nil and shown >= limit then break end
+			local active = selected ~= nil and selected[tag.id] == true
+			local fg = active and theme.accentInk or theme:color("text")
+			local pill = div()
+			:style(sty():w(pillWidth):h(theme:px(28)):pad(0, theme:px(10), 0, theme:px(10))
+			:radius(theme:radius("full")):align("center"):justify("center")
+			:bg(active and theme:color("accent") or theme:color("elevated"))
+			:border(theme:px(1), active and theme:color("accent") or theme:color("border")))
+			:children(text(tag.name):style(theme:s():w(pillWidth - theme:px(20)):text(theme:type("xs"))
+			:weight("semibold"):fg(fg):ellipsis()))
+			if action ~= nil then pill:onClick(action(tag)) end
+			row[#row + 1] = pill
+			shown = shown + 1
+			if #row == columns then
+				rows[#rows + 1] = div():style(sty():row():h(theme:px(28)):gap(gap)):children(row)
+				row = {}
+			end
+		end
+
+	if #row > 0 then rows[#rows + 1] = div():style(sty():row():h(theme:px(28)):gap(gap)):children(row) end
+	if limit ~= nil and #tags > limit then
+		rows[#rows + 1] = text("+" .. tostring(#tags - limit) .. " more tags"):style(
+		theme:s():text(theme:type("xs")):fg(theme:color("faint"))
+		)
+	end
+	if #rows == 0 then return nil end
+	local height = #rows * theme:px(28) + math.max(0, #rows - 1) * theme:px(8)
+	if limit ~= nil and #tags > limit then height = height + theme:px(18) end
+	return div():style(sty():column():wrel(1.0):h(height):gap(theme:px(8))):children(rows)
+end
+
+--- How far a scan has got, from nothing to done.
+---@param progress beat.ScanProgress
+---@return number
+function render.scanFraction(progress)
+	if progress.files <= 0 then return 0 end
+	return math.max(0, math.min(1, progress.inspected / progress.files))
+end
+
+---@param app beat.App
+---@param track beat.Track
+---@param player beat.Player
+---@param width number
+---@return wonderland.Element
+function render.progress(app, track, player, width)
+	local theme = app.theme
+	local duration = track.duration > 0 and track.duration or player:duration()
+	local position = player:position()
+	local clockWidth = theme:px(34)
+	local gap = theme:px(8)
+	local trackWidth = width - clockWidth * 2 - gap * 2
+
+	local function clock(value)
+		return div():style(sty():w(clockWidth):h(theme:px(18)):row():align("center"):justify("center"))
+		:children(text(util.clock(value)):style(theme:s():text(theme:type("xs"))
+		:fg(theme:color("faint"))))
+	end
+
+	return div():style(sty():w(width):h(theme:px(18)):row():align("center"):gap(gap)):children({
+	clock(position),
+	render.slider(app, {
+	width = trackWidth,
+	value = position,
+	min = 0,
+	max = duration > 0 and duration or 1,
+	onchange = function(value) return { type = "seek", seconds = value} end,
+	trackColour = theme:color("text", 0.12),
+	fillColour = theme:color("text"),
+	thumbColour = theme:color("text"),
+	}),
+	clock(duration),
+	})
+end
+
+---@param app beat.App
+---@param width number
+---@param trackWidth number? # The slider track, when it should line up with another slider's track
+---@return wonderland.Element
+function render.volume(app, width, trackWidth)
+	local theme = app.theme
+	local volume = app.settings.isMuted and 0 or app.settings.volume
+	local iconSlot = trackWidth ~= nil and theme:px(34) or theme:px(22)
+	local sliderWidth = trackWidth or (width - theme:px(30))
+
+	return div():style(sty():w(width):h(theme:px(22)):row():align("center"):gap(theme:px(8))):children({
+	div():style(sty():w(iconSlot):h(theme:px(22)):row():align("center"):justify("center")):children(
+	render.iconButton(app, app.settings.isMuted and "mute" or "volume", theme:px(22),
+	{ type = "mute"})
+	),
+	render.slider(app, {
+	width = sliderWidth,
+	value = volume,
+	min = 0,
+	max = 1,
+	onchange = function(value) return { type = "volume", value = value} end,
+	trackColour = theme:color("text", 0.12),
+	fillColour = theme:color("muted"),
+	thumbColour = theme:color("text"),
+	thumbSize = theme:px(12),
+	}),
+	})
 end
 
 return render
