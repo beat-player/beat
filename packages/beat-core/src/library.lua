@@ -113,7 +113,7 @@ end
 --- Adds one inspected file. `entry` is what the scanner found; `cover` is the folder picture, if
 --- one was beside the file.
 ---@param info treble.audio.Inspect
----@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number? }
+---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number?, key: string? }
 ---@param cover string?
 ---@param coverCache string?
 ---@return beat.Track
@@ -166,8 +166,11 @@ function Library:add(info, entry, cover, coverCache)
 	}
 
 	-- The album key is the album artist when the files agree on one, and the album's directory
-	-- when they do not: a folder of tracks by different artists is still one compilation.
-	local key = util.albumKey(tags, entry.dir)
+	-- when they do not: a folder of tracks by different artists is still one compilation. A scan
+	-- that already decided which album a file belongs to hands that key over: what a file was
+	-- grouped into is not always something its own tags say twice, and a cache replaying the tags
+	-- alone would group it again into an album of its own.
+	local key = entry.key or util.albumKey(tags, entry.dir)
 
 	local album = self.albumByKey[key]
 	local gainedCover = false
