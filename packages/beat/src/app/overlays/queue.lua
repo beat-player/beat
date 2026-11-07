@@ -1,6 +1,6 @@
 -- The queue, as a panel opened from the now-playing screen's queue button.
 local wonderland = require("wonderland")
-local names = require("beat.music.names")
+local format = require("beat.app.components.format")
 local nowPlaying = require("beat.app.overlays.now_playing")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -81,7 +81,7 @@ function queuePanel.view(app, overlay, _window)
 	rows[#rows + 1] = div():style(sty():row():wrel(1.0):h(headerHeight):align("center")
 	:justify("space-between")):children({
 	text("QUEUE"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
-	text(names.count(#upcoming, "track")):style(theme:s():text(theme:type("xs"))
+	text(format.count(#upcoming, "track")):style(theme:s():text(theme:type("xs"))
 	:fg(theme:color("faint"))),
 	})
 	if #upcoming == 0 then
@@ -112,7 +112,7 @@ function queuePanel.view(app, overlay, _window)
 				:fg(theme:color("muted")):ellipsis()),
 				}),
 				div():style(sty():row():w(clockWidth):h(rowHeight):align("center"):justify("end"))
-				:children(text(names.clock(nextTrack.duration)):style(theme:s():text(theme:type("xs"))
+				:children(text(format.clock(nextTrack.duration)):style(theme:s():text(theme:type("xs"))
 				:fg(theme:color("faint")))),
 				})
 			end

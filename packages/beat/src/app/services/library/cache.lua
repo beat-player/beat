@@ -5,7 +5,7 @@
 local fs = require("fs")
 local json = require("json")
 local path = require("path")
-local settingsModel = require("beat.app.services.settings.model")
+local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Log = require("beat.log")
 
@@ -15,7 +15,7 @@ local VERSION = 4
 
 ---@return string
 local function cacheFile()
-	return path.join(settingsModel.directory(), "library.json")
+	return paths.file("library.json")
 end
 
 ---@param track beat.Track
@@ -61,7 +61,7 @@ function LibraryCache.save(library)
 	})
 	if not ok then return false, tostring(encoded) end
 
-	local folder = settingsModel.directory()
+	local folder = paths.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end

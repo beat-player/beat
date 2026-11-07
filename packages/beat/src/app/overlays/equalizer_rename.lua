@@ -1,9 +1,10 @@
 -- Renaming a saved equalizer preset. The preset is named in its field and deleted from the same
--- dialog, so a name that is no longer wanted is not a trip through the settings.
+-- dialog, so a name that is no longer wanted is not a trip through the settings. This is only the
+-- draft and the focus: whether a name is free, what renaming or deleting does to the presets and
+-- what the player hears afterwards are the equalizer service's rules, reached by the one message
+-- each button sends.
 local wonderland = require("wonderland")
-local equalizerBands = require("beat.app.services.playback.equalizer")
 local render = require("beat.app.components.ui")
-local equalizer = require("beat.app.overlays.equalizer")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -16,7 +17,7 @@ local equalizerRename = {}
 
 ---@param params { name: string? }
 function equalizerRename.new(app, params)
-	local preset = equalizer.find(app, params.name)
+	local preset = app.services.equalizer:find(params.name)
 	if preset == nil or not preset.custom then return nil end
 	---@type beat.EqualizerRenameState
 	local state = { name = preset.name, draft = preset.name}
@@ -30,6 +31,8 @@ function equalizerRename.close(app, _overlay)
 	app:focusField(nil)
 end
 
+--- The field's own messages and the cancel button stay here. Save and delete are sent on to the
+--- equalizer service, which decides whether they are possible and closes the dialog when they are.
 function equalizerRename.update(app, overlay, message)
 	local state = overlay.state --[[@as beat.EqualizerRenameState]]
 	local kind = message.type
@@ -38,43 +41,6 @@ function equalizerRename.update(app, overlay, message)
 		app:refresh()
 	elseif kind == "cancelEqualizerPresetRename" then
 		app:close(overlay)
-	elseif kind == "saveEqualizerPresetRename" then
-		local oldName = state.name
-		local newName = state.draft:match("^%s*(.-)%s*$")
-		if newName == "" then
-			app.services.toasts:show("Choose a preset name", "error")
-		elseif not equalizer.nameFree(app, oldName, newName) then
-			app.services.toasts:show("Choose a preset name that is not already used", "error")
-		else
-			local found
-			for _, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
-					if preset.name == oldName then found = preset end
-				end
-			if found ~= nil then
-				found.name = newName
-				if app.services.settings.values.equalizerPreset == oldName then
-					app.services.settings.values.equalizerPreset = newName
-				end
-				app:close(overlay)
-				app.services.settings:changed()
-			end
-		end
-	elseif kind == "deleteEqualizerPreset" then
-		local name = message.name or state.name
-		local found
-		for at, preset in ipairs(app.services.settings.values.equalizerCustomPresets) do
-				if preset.name == name then found = at; break end
-			end
-		if found ~= nil then
-			table.remove(app.services.settings.values.equalizerCustomPresets, found)
-			if app.services.settings.values.equalizerPreset == name then
-				app.services.settings.values.equalizerPreset = "flat"
-				app.services.settings.values.equalizerGains = equalizerBands.presetGains("flat")
-				app.services.playback.player:setEqualizer(equalizerBands.bands(app.services.settings.values.equalizerGains))
-			end
-			app:close(overlay)
-			app.services.settings:changed()
-		end
 	else
 		return false
 	end
@@ -103,12 +69,12 @@ function equalizerRename.view(app, overlay, window)
 	:fg(theme:color("text"))),
 	render.field(app, "equalizerPresetName", state.draft, "Preset name",
 	function(value) return { type = "equalizerEditDraft", value = value} end,
-	function() return { type = "saveEqualizerPresetRename"} end),
+	function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end),
 	div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
 	:justify("end")):children({
 	render.button(app, "Cancel", { type = "cancelEqualizerPresetRename"},
 	{ height = theme:px(30), width = theme:px(80)}),
-	render.button(app, "Save", { type = "saveEqualizerPresetRename"},
+	render.button(app, "Save", { type = "saveEqualizerPresetRename", name = name, value = state.draft},
 	{ primary = true, height = theme:px(30), width = theme:px(74)}),
 	}),
 	render.button(app, "Delete preset", { type = "deleteEqualizerPreset", name = name},

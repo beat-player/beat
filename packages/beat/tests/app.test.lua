@@ -2,7 +2,7 @@
 -- the smoke test that says the screens they feed still come out as elements.
 local test = require("lde-test")
 local wonderland = require("wonderland")
-local settingsModel = require("beat.app.services.settings.model")
+local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Queue = require("beat.app.services.playback.queue")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
@@ -19,18 +19,18 @@ local canRender = true
 	canRender = ok
 end
 
--- The app writes settings, tags and the library cache through `settingsModel.directory`. A test
+-- The app writes settings, tags and the library cache through `paths.directory`. A test
 -- that finishes a scan would otherwise replace the user's library cache with its fixtures -- and
 -- the next real launch, whose root no longer matched, would scan the whole folder again.
 local configDirectory = os.tmpname() .. "-beat-config"
 os.remove(configDirectory)
 fs.mkdirAll(configDirectory)
 
-local realDirectory = settingsModel.directory
-settingsModel.directory = function() return configDirectory end
+local realDirectory = paths.directory
+paths.directory = function() return configDirectory end
 
 test.afterAll(function()
-	settingsModel.directory = realDirectory
+	paths.directory = realDirectory
 	fs.rmdir(configDirectory)
 end)
 
@@ -204,7 +204,7 @@ test.it("logs an error toast where the app keeps its files", function()
 	App:init({ scan = false })
 	App.services.toasts:show("a test failure", "error")
 
-	local logFile = settingsModel.directory() .. "/beat.log"
+	local logFile = paths.file("beat.log")
 	local contents = fs.read(logFile)
 
 	test.truthy(contents ~= nil, "the error is written to beat.log")
@@ -1319,6 +1319,7 @@ test.it("stores equalizer presets and custom band gains", function()
 
 	App:open("equalizer")
 	App:act({ type = "equalizerPreset", id = "club"})
+	test.truthy(App:overlay("equalizer") ~= nil, "the panel stays open while a preset is chosen")
 	test.equal(App.services.settings.values.equalizerPreset, "club")
 	test.equal(App.services.settings.values.equalizerGains[1], 5)
 	test.equal(applied[1].gain, 5, "the audio player receives the preset bands")
@@ -1355,7 +1356,7 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 
 	App:act({ type = "editEqualizerPreset", name = "Custom 2"})
 	App:act({ type = "equalizerEditDraft", value = "Warm"})
-	App:act({ type = "saveEqualizerPresetRename"})
+	App:act({ type = "saveEqualizerPresetRename", name = "Custom 2", value = "Warm"})
 	test.equal(App.services.settings.values.equalizerPreset, "Warm", "a rename follows the selected preset")
 	test.equal(App.services.settings.values.equalizerCustomPresets[2].name, "Warm")
 

@@ -2,8 +2,7 @@
 -- settings.json and tags.json already live. A log is best-effort -- a machine with a read-only config
 -- directory must still draw, so nothing here is allowed to raise.
 local fs = require("fs")
-local path = require("path")
-local settingsModel = require("beat.app.services.settings.model")
+local paths = require("beat.paths")
 
 local log = {}
 
@@ -11,7 +10,7 @@ local LIMIT = 1024 * 1024
 
 ---@return string
 local function file()
-	return path.join(settingsModel.directory(), "beat.log")
+	return paths.file("beat.log")
 end
 
 local function rotate()
@@ -31,7 +30,7 @@ end
 ---@return boolean
 function log.write(level, message)
 	return pcall(function()
-		local directory = settingsModel.directory()
+		local directory = paths.directory()
 
 		if not fs.isdir(directory) then
 			fs.mkdirAll(directory)

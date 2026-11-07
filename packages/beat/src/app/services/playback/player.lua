@@ -4,7 +4,6 @@
 -- repeat and shuffle. A manual skip reloads the treble queue at the new position, which costs a
 -- short silence and keeps the two orders from drifting after a shuffle or a repeat.
 local treble = require("treble")
-local names = require("beat.music.names")
 local Queue = require("beat.app.services.playback.queue")
 
 ---@class beat.Player
@@ -55,7 +54,7 @@ end
 
 ---@param value number
 local function clampVolume(value)
-	return names.clamp(value, 0, 1)
+	return math.max(0, math.min(1, value))
 end
 
 ---@param self beat.Player
@@ -395,7 +394,7 @@ function Player:update(now)
 			self.fadeActive = false
 		else
 			if self.fadeStart == nil then self.fadeStart = now end
-			local t = names.clamp((now - self.fadeStart) / self.fadeDuration, 0, 1)
+			local t = math.max(0, math.min(1, (now - self.fadeStart) / self.fadeDuration))
 			if t >= 1 then
 				self.fadeGain = 1
 				self.fadeActive = false

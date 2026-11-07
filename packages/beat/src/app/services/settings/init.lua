@@ -4,7 +4,6 @@
 -- than done on every message. Everything else reads `values`; nothing saves on its own.
 local wonderland = require("wonderland")
 local Log = require("beat.log")
-local names = require("beat.music.names")
 local settingsModel = require("beat.app.services.settings.model")
 
 local time = wonderland.time
@@ -43,7 +42,7 @@ end
 -- The settings screen's sidebar controls. Both redraw through the message that carried them.
 function Settings:update(message)
 	if message.type == "sidebarWidth" then
-		self.values.sidebarWidth = names.clamp(message.width or 264, 200, 360)
+		self.values.sidebarWidth = math.max(200, math.min(360, message.width or 264))
 	elseif message.type == "toggleSidebar" then
 		self.values.sidebarCollapsed = not self.values.sidebarCollapsed
 	else

@@ -4,7 +4,7 @@
 local fs = require("fs")
 local path = require("path")
 local json = require("json")
-local equalizer = require("beat.app.services.playback.equalizer")
+local paths = require("beat.paths")
 
 local settings = {}
 
@@ -23,9 +23,9 @@ local settings = {}
 ---@field lastfmSessionKey string
 ---@field lastfmUsername string
 ---@field lastfmEnabled boolean
----@field equalizerPreset string
----@field equalizerGains number[]
----@field equalizerCustomPresets beat.EqualizerCustomPreset[]
+---@field equalizerPreset string? # As the file holds it: the equalizer service validates it at start
+---@field equalizerGains number[]?
+---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
 
 ---@type beat.Settings
 local DEFAULTS = {
@@ -48,26 +48,6 @@ equalizerGains = { 0, 0, 0, 0, 0},
 equalizerCustomPresets = {},
 }
 
----@return string
-function settings.directory()
-	local osName = jit and jit.os or ""
-	local home = os.getenv("HOME") or os.getenv("USERPROFILE") or "."
-
-	if osName == "Windows" then
-		return path.join(os.getenv("APPDATA") or home, "beat")
-	elseif osName == "OSX" then
-		return path.join(home, "Library", "Application Support", "beat")
-	end
-
-	return path.join(os.getenv("XDG_CONFIG_HOME") or path.join(home, ".config"), "beat")
-end
-
----@param dir string?
----@return string
-function settings.file(dir)
-	return path.join(dir or settings.directory(), "settings.json")
-end
-
 ---@param value any
 ---@param fallback number
 ---@return number
@@ -80,39 +60,13 @@ end
 ---@return beat.Settings
 ---@return string
 function settings.load(dir)
-	local file = settings.file(dir)
+	local file = paths.file("settings.json", dir)
 	local data = {}
 
 	local bytes = fs.read(file)
 	if bytes ~= nil then
 		local ok, parsed = pcall(function() return json.decode(bytes):unpack() end)
 		if ok and type(parsed) == "table" then data = parsed end
-	end
-
-	local preset = type(data.equalizerPreset) == "string" and data.equalizerPreset or "flat"
-	local customs = {}
-	local used = {}
-	for _, builtin in ipairs(equalizer.presets) do
-			used[builtin.name] = true
-			used[builtin.id] = true
-		end
-	if type(data.equalizerCustomPresets) == "table" then
-		for _, item in ipairs(data.equalizerCustomPresets) do
-				if type(item) == "table" and type(item.name) == "string" and item.name ~= ""
-				and not used[item.name] and #customs < 32 then
-					customs[#customs + 1] = { name = item.name, gains = equalizer.sanitize(item.gains)}
-					used[item.name] = true
-				end
-			end
-	end
-	local custom
-	for _, entry in ipairs(customs) do
-			if preset == entry.name then custom = entry end
-		end
-	local gains = data.equalizerGains ~= nil and equalizer.sanitize(data.equalizerGains)
-	or (custom ~= nil and equalizer.copyGains(custom.gains)) or equalizer.presetGains(preset)
-	if equalizer.preset(preset) == nil and custom == nil then
-		preset = type(data.equalizerGains) == "table" and "custom" or "flat"
 	end
 
 	---@type beat.Settings
@@ -131,9 +85,12 @@ function settings.load(dir)
 	lastfmSessionKey = type(data.lastfmSessionKey) == "string" and data.lastfmSessionKey or "",
 	lastfmUsername = type(data.lastfmUsername) == "string" and data.lastfmUsername or "",
 	lastfmEnabled = data.lastfmEnabled ~= false,
-	equalizerPreset = preset,
-	equalizerGains = gains,
-	equalizerCustomPresets = customs,
+	-- The equalizer keys are read as the file holds them. Their rules -- gains held to a range,
+	-- custom presets named and counted, a preset that is gone falling back -- are about presets,
+	-- so the equalizer service validates them when it starts, where those rules live.
+	equalizerPreset = data.equalizerPreset,
+	equalizerGains = data.equalizerGains,
+	equalizerCustomPresets = data.equalizerCustomPresets,
 	}
 
 	return loaded, file
@@ -144,7 +101,7 @@ end
 ---@return boolean
 ---@return string?
 function settings.save(value, dir)
-	local file = settings.file(dir)
+	local file = paths.file("settings.json", dir)
 	local folder = path.dirname(file)
 
 	if not fs.isdir(folder) then
