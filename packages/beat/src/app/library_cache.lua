@@ -10,7 +10,7 @@ local Log = require("beat.app.log")
 
 local LibraryCache = {}
 
-local VERSION = 3
+local VERSION = 4
 
 ---@return string
 local function cacheFile()
@@ -18,10 +18,12 @@ local function cacheFile()
 end
 
 ---@param track beat.Track
+---@param key string? # The album the scan put it in, which its tags alone do not always say
 ---@return table
-local function packed(track)
+local function packed(track, key)
 	return {
 	path = track.path,
+	key = key,
 	title = track.title,
 	artist = track.artist,
 	album = track.album,
@@ -46,7 +48,10 @@ end
 ---@return string? err
 function LibraryCache.save(library)
 	local tracks = {}
-	for _, track in ipairs(library.tracks) do tracks[#tracks + 1] = packed(track) end
+	for _, track in ipairs(library.tracks) do
+		local album = library:album(track.albumId)
+		tracks[#tracks + 1] = packed(track, album ~= nil and album.key or nil)
+	end
 
 	local ok, encoded = pcall(json.encode, {
 	version = VERSION,
@@ -117,6 +122,7 @@ function LibraryCache.load(root)
 			name = name,
 			ext = ext,
 			modifyTime = item.modified,
+			key = type(item.key) == "string" and item.key or nil,
 			}, item.coverPath, item.coverCache)
 		end
 	library:finish()
