@@ -11,7 +11,9 @@ local Log = require("beat.log")
 
 local LibraryCache = {}
 
-local VERSION = 4
+-- Raised when what a scan reads changes, so a cache written by an older scan is read again rather
+-- than trusted: 5 is treble's exact length for an MP3 with no length header, where 4 had a guess.
+local VERSION = 5
 
 ---@return string
 local function cacheFile()
