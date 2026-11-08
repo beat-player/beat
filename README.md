@@ -5,12 +5,7 @@
 <h1 align="center">beat</h1>
 
 <p align="center">
-  <strong>A tiny, fast, native music player for the files you already own.</strong><br>
-</p>
-
-<p align="center">
-  <a href="https://github.com/bycruz/beat/releases"><img alt="Download the nightly build" src="https://img.shields.io/badge/download-nightly-ff6b4a?style=flat-square"></a>
-  <a href="https://lde.sh"><img alt="Built with lde" src="https://img.shields.io/badge/built%20with-lde-8bd450?style=flat-square"></a>
+  <strong>A tiny, fast, native music player for the files you already own.</strong>
 </p>
 
 ![beat playing the home screen](docs/screenshots/home.png)
