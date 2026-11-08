@@ -29,61 +29,61 @@ function Spectrum.new()
 	for at = 1, BANDS do levels[at], display[at], peaks[at] = 0, 0, 0 end
 
 	return setmetatable({
-	real = {},
-	imag = {},
-	window = window,
-	levels = levels,
-	display = display,
-	shown = false,
-	peaks = peaks,
-	top = 0,
-	dirty = false,
+		real = {},
+		imag = {},
+		window = window,
+		levels = levels,
+		display = display,
+		shown = false,
+		peaks = peaks,
+		top = 0,
+		dirty = false,
 	}, Spectrum)
 end
 
 local function reverseBits(value)
 	local out = 0
 	for _ = 1, 10 do
-			out = out * 2 + value % 2
-			value = math.floor(value / 2)
-		end
+		out = out * 2 + value % 2
+		value = math.floor(value / 2)
+	end
 	return out
 end
 
 local function fft(real, imag)
 	for at = 0, N - 1 do
-			local reversed = reverseBits(at)
-			if reversed > at then
-				real[at], real[reversed] = real[reversed], real[at]
-				imag[at], imag[reversed] = imag[reversed], imag[at]
-			end
+		local reversed = reverseBits(at)
+		if reversed > at then
+			real[at], real[reversed] = real[reversed], real[at]
+			imag[at], imag[reversed] = imag[reversed], imag[at]
 		end
+	end
 
 	local size = 2
 	while size <= N do
 		local angle = -2 * math.pi / size
 		local stepReal, stepImag = math.cos(angle), math.sin(angle)
 		for start = 0, N - 1, size do
-				local wr, wi = 1, 0
-				local half = size / 2
-				for at = 0, half - 1 do
-						local even = start + at
-						local odd = even + half
-						local tr = wr * real[odd] - wi * imag[odd]
-						local ti = wr * imag[odd] + wi * real[odd]
-						real[odd] = real[even] - tr
-						imag[odd] = imag[even] - ti
-						real[even] = real[even] + tr
-						imag[even] = imag[even] + ti
-						wr, wi = wr * stepReal - wi * stepImag, wr * stepImag + wi * stepReal
-					end
+			local wr, wi = 1, 0
+			local half = size / 2
+			for at = 0, half - 1 do
+				local even = start + at
+				local odd = even + half
+				local tr = wr * real[odd] - wi * imag[odd]
+				local ti = wr * imag[odd] + wi * real[odd]
+				real[odd] = real[even] - tr
+				imag[odd] = imag[even] - ti
+				real[even] += tr
+				imag[even] += ti
+				wr, wi = wr * stepReal - wi * stepImag, wr * stepImag + wi * stepReal
 			end
-		size = size * 2
+		end
+		size *= 2
 	end
 end
 
 --- Copies the end of a decoded chunk into the FFT window, mixed to mono.
----@param samples any
+---@param samples ffi.cdata*
 ---@param frames number
 ---@param channels number
 function Spectrum:feed(samples, frames, channels)
@@ -95,16 +95,16 @@ function Spectrum:feed(samples, frames, channels)
 	local data = ffi.cast("int16_t*", samples)
 
 	for at = 0, N - 1 do
-			self.real[at] = 0
-			self.imag[at] = 0
-		end
+		self.real[at] = 0
+		self.imag[at] = 0
+	end
 
 	for at = 0, count - 1 do
-			local sum = 0
-			local sampleAt = base + at * channels
-			for channel = 0, channels - 1 do sum = sum + data[sampleAt + channel] end
-			self.real[at] = sum * scale * self.window[at]
-		end
+		local sum = 0
+		local sampleAt = base + at * channels
+		for channel = 0, channels - 1 do sum += data[sampleAt + channel] end
+		self.real[at] = sum * scale * self.window[at]
+	end
 
 	self.dirty = true
 end
@@ -117,28 +117,28 @@ local function bandsInto(real, imag, levels, peaks, spectrum)
 	local top = 0
 
 	for band = 1, BANDS do
-			local first = math.max(1, last)
-			local lastBin = math.floor(half ^ (band / BANDS) + 0.5)
-			if lastBin < first then lastBin = first end
-			if band == BANDS then lastBin = half - 1 end
+		local first = math.max(1, last)
+		local lastBin = math.floor(half ^ (band / BANDS) + 0.5)
+		if lastBin < first then lastBin = first end
+		if band == BANDS then lastBin = half - 1 end
 
-			local peak = 0
-			for bin = first, lastBin do
-					-- FFT bins are scaled by the window length; bring a bin back to the amplitude of
-					-- the signal so the meter's scale is the same at every FFT size.
-					local magnitude = math.sqrt(real[bin] * real[bin] + imag[bin] * imag[bin]) * 2 / N
-					if magnitude > peak then peak = magnitude end
-				end
-
-			-- Pink-ish tilt: a mix has far less energy at 10 kHz than at 100 Hz, so without it the
-			-- right half of the strip is almost always dark. The boost is gentle and bounded.
-			local fraction = (band - 1) / (BANDS - 1)
-			peak = peak * (1 + 5 * fraction ^ 1.3)
-
-			peaks[band] = peak
-			if peak > top then top = peak end
-			last = lastBin + 1
+		local peak = 0
+		for bin = first, lastBin do
+			-- FFT bins are scaled by the window length; bring a bin back to the amplitude of
+			-- the signal so the meter's scale is the same at every FFT size.
+			local magnitude = math.sqrt(real[bin] * real[bin] + imag[bin] * imag[bin]) * 2 / N
+			if magnitude > peak then peak = magnitude end
 		end
+
+		-- Pink-ish tilt: a mix has far less energy at 10 kHz than at 100 Hz, so without it the
+		-- right half of the strip is almost always dark. The boost is gentle and bounded.
+		local fraction = (band - 1) / (BANDS - 1)
+		peak *= 1 + 5 * fraction ^ 1.3
+
+		peaks[band] = peak
+		if peak > top then top = peak end
+		last = lastBin + 1
+	end
 
 	-- Relative to the loudest band, with a slowly falling reference: a quiet passage still
 	-- uses the strip, while the bass does not pin every bar at the top. The root lifts the
@@ -146,12 +146,12 @@ local function bandsInto(real, imag, levels, peaks, spectrum)
 	spectrum.top = math.max(top, spectrum.top * 0.9)
 
 	for band = 1, BANDS do
-			local value = 0
-			if spectrum.top > 0.000001 then
-				value = math.min(1, (peaks[band] / spectrum.top) ^ 0.5)
-			end
-			levels[band] = math.max(value, levels[band] * 0.88)
+		local value = 0
+		if spectrum.top > 0.000001 then
+			value = math.min(1, (peaks[band] / spectrum.top) ^ 0.5)
 		end
+		levels[band] = math.max(value, levels[band] * 0.88)
+	end
 end
 
 --- Computes once per new PCM chunk. Returns whether the levels changed.
@@ -171,18 +171,18 @@ function Spectrum:step(_now)
 	-- frame so a late frame cannot starve the device. Ease the meter toward each new chunk
 	-- between them so the strip still moves every frame.
 	for band = 1, BANDS do
-			local target = self.levels[band]
-			local shown = self.display[band]
+		local target = self.levels[band]
+		local shown = self.display[band]
 
-			if not self.shown then
-				shown = target
-			else
-				shown = shown + (target - shown) * 0.3
-			end
-
-			if math.abs(shown - self.display[band]) > 0.0005 then changed = true end
-			self.display[band] = shown
+		if not self.shown then
+			shown = target
+		else
+			shown += (target - shown) * 0.3
 		end
+
+		if math.abs(shown - self.display[band]) > 0.0005 then changed = true end
+		self.display[band] = shown
+	end
 	self.shown = true
 
 	return changed

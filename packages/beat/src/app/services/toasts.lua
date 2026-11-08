@@ -20,7 +20,7 @@ local MAX_VISIBLE = 3
 ---@field expires number
 ---@field rect { x: number, y: number, width: number, height: number }? # Where the view last drew it
 
----@class beat.ToastsService
+---@class beat.ToastsService: beat.Service
 ---@field list beat.Toast[]
 ---@field pointer fun(): { x: number, y: number }?
 local Toasts = {}

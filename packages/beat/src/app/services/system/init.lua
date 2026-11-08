@@ -7,7 +7,7 @@ local fs = require("fs")
 local paths = require("beat.paths")
 local links = require("beat.app.services.system.links")
 
----@class beat.SystemService
+---@class beat.SystemService: beat.Service
 ---@field toasts beat.ToastsService
 local System = {}
 System.__index = System

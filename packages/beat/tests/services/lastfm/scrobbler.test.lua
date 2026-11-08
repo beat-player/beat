@@ -1,13 +1,27 @@
 local test = require("lde-test")
 local Scrobbler = require("beat.app.services.lastfm.scrobbler")
 
+---@param id number
+---@param duration number
+---@return beat.Track
 local function track(id, duration)
 	return {
-	id = id,
-	title = "Title " .. id,
-	artist = "Artist",
-	album = "Album",
-	duration = duration,
+		id = id,
+		path = "/music/" .. id .. ".flac",
+		title = "Title " .. id,
+		artist = "Artist",
+		album = "Album",
+		albumId = 1,
+		artistId = 1,
+		albumArtist = "Artist",
+		disc = 1,
+		duration = duration,
+		format = "FLAC",
+		sampleRate = 44100,
+		channels = 2,
+		hasPicture = false,
+		modified = 0,
+		hash = "hash-" .. id,
 	}
 end
 

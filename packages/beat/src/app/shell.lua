@@ -24,23 +24,28 @@ local transitionCache = {}
 local TRANSITION_STEPS = 16
 
 ---@param theme beat.Theme
----@return { forward: wonderland.StyleBuilder[], back: wonderland.StyleBuilder[] }
 local function transitionStyles(theme)
 	local cached = transitionCache[theme.scale]
 	if cached ~= nil then return cached end
 
 	local forward, back = {}, {}
 	for at = 0, TRANSITION_STEPS do
-			local t = at / TRANSITION_STEPS
-			local distance = (1 - t) * theme:px(28)
-			local dim = 0.88 + 0.12 * t
-			forward[at] = sty():fill():column():offset(distance, 0):bright(dim)
-			back[at] = sty():fill():column():offset(-distance, 0):bright(dim)
-		end
+		local t = at / TRANSITION_STEPS
+		local distance = (1 - t) * theme:px(28)
+		local dim = 0.88 + 0.12 * t
+		forward[at] = sty():fill():column():offset(distance, 0):bright(dim)
+		back[at] = sty():fill():column():offset(-distance, 0):bright(dim)
+	end
 
 	cached = { forward = forward, back = back}
 	transitionCache[theme.scale] = cached
 	return cached
+end
+
+---@param elements wonderland.Element[]
+---@param element wonderland.Element?
+local function addElement(elements, element)
+	if element ~= nil then elements[#elements + 1] = element end
 end
 
 --- The open overlays from `from` up, bottom first. An anchored overlay is drawn by the screen
@@ -48,17 +53,16 @@ end
 ---@param app beat.App
 ---@param window wonderland.RenderWindow
 ---@param from number
----@return wonderland.Element[]
 local function overlays(app, window, from)
+	---@type wonderland.Element[]
 	local elements = {}
 	for at = from, #app.overlays do
-			local overlay = app.overlays[at]
-			local surface = app.registry:overlay(overlay.name)
-			if not surface.anchored and not surface.fullscreen and surface.view ~= nil then
-				local element = surface.view(app, overlay, window)
-				if element ~= nil then elements[#elements + 1] = element end
-			end
+		local overlay = app.overlays[at]
+		local surface = app.registry:overlay(overlay.name)
+		if not surface.anchored and not surface.fullscreen and surface.view ~= nil then
+			addElement(elements, surface.view(app, overlay, window))
 		end
+	end
 	return elements
 end
 
@@ -74,24 +78,24 @@ function shell.view(app, window)
 	local width = window.width
 	local height = window.height
 	local mobile = metrics.mobile(app, width)
-	local bar = app.services.playback:current() ~= nil and theme:px(mobile and 64 or 88) or 0
+	local bar = (app.services.playback:current()) ~= nil ? (theme:px(mobile ? 64 : 88)) : 0
 	local page = app:currentPage()
 
 	-- A full-screen overlay is the screen, not a panel over one: the page, the sidebar and the bar
 	-- are not built at all, so nothing underneath can be clicked through and nothing around the
 	-- edges is left showing. What was opened over it is drawn over it.
 	for at = #app.overlays, 1, -1 do
-			local overlay = app.overlays[at]
-			local surface = app.registry:overlay(overlay.name)
-			if surface.fullscreen and surface.view ~= nil then
-				-- The screen itself may be padded, but overlays are placed in window coordinates. A
-				-- bare wrapper keeps their fill and offsets measured from the window.
-				local frame = div():style(sty():fill()):children({ surface.view(app, overlay, window)})
-				for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element}) end
-				app.services.covers:sweep()
-				return frame
-			end
+		local overlay = app.overlays[at]
+		local surface = app.registry:overlay(overlay.name)
+		if surface.fullscreen and surface.view ~= nil then
+			-- The screen itself may be padded, but overlays are placed in window coordinates. A
+			-- bare wrapper keeps their fill and offsets measured from the window.
+			local frame = div():style(sty():fill()):children({ surface.view(app, overlay, window)})
+			for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element}) end
+			app.services.covers:sweep()
+			return frame
 		end
+	end
 
 	if app.services.scan:needsFolder() then
 		-- The first launch is the folder browser and nothing else; it is the page, too, so its
@@ -104,17 +108,17 @@ function shell.view(app, window)
 		:style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text"))
 		:font(theme.fontFamily))
 		:children({
-		div():style(sty():fill():column():align("center"):justify("center")):children({
-		div():style(sty():w(math.min(theme:px(620), width - metrics.pad(app, width) * 2))
-		:h(theme:px(600)):column():gap(theme:space(18))):children({
-		div():style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center")):children({
-		logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
-		text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold")
-		:fg(theme:color("text"))),
-		}),
-		app.registry:page("folders").view(app, page, window),
-		}),
-		}),
+			div():style(sty():fill():column():align("center"):justify("center")):children({
+				div():style(sty():w(math.min(theme:px(620), width - metrics.pad(app, width) * 2))
+				:h(theme:px(600)):column():gap(theme:space(18))):children({
+					div():style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center")):children({
+						logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
+						text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold")
+						:fg(theme:color("text"))),
+					}),
+					app.registry:page("folders").view(app, page, window),
+				}),
+			}),
 		})
 	end
 
@@ -129,9 +133,10 @@ function shell.view(app, window)
 	local motion = app.services.motion
 	local transitionStyle
 	local t = motion:slideProgress(wonderland.time.now())
-	if t ~= nil and not motion.clock.reduce then
+	local slide = motion.pageSlide
+	if t ~= nil and slide ~= nil and not motion.clock.reduce then
 		local transitionSet = transitionStyles(theme)
-		local direction = (motion.pageSlide.direction or 1) < 0 and transitionSet.back or transitionSet.forward
+		local direction = (slide.direction or 1) < 0 and transitionSet.back or transitionSet.forward
 		transitionStyle = direction[math.floor(t * 16 + 0.5)]
 	end
 
@@ -139,7 +144,7 @@ function shell.view(app, window)
 	:style(sty():column():wrel(1.0):h(bodyHeight):pad(theme:space(20), metrics.pad(app, width), 0,
 	metrics.pad(app, width)):gap(theme:space(18)):bar(theme:px(8), theme:px(40), theme:color("faint")))
 	:scroll(scroll)
-	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
+	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
 	:children({ content})
 
 	-- The page is moved by a wrapper whose styles are made once per scale, not by a style that
@@ -150,7 +155,7 @@ function shell.view(app, window)
 
 	-- Clipped so a page arriving from the side cannot draw over the sidebar during its travel.
 	local pageClip = div():style(sty():column():wrel(1.0):h(bodyHeight)):scroll(0)
-	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
+	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
 	:children({ moving})
 
 	local rightWidth = width - metrics.sidebarWidth(app, width)
@@ -162,8 +167,8 @@ function shell.view(app, window)
 		end)
 	end
 	main:children({
-	topbar.view(app, { width = width}),
-	div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip}),
+		topbar.view(app, { width = width}),
+		div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip}),
 	})
 
 	local shellChildren = { main}

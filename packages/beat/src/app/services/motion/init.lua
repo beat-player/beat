@@ -13,7 +13,8 @@ local time = wonderland.time
 -- drawn: `step` stays busy until it ends.
 local SLIDE_TIME = 0.28
 
----@class beat.MotionService
+---@class beat.MotionService: beat.Service
+---@field settings beat.SettingsService
 ---@field clock beat.Motion
 ---@field ease table<string, fun(t: number): number> # The curves a view passes to `progress`
 ---@field pageSlide { start: number, direction: number? }?

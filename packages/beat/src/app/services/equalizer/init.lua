@@ -5,7 +5,7 @@
 -- are in `bands.lua` beside this file: the service owns the rules, the panel only draws them.
 local bands = require("beat.app.services.equalizer.bands")
 
----@class beat.EqualizerService
+---@class beat.EqualizerService: beat.Service
 ---@field frequencies number[]
 ---@field labels string[]
 ---@field minimum number
@@ -87,7 +87,7 @@ function Equalizer:load()
 	local gains = values.equalizerGains ~= nil and bands.sanitize(values.equalizerGains)
 	or (custom ~= nil and bands.copyGains(custom.gains)) or bands.presetGains(preset)
 	if bands.preset(preset) == nil and custom == nil then
-		preset = type(values.equalizerGains) == "table" and "custom" or "flat"
+		preset = type(values.equalizerGains) == "table" ? "custom" : "flat"
 	end
 
 	values.equalizerPreset = preset
@@ -110,7 +110,7 @@ end
 function Equalizer:presets()
 	local list = {}
 	for _, preset in ipairs(bands.presets) do list[#list + 1] = preset end
-	for _, preset in ipairs(self.settings.values.equalizerCustomPresets) do
+	for _, preset in ipairs(self.settings.values.equalizerCustomPresets or {}) do
 		list[#list + 1] = {
 			id = preset.name,
 			name = preset.name,
@@ -135,13 +135,13 @@ end
 --- The id of the shape the bands currently are, for the panel to mark it.
 ---@return string
 function Equalizer:selected()
-	return self.settings.values.equalizerPreset
+	return self.settings.values.equalizerPreset or "flat"
 end
 
 --- The five gains the panel's faders show.
 ---@return number[]
 function Equalizer:gains()
-	return self.settings.values.equalizerGains
+	return self.settings.values.equalizerGains or {}
 end
 
 -- ────────────────────────────────────────────────────────────────
@@ -158,7 +158,7 @@ function Equalizer:nextName()
 	local number = 2
 	while used[name] do
 		name = "Custom " .. tostring(number)
-		number = number + 1
+		number += 1
 	end
 	return name
 end
@@ -191,13 +191,15 @@ end
 --- answer rather than a silent no-op, because pressing add and seeing nothing is worse.
 function Equalizer:create()
 	local values = self.settings.values
-	if #values.equalizerCustomPresets >= CUSTOM_LIMIT then
+	local customs = values.equalizerCustomPresets or {}
+	if #customs >= CUSTOM_LIMIT then
 		self.toasts:show("That is enough custom presets for now", "error")
 		return
 	end
 	local name = self:nextName()
-	local gains = bands.copyGains(values.equalizerGains)
-	values.equalizerCustomPresets[#values.equalizerCustomPresets + 1] = {
+	local gains = bands.copyGains(values.equalizerGains or {})
+	values.equalizerCustomPresets = customs
+	customs[#customs + 1] = {
 		name = name,
 		gains = gains,
 	}
@@ -213,11 +215,11 @@ end
 function Equalizer:setGain(band, value)
 	if type(band) ~= "number" or band < 1 or band > #self.frequencies then return end
 	local values = self.settings.values
-	local gains = bands.sanitize(values.equalizerGains)
+	local gains = bands.sanitize(values.equalizerGains or {})
 	gains[band] = bands.clamp(value or 0)
 	local selected = self:find(values.equalizerPreset)
-	if selected ~= nil and selected.custom then
-		for _, preset in ipairs(values.equalizerCustomPresets) do
+	if selected?.custom then
+		for _, preset in ipairs(values.equalizerCustomPresets or {}) do
 			if preset.name == selected.id then preset.gains = bands.copyGains(gains) end
 		end
 	else
@@ -246,7 +248,7 @@ function Equalizer:rename(oldName, newName)
 	end
 	local values = self.settings.values
 	local found
-	for _, preset in ipairs(values.equalizerCustomPresets) do
+	for _, preset in ipairs(values.equalizerCustomPresets or {}) do
 		if preset.name == oldName then found = preset end
 	end
 	if found == nil then return false end
@@ -262,12 +264,14 @@ end
 ---@return boolean
 function Equalizer:delete(name)
 	local values = self.settings.values
+	---@type number?
 	local at
-	for index, preset in ipairs(values.equalizerCustomPresets) do
+	local customs = values.equalizerCustomPresets or {}
+	for index, preset in ipairs(customs) do
 		if preset.name == name then at = index; break end
 	end
 	if at == nil then return false end
-	table.remove(values.equalizerCustomPresets, at)
+	table.remove(customs, at)
 	if values.equalizerPreset == name then
 		values.equalizerPreset = "flat"
 		values.equalizerGains = bands.presetGains("flat")
@@ -298,18 +302,17 @@ function Equalizer:closeDialog()
 end
 
 function Equalizer:update(message)
-	local kind = message.type
-	if kind == "equalizerPreset" then
+	if message.type == "equalizerPreset" then
 		self:select(message.id)
-	elseif kind == "newEqualizerPreset" then
+	elseif message.type == "newEqualizerPreset" then
 		self:create()
-	elseif kind == "editEqualizerPreset" then
+	elseif message.type == "editEqualizerPreset" then
 		self:edit(message.name)
-	elseif kind == "equalizerGain" then
+	elseif message.type == "equalizerGain" then
 		self:setGain(message.band, message.value)
-	elseif kind == "saveEqualizerPresetRename" then
+	elseif message.type == "saveEqualizerPresetRename" then
 		if self:rename(message.name, message.value) then self:closeDialog() end
-	elseif kind == "deleteEqualizerPreset" then
+	elseif message.type == "deleteEqualizerPreset" then
 		if self:delete(message.name) then self:closeDialog() end
 	end
 end

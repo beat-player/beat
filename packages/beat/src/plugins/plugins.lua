@@ -6,7 +6,8 @@ local pluginsPage = require("beat.app.pages.plugins")
 return {
 	name = "plugins",
 	version = "1.0.0",
-	setup = function(beat)
-		beat.page("plugins", pluginsPage)
+	---@param handle beat.PluginHandle
+	setup = function(handle)
+		handle.page("plugins", pluginsPage)
 	end,
 }

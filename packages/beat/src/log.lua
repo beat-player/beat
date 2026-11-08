@@ -8,7 +8,6 @@ local log = {}
 
 local LIMIT = 1024 * 1024
 
----@return string
 local function file()
 	return paths.file("beat.log")
 end
@@ -39,7 +38,7 @@ function log.write(level, message)
 		rotate()
 
 		local line = string.format("%s [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"),
-			level, tostring(message))
+		level, tostring(message))
 
 		local handle = assert(io.open(file(), "a"))
 		handle:write(line)

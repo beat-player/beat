@@ -1,5 +1,6 @@
 -- Everything that makes a sound and every panel that controls it: the player, the queue and the
 -- spectrum, the equalizer below them, and the expanded now-playing screen with its own menus.
+local beat = require("beat")
 local playback = require("beat.app.services.playback")
 local equalizer = require("beat.app.services.equalizer")
 
@@ -10,19 +11,19 @@ local queue = require("beat.app.overlays.queue")
 local equalizerPanel = require("beat.app.overlays.equalizer")
 local equalizerRename = require("beat.app.overlays.equalizer_rename")
 
-return {
+return beat.plugin({
 	name = "playback",
 	version = "1.0.0",
 	requires = { core = "^1.0.0", library = "^1.0.0", collections = "^1.0.0" },
-	setup = function(beat)
-		beat.service("playback", playback)
-		beat.service("equalizer", equalizer)
+	setup = function(handle)
+		handle.service("playback", playback)
+		handle.service("equalizer", equalizer)
 
-		beat.overlay("now_playing", nowPlaying)
-		beat.overlay("more", more)
-		beat.overlay("volume", volume)
-		beat.overlay("queue", queue)
-		beat.overlay("equalizer", equalizerPanel)
-		beat.overlay("equalizer_rename", equalizerRename)
+		handle.overlay("now_playing", nowPlaying)
+		handle.overlay("more", more)
+		handle.overlay("volume", volume)
+		handle.overlay("queue", queue)
+		handle.overlay("equalizer", equalizerPanel)
+		handle.overlay("equalizer_rename", equalizerRename)
 	end,
-}
+})

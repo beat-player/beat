@@ -1,17 +1,36 @@
 local test = require("lde-test")
+local paths = require("beat.paths")
+local fs = require("fs")
+local Settings = require("beat.app.services.settings")
+local Motion = require("beat.app.services.motion")
 local Appearance = require("beat.app.services.appearance")
 
--- The appearance service reads the chosen theme from settings and the reduce-motion flag from the
--- motion clock; neither is written to here, so a bare table is the whole double.
+-- Settings reads its values from `paths.directory`; a scratch one keeps the user's own settings
+-- out of the way of the themes this test makes.
+local configDirectory = os.tmpname() .. "-beat-theme-config"
+os.remove(configDirectory)
+fs.mkdirAll(configDirectory)
+
+local realDirectory = paths.directory
+paths.directory = function() return configDirectory end
+
+test.afterAll(function()
+	paths.directory = realDirectory
+	fs.rmdir(configDirectory)
+end)
+
+--- The real settings and motion services, with the values this test wants to read from them.
 ---@param theme string
 ---@param accent string
 ---@param scale number
----@return beat.AppearanceService
 local function appearance(theme, accent, scale)
-	return Appearance.new({
-		settings = { values = { theme = theme, accent = accent, uiScale = scale }, changed = function() end },
-		motion = { clock = { reduce = false }},
-	})
+	local settings = Settings.new()
+	settings.values.theme = theme
+	settings.values.accent = accent
+	settings.values.uiScale = scale
+	local motion = Motion.new({ settings = settings })
+	motion.clock.reduce = false
+	return Appearance.new({ settings = settings, motion = motion })
 end
 
 test.it("interpolates colours while a theme change is in flight", function()

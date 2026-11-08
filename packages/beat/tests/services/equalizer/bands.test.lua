@@ -27,13 +27,12 @@ end)
 test.it("gives every preset the same gain count and a unique id", function()
 	---@type table<string, boolean>
 	local seen = {}
-	for _, item in ipairs(equalizer.presets) do
-			local preset = item --[[@as beat.EqualizerPreset]]
-			local id = preset.id
-			test.equal(#preset.gains, 5)
-			test.falsy(seen[id], "preset ids are unique")
-			seen[id] = true
-		end
+	for _, preset in ipairs(equalizer.presets) do
+		local id = preset.id
+		test.equal(#preset.gains, 5)
+		test.falsy(seen[id], "preset ids are unique")
+		seen[id] = true
+	end
 	test.truthy(seen["speaker"])
 	test.truthy(seen["lowBass"])
 	test.truthy(seen["highBass"])

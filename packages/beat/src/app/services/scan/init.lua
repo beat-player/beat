@@ -11,7 +11,7 @@ local ScanJob = require("beat.app.services.scan.job")
 ---@field skipped number
 ---@field at number
 
----@class beat.ScanService
+---@class beat.ScanService: beat.Service
 ---@field job beat.ScanJob? # The worker reading the folder, while there is one
 ---@field pick beat.FolderPick? # The system folder dialog, while it is open
 ---@field islandOpen boolean # Whether the reading island was left showing
@@ -115,26 +115,25 @@ function Scan:start(root)
 end
 
 function Scan:update(message)
-	local kind = message.type
-	if kind == "startScan" then
+	if message.type == "startScan" then
 		self:start(message.root)
-	elseif kind == "rescan" then
+	elseif message.type == "rescan" then
 		local root = self.settings.values.root
 		if root ~= nil then self:start(root) end
-	elseif kind == "chooseFolder" then
+	elseif message.type == "chooseFolder" then
 		if self.pick == nil then self.pick = Picker.start(self.window()) end
-	elseif kind == "cancelScan" then
+	elseif message.type == "cancelScan" then
 		if self.job ~= nil then
 			self.job:cancel()
 			self.job = nil
 			self.islandOpen = false
 			self.toasts:show("Scan cancelled")
 		end
-	elseif kind == "hideScanIsland" then
+	elseif message.type == "hideScanIsland" then
 		self.islandOpen = false
-	elseif kind == "showScanIsland" then
+	elseif message.type == "showScanIsland" then
 		self.islandOpen = true
-	elseif kind == "dismissScanSummary" then
+	elseif message.type == "dismissScanSummary" then
 		self.summary = nil
 	end
 end

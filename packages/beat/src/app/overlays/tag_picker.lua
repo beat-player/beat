@@ -10,23 +10,27 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@class beat.TagPickerState
 ---@field trackId number
 
----@type beat.OverlaySurface
+---@class beat.TagPickerOverlay: beat.OverlaySurface
 local tagPicker = {}
 
 ---@param params { id: number? }
+---@param app beat.App
 function tagPicker.new(app, params)
-	local track = params.id ~= nil and app.services.library.current ~= nil
-	and app.services.library.current:track(params.id) or app.services.playback:current()
+	local library = app.services.library.current
+	local track = params.id ~= nil and library ~= nil and library:track(params.id) or app.services.playback:current()
 	if track == nil then return nil end
 	---@type beat.TagPickerState
 	return { trackId = track.id}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagPickerState>
+---@param message beat.Message
 function tagPicker.update(app, overlay, message)
-	local state = overlay.state --[[@as beat.TagPickerState]]
+	local state = overlay.state
 	if message.type == "toggleTrackTag" then
-		local track = app.services.library.current ~= nil
-		and app.services.library.current:track(state.trackId) or app.services.playback:current()
+		local library = app.services.library.current
+		local track = library ~= nil and library:track(state.trackId) or app.services.playback:current()
 		if track ~= nil then
 			app.services.collections.taxonomy:toggleTag(track.path, message.id)
 			app.services.collections:save()
@@ -37,10 +41,13 @@ function tagPicker.update(app, overlay, message)
 	return false
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagPickerState>
+---@param window wonderland.RenderWindow
 function tagPicker.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.TagPickerState]]
-	local track = app.services.library.current ~= nil
-	and app.services.library.current:track(state.trackId) or app.services.playback:current()
+	local state = overlay.state
+	local library = app.services.library.current
+	local track = library ~= nil and library:track(state.trackId) or app.services.playback:current()
 	if track == nil then return nil end
 	local theme = app.services.appearance.theme
 	local tags = app.services.collections.taxonomy:visibleTags()
@@ -54,33 +61,31 @@ function tagPicker.view(app, overlay, window)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2
 	local pills = tagPills.view(app, {
-	tags = tags,
-	selected = selected,
-	action = function(tag)
-		return { type = "toggleTrackTag", id = tag.id}
-	end,
-	width = content,
-	columns = 2,
+		tags = tags,
+		selected = selected,
+		action = |tag| -> { type = "toggleTrackTag", id = tag.id},
+		width = content,
+		columns = 2,
 	})
 
 	local children = {
-	text("Tags on this track"):style(theme:s():text(theme:type("lg")):weight("bold")
-	:fg(theme:color("text"))),
-	text(track.title):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted"))
-	:ellipsis()),
+		text("Tags on this track"):style(theme:s():text(theme:type("lg")):weight("bold")
+		:fg(theme:color("text"))),
+		text(track.title):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted"))
+		:ellipsis()),
 	}
 	if pills ~= nil then children[#children + 1] = pills
 	else children[#children + 1] = text("No tags yet. Create one to start grouping this track."):style(
-	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted"))
-	) end
+		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted"))
+		) end
 	children[#children + 1] = div():style(sty():row():h(theme:px(32)):gap(theme:px(8))
 	:align("center"):justify("end")):children({
-	button.view(app, {
-	label = "New tag",
-	onClick = { type = "open", overlay = "tag_dialog"},
-	height = theme:px(30),
-	width = theme:px(92),
-	}),
+		button.view(app, {
+			label = "New tag",
+			onClick = { type = "open", overlay = "tag_dialog"},
+			height = theme:px(30),
+			width = theme:px(92),
+		}),
 	})
 	local pillRows = math.max(1, math.min(8, #tags))
 	local pillsHeight = pills ~= nil and (math.ceil(pillRows / 2) * theme:px(28)

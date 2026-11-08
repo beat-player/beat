@@ -42,26 +42,26 @@ ScanJob.__index = ScanJob
 ---@return beat.ScanJob
 function ScanJob.new(root, output, cancelFile)
 	return setmetatable({
-	root = root,
-	output = output,
-	cancelFile = cancelFile,
-	offset = 0,
-	buffer = "",
-	queued = {},
-	latest = {
-	phase = "enumerate",
-	files = 0,
-	inspected = 0,
-	tracks = 0,
-	skipped = 0,
-	errors = {},
-	current = nil,
-	},
-	done = false,
-	cancelled = false,
-	error = nil,
-	changed = false,
-	decodeErrors = 0,
+		root = root,
+		output = output,
+		cancelFile = cancelFile,
+		offset = 0,
+		buffer = "",
+		queued = {},
+		latest = {
+			phase = "enumerate",
+			files = 0,
+			inspected = 0,
+			tracks = 0,
+			skipped = 0,
+			errors = {},
+			current = nil,
+		},
+		done = false,
+		cancelled = false,
+		error = nil,
+		changed = false,
+		decodeErrors = 0,
 	}, ScanJob)
 end
 
@@ -107,8 +107,8 @@ function ScanJob:read()
 	file:close()
 	if data == "" then return false end
 
-	self.offset = self.offset + #data
-	self.buffer = self.buffer .. data
+	self.offset += #data
+	self.buffer ..= data
 
 	while true do
 		local line, rest = self.buffer:match("^(.-)\r?\n(.*)$")
@@ -116,9 +116,9 @@ function ScanJob:read()
 		self.buffer = rest
 
 		if line ~= "" then
-			local ok, event = pcall(function() return json.decode(line):unpack() end)
+			local ok, event = pcall(|| -> json.decode(line):unpack())
 			if not ok then
-				self.decodeErrors = self.decodeErrors + 1
+				self.decodeErrors += 1
 				if self.decodeErrors <= 3 then
 					Log.write("error", "scan output could not be read: " .. tostring(event))
 				end
@@ -184,7 +184,7 @@ function ScanJob:poll(limit)
 
 	local events = {}
 	while #events < limit and #self.queued > 0 do
-		events[#events + 1] = table.remove(self.queued, 1)
+		events[#events + 1] = table.remove(self.queued, 1) --[[@as table]]
 	end
 
 	local changed = self.changed or #events > 0
@@ -196,13 +196,13 @@ end
 ---@return beat.ScanProgress
 function ScanJob:progress()
 	return self.latest or {
-	phase = "enumerate",
-	files = 0,
-	inspected = 0,
-	tracks = 0,
-	skipped = 0,
-	errors = {},
-	current = nil,
+		phase = "enumerate",
+		files = 0,
+		inspected = 0,
+		tracks = 0,
+		skipped = 0,
+		errors = {},
+		current = nil,
 	}
 end
 

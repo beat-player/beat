@@ -26,18 +26,16 @@ local SEEK_SLOP = 2
 ---@field duration number
 ---@field startedAt number
 
----@return beat.Scrobbler
 local function new()
 	return setmetatable({
-	trackId = nil,
-	played = 0,
-	lastPosition = 0,
-	queued = false,
-	queue = {},
+		trackId = nil,
+		played = 0,
+		lastPosition = 0,
+		queued = false,
+		queue = {},
 	}, Scrobbler)
 end
 
----@return number
 local function threshold(duration)
 	return math.min(MAX_THRESHOLD, duration / 2)
 end
@@ -78,7 +76,7 @@ function Scrobbler:update(track, position, playing, now)
 	if playing then
 		local delta = position - self.lastPosition
 		-- A seek is not listening: only a normal forward step counts.
-		if delta > 0 and delta <= SEEK_SLOP then self.played = self.played + delta end
+		if delta > 0 and delta <= SEEK_SLOP then self.played += delta end
 	end
 	self.lastPosition = position
 
@@ -87,14 +85,14 @@ function Scrobbler:update(track, position, playing, now)
 		self.queued = true
 		if #self.queue >= 512 then table.remove(self.queue, 1) end
 		self.queue[#self.queue + 1] = {
-		trackId = track.id,
-		title = track.title,
-		artist = track.artist,
-		album = track.album,
-		albumArtist = track.albumArtist,
-		number = track.number,
-		duration = track.duration,
-		startedAt = self.startedAt or now,
+			trackId = track.id,
+			title = track.title,
+			artist = track.artist,
+			album = track.album,
+			albumArtist = track.albumArtist,
+			number = track.number,
+			duration = track.duration,
+			startedAt = self.startedAt or now,
 		}
 	end
 end

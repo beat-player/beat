@@ -19,7 +19,7 @@ function spectrumBackground.view(app, props)
 	local intensity = props.intensity or 1
 	local reach = props.reach or 0.82
 	local theme = app.services.appearance.theme
-	local levels = app.services.playback.spectrum and app.services.playback.spectrum:values() or {}
+	local levels = app.services.playback.spectrum ? (app.services.playback.spectrum:values()) : {}
 	local active = false
 	for at = 1, #levels do
 		if levels[at] > 0.01 then active = true; break end

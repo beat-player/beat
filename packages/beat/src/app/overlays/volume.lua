@@ -15,7 +15,7 @@ local div, sty = wonderland.div, wonderland.sty
 ---@class beat.VolumeState
 ---@field anchor beat.VolumeAnchor?
 
----@type beat.OverlaySurface
+---@class beat.VolumeOverlay: beat.OverlaySurface
 local volume = { light = true, anchored = true}
 
 function volume.new()
@@ -23,18 +23,20 @@ function volume.new()
 	return {}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.VolumeState>
+---@param message beat.Message
 function volume.update(app, overlay, message)
-	local kind = message.type
-	if kind == "toggleVolume" then
+	if message.type == "toggleVolume" then
 		-- The volume button closes what it opened rather than opening a second bubble.
 		app:close(overlay)
 		return true
-	elseif kind == "volume" then
+	elseif message.type == "volume" then
 		-- The slider is this panel's own control. A light overlay closes on a message it does not
 		-- take, so a drag keeps the bubble open and the change is made here.
 		app.services.playback:setVolume(message.value)
 		return true
-	elseif kind == "mute" then
+	elseif message.type == "mute" then
 		app.services.playback:toggleMute()
 		return true
 	end
@@ -42,11 +44,11 @@ function volume.update(app, overlay, message)
 end
 
 ---@param app beat.App
----@param overlay beat.OverlayInstance
+---@param overlay beat.OverlayInstance<beat.VolumeState>
 ---@param _window wonderland.RenderWindow
 ---@return wonderland.Element?
 function volume.view(app, overlay, _window)
-	local state = overlay.state --[[@as beat.VolumeState]]
+	local state = overlay.state
 	local opts = state.anchor
 	if opts == nil then return nil end
 	local theme = app.services.appearance.theme
@@ -63,18 +65,18 @@ function volume.view(app, overlay, _window)
 	:border(theme:px(1), theme:color("border")))
 	:onClick({ type = "keep"})
 	:children({
-	iconButton.view(app, { name = muted and "mute" or "volume", size = muteSize, onClick = { type = "mute"} }),
-	slider.view(app, {
-	width = sliderWidth,
-	value = muted and 0 or app.services.settings.values.volume,
-	min = 0,
-	max = 1,
-	onchange = function(value) return { type = "volume", value = value} end,
-	trackColour = theme:color("text", 0.12),
-	fillColour = theme:color("muted"),
-	thumbColour = theme:color("text"),
-	thumbSize = theme:px(12),
-	}),
+		iconButton.view(app, { name = muted ? "mute" : "volume", size = muteSize, onClick = { type = "mute"} }),
+		slider.view(app, {
+			width = sliderWidth,
+			value = muted ? 0 : app.services.settings.values.volume,
+			min = 0,
+			max = 1,
+			onchange = |value| -> { type = "volume", value = value},
+			trackColour = theme:color("text", 0.12),
+			fillColour = theme:color("muted"),
+			thumbColour = theme:color("text"),
+			thumbSize = theme:px(12),
+		}),
 	})
 end
 

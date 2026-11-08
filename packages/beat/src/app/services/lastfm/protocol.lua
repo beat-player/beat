@@ -12,7 +12,6 @@ local AUTH_PAGE = "https://www.last.fm/api/auth/"
 --- Which parameters Last.fm does not sign: `format` chooses the response encoding, `callback`
 --- wraps it, and `api_sig` is the signature itself.
 ---@param key string
----@return boolean
 local function unsigned(key)
 	return key == "format" or key == "callback" or key == "api_sig"
 end
@@ -22,9 +21,7 @@ end
 ---@param value any
 ---@return string
 function lastfm.escape(value)
-	return (tostring(value):gsub("[^%w%-%._~]", function(char)
-		return string.format("%%%02X", string.byte(char))
-	end))
+	return (tostring(value):gsub("[^%w%-%._~]",|char| -> string.format("%%%02X", string.byte(char))))
 end
 
 --- The api_sig for a set of parameters: names sorted by ASCII, concatenated as name..value with
@@ -35,15 +32,15 @@ end
 function lastfm.sign(params, secret)
 	local keys = {}
 	for key in pairs(params) do
-			if not unsigned(key) then keys[#keys + 1] = key end
-		end
+		if not unsigned(key) then keys[#keys + 1] = key end
+	end
 	table.sort(keys)
 
 	local parts = {}
 	for _, key in ipairs(keys) do
-			local value = params[key]
-			if value ~= nil then parts[#parts + 1] = key .. tostring(value) end
-		end
+		local value = params[key]
+		if value ~= nil then parts[#parts + 1] = key .. tostring(value) end
+	end
 
 	return md5.sumhexa(table.concat(parts) .. (secret or ""))
 end
@@ -61,8 +58,8 @@ function lastfm.params(method, apiKey, secret, extra)
 
 	if extra ~= nil then
 		for key, value in pairs(extra) do
-				if value ~= nil then params[key] = value end
-			end
+			if value ~= nil then params[key] = value end
+		end
 	end
 
 	params.api_sig = lastfm.sign(params, secret)
@@ -77,14 +74,14 @@ end
 function lastfm.encode(params)
 	local keys = {}
 	for key, value in pairs(params) do
-			if value ~= nil then keys[#keys + 1] = key end
-		end
+		if value ~= nil then keys[#keys + 1] = key end
+	end
 	table.sort(keys)
 
 	local parts = {}
 	for _, key in ipairs(keys) do
-			parts[#parts + 1] = lastfm.escape(key) .. "=" .. lastfm.escape(params[key])
-		end
+		parts[#parts + 1] = lastfm.escape(key) .. "=" .. lastfm.escape(params[key])
+	end
 
 	return table.concat(parts, "&")
 end
@@ -156,24 +153,24 @@ function lastfm.scrobbleParams(apiKey, secret, sessionKey, scrobbles)
 	local extra = { sk = sessionKey}
 
 	for index, scrobble in ipairs(scrobbles) do
-			local at = index - 1
-			extra["artist[" .. at .. "]"] = scrobble.artist
-			extra["track[" .. at .. "]"] = scrobble.title
-			extra["timestamp[" .. at .. "]"] = math.floor(scrobble.startedAt)
+		local at = index - 1
+		extra["artist[" .. at .. "]"] = scrobble.artist
+		extra["track[" .. at .. "]"] = scrobble.title
+		extra["timestamp[" .. at .. "]"] = math.floor(scrobble.startedAt)
 
-			if scrobble.album ~= nil and scrobble.album ~= "" then
-				extra["album[" .. at .. "]"] = scrobble.album
-			end
-			if scrobble.albumArtist ~= nil and scrobble.albumArtist ~= "" then
-				extra["albumArtist[" .. at .. "]"] = scrobble.albumArtist
-			end
-			if scrobble.number ~= nil and scrobble.number > 0 then
-				extra["trackNumber[" .. at .. "]"] = math.floor(scrobble.number)
-			end
-			if scrobble.duration ~= nil and scrobble.duration > 0 then
-				extra["duration[" .. at .. "]"] = math.floor(scrobble.duration + 0.5)
-			end
+		if scrobble.album ~= nil and scrobble.album ~= "" then
+			extra["album[" .. at .. "]"] = scrobble.album
 		end
+		if scrobble.albumArtist ~= nil and scrobble.albumArtist ~= "" then
+			extra["albumArtist[" .. at .. "]"] = scrobble.albumArtist
+		end
+		if scrobble.number ~= nil and scrobble.number > 0 then
+			extra["trackNumber[" .. at .. "]"] = math.floor(scrobble.number)
+		end
+		if scrobble.duration ~= nil and scrobble.duration > 0 then
+			extra["duration[" .. at .. "]"] = math.floor(scrobble.duration + 0.5)
+		end
+	end
 
 	return lastfm.params("track.scrobble", apiKey, secret, extra)
 end
@@ -185,9 +182,7 @@ end
 ---@return string? message
 ---@return number? code
 function lastfm.response(body)
-	local ok, value = pcall(function()
-		return json.decode(body):unpack()
-	end)
+	local ok, value = pcall(|| -> json.decode(body):unpack())
 
 	if not ok or type(value) ~= "table" then
 		return nil, "Last.fm returned a response beat could not read"

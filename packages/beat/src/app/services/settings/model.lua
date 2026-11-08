@@ -30,29 +30,28 @@ local settings = {}
 
 ---@type beat.Settings
 local DEFAULTS = {
-root = nil,
-theme = "night",
-accent = "lime",
-volume = 0.8,
-isMuted = false,
-sort = "title",
-view = "grid",
-sidebarWidth = 264,
-sidebarCollapsed = false,
-uiScale = 1,
-reduceMotion = false,
-lastfmSessionKey = "",
-lastfmUsername = "",
-lastfmEnabled = true,
-equalizerPreset = "flat",
-equalizerGains = { 0, 0, 0, 0, 0},
-equalizerCustomPresets = {},
-disabledPlugins = {},
+	root = nil,
+	theme = "night",
+	accent = "lime",
+	volume = 0.8,
+	isMuted = false,
+	sort = "title",
+	view = "grid",
+	sidebarWidth = 264,
+	sidebarCollapsed = false,
+	uiScale = 1,
+	reduceMotion = false,
+	lastfmSessionKey = "",
+	lastfmUsername = "",
+	lastfmEnabled = true,
+	equalizerPreset = "flat",
+	equalizerGains = { 0, 0, 0, 0, 0},
+	equalizerCustomPresets = {},
+	disabledPlugins = {},
 }
 
 ---@param value any
 ---@param fallback number
----@return number
 local function number(value, fallback)
 	if type(value) ~= "number" or value ~= value then return fallback end
 	return value
@@ -80,33 +79,33 @@ function settings.load(dir)
 
 	local bytes = fs.read(file)
 	if bytes ~= nil then
-		local ok, parsed = pcall(function() return json.decode(bytes):unpack() end)
+		local ok, parsed = pcall(|| -> json.decode(bytes):unpack())
 		if ok and type(parsed) == "table" then data = parsed end
 	end
 
 	---@type beat.Settings
 	local loaded = {
-	root = type(data.root) == "string" and data.root or nil,
-	theme = type(data.theme) == "string" and data.theme or DEFAULTS.theme,
-	accent = type(data.accent) == "string" and data.accent or DEFAULTS.accent,
-	volume = math.max(0, math.min(1, number(data.volume, DEFAULTS.volume))),
-	isMuted = data.isMuted == true,
-	sort = type(data.sort) == "string" and data.sort or DEFAULTS.sort,
-	view = data.view == "list" and "list" or "grid",
-	sidebarWidth = math.max(200, math.min(360, number(data.sidebarWidth, DEFAULTS.sidebarWidth))),
-	sidebarCollapsed = data.sidebarCollapsed == true,
-	uiScale = math.max(0.75, math.min(1.5, number(data.uiScale, DEFAULTS.uiScale))),
-	reduceMotion = data.reduceMotion == true,
-	lastfmSessionKey = type(data.lastfmSessionKey) == "string" and data.lastfmSessionKey or "",
-	lastfmUsername = type(data.lastfmUsername) == "string" and data.lastfmUsername or "",
-	lastfmEnabled = data.lastfmEnabled ~= false,
-	-- The equalizer keys are read as the file holds them. Their rules -- gains held to a range,
-	-- custom presets named and counted, a preset that is gone falling back -- are about presets,
-	-- so the equalizer service validates them when it starts, where those rules live.
-	equalizerPreset = data.equalizerPreset,
-	equalizerGains = data.equalizerGains,
-	equalizerCustomPresets = data.equalizerCustomPresets,
-	disabledPlugins = pluginNames(data.disabledPlugins),
+		root = type(data.root) == "string" and data.root or nil,
+		theme = type(data.theme) == "string" and data.theme or DEFAULTS.theme,
+		accent = type(data.accent) == "string" and data.accent or DEFAULTS.accent,
+		volume = math.max(0, math.min(1, number(data.volume, DEFAULTS.volume))),
+		isMuted = data.isMuted == true,
+		sort = type(data.sort) == "string" and data.sort or DEFAULTS.sort,
+		view = data.view == "list" ? "list" : "grid",
+		sidebarWidth = math.max(200, math.min(360, number(data.sidebarWidth, DEFAULTS.sidebarWidth))),
+		sidebarCollapsed = data.sidebarCollapsed == true,
+		uiScale = math.max(0.75, math.min(1.5, number(data.uiScale, DEFAULTS.uiScale))),
+		reduceMotion = data.reduceMotion == true,
+		lastfmSessionKey = type(data.lastfmSessionKey) == "string" and data.lastfmSessionKey or "",
+		lastfmUsername = type(data.lastfmUsername) == "string" and data.lastfmUsername or "",
+		lastfmEnabled = data.lastfmEnabled ~= false,
+		-- The equalizer keys are read as the file holds them. Their rules -- gains held to a range,
+		-- custom presets named and counted, a preset that is gone falling back -- are about presets,
+		-- so the equalizer service validates them when it starts, where those rules live.
+		equalizerPreset = data.equalizerPreset,
+		equalizerGains = data.equalizerGains,
+		equalizerCustomPresets = data.equalizerCustomPresets,
+		disabledPlugins = pluginNames(data.disabledPlugins),
 	}
 
 	return loaded, file

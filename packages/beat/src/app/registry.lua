@@ -8,34 +8,64 @@
 -- they were registered and applied when the value is asked for, so a page is never frozen into
 -- whichever plugin happened to look at it first.
 local Log = require("beat.log")
+local messages = require("beat.message")
 
---- A page of the app, found by its route kind rather than by a module name.
----@class beat.PageInstance
+--- What a page keeps while it is showing and while it waits in the history. Each page module
+--- declares its own state class, and `new` returns it.
+---@class beat.PageState: table<string, any>
+
+--- A page of the app, found by its route kind rather than by a module name. `S` is the state the
+--- page module declares; `App.page` and the history hold one without naming it.
+---@class beat.PageInstance<S: beat.PageState = beat.PageState>
 ---@field kind string
 ---@field id number?
 ---@field category string?
----@field state table # What the page keeps while it is showing and while it waits in the history
+---@field state S
+
+--- What picks the one page of a kind: the kind itself, and the id or category that tells two
+--- pages of it apart. A route and the page it becomes both have these.
+---@class beat.PageKey
+---@field kind string
+---@field id number?
+---@field category string?
 
 ---@class beat.PageSurface
----@field key (fun(page: beat.PageInstance): string)? # Which page this is, for scroll and for not navigating to itself; the kind when absent
----@field new (fun(app: beat.App, page: beat.PageInstance): table)? # The state a page starts with
----@field update (fun(app: beat.App, page: beat.PageInstance, message: table): boolean?)? # True when the message was this page's
+---@field key (fun(page: beat.PageKey): string)? # Which page this is, for scroll and for not navigating to itself; the kind when absent
+---@field new (fun(app: beat.App, page: beat.PageInstance): beat.PageState?)? # The state a page starts with
+---@field update (fun(app: beat.App, page: beat.PageInstance, message: beat.Message): boolean?)? # True when the message was this page's
 ---@field leave (fun(app: beat.App, page: beat.PageInstance))? # What the page drops when it is left
 ---@field view fun(app: beat.App, page: beat.PageInstance, window: wonderland.RenderWindow): wonderland.Element
 
---- An overlay on the stack above the page.
----@class beat.OverlayInstance
+--- What an overlay keeps while it is open. Each overlay declares its own state class and `new`
+--- returns it; the registry only carries it.
+---@class beat.OverlayState: table<string, any>
+
+--- What a screen passes an overlay when it opens it: the message that asked, or the values a
+--- test opens it with.
+---@class beat.OverlayParams: table<string, any>
+---@field type string?
+
+--- An overlay on the stack above the page. `S` is the state its module declares.
+---@class beat.OverlayInstance<S: beat.OverlayState = beat.OverlayState>
 ---@field name string
----@field state table
+---@field state S
 
 ---@class beat.OverlaySurface
 ---@field light boolean? # Closes on any message it does not handle itself: menus and popovers. A dialog is not light.
 ---@field anchored boolean? # Drawn by the screen that opened it, at the button that opened it, rather than by the shell
 ---@field fullscreen boolean? # Is the screen while it is open: the page and the shell around it are not drawn
----@field new fun(app: beat.App, params: table): table? # The overlay's state, or nil to refuse to open
----@field update (fun(app: beat.App, overlay: beat.OverlayInstance, message: table): boolean?)? # True when the message was this overlay's
----@field view (fun(app: beat.App, overlay: beat.OverlayInstance, window: wonderland.RenderWindow): wonderland.Element?)?
----@field close (fun(app: beat.App, overlay: beat.OverlayInstance))? # What closing it undoes: a focused field, a draft
+---@field new fun(app: beat.App, params: beat.OverlayParams): beat.OverlayState? # The overlay's state, or nil to refuse to open
+---@field update (fun(app: beat.App, overlay: beat.OverlayInstance<beat.OverlayState>, message: beat.Message): boolean?)? # True when the message was this overlay's
+---@field view (fun(app: beat.App, overlay: beat.OverlayInstance<beat.OverlayState>, window: wonderland.RenderWindow): wonderland.Element?)?
+---@field close (fun(app: beat.App, overlay: beat.OverlayInstance<beat.OverlayState>))? # What closing it undoes: a focused field, a draft
+
+--- What a context-menu action is made for. A menu sets the one field it was opened on — an album,
+--- a track, a playlist — and a callback reads that field; the menu name says which one is there.
+---@class beat.MenuContext: table<string, any>
+---@field message beat.Messages # Message constructors for the action's return
+---@field album beat.Album?
+---@field track beat.Track?
+---@field playlist beat.Playlist?
 
 --- One entry of a context menu. The message may be made when the menu opens, so it can name the
 --- album or track the menu is for.
@@ -44,8 +74,42 @@ local Log = require("beat.log")
 ---@field title string
 ---@field order number?
 ---@field tone string? # A colour name from the theme; `danger` is the one built-in menus use
+---@field when (fun(ctx: beat.MenuContext, app: beat.App): boolean?)?
+---@field message beat.Message|fun(ctx: beat.MenuContext, app: beat.App): beat.Message?
+
+--- An action as the registry keeps it: the entry it was, the plugin that made it, and where it
+--- sits in registration order.
+---@class beat.ActionEntry
+---@field menu string
+---@field title string
+---@field order number
+---@field tone string?
 ---@field when (fun(ctx: table, app: beat.App): boolean?)?
----@field message table|fun(ctx: table, app: beat.App): table?
+---@field message beat.Message|fun(ctx: table, app: beat.App): beat.Message?
+---@field plugin beat.Plugin
+---@field index number
+
+--- One change a plugin asked for: a wrap sees the value it changes, a replace does not.
+---@class beat.Wrap
+---@field kind "wrap"
+---@field fn fun(original: any): any
+---@field plugin beat.Plugin
+
+---@class beat.Replace
+---@field kind "replace"
+---@field value any
+---@field plugin beat.Plugin
+
+---@alias beat.Mod beat.Wrap|beat.Replace
+
+--- One listener or interceptor, and the plugin it belongs to.
+---@class beat.ListenerEntry
+---@field fn fun(message: beat.Message, app: beat.App)
+---@field plugin beat.Plugin
+
+---@class beat.InterceptorEntry
+---@field fn fun(message: beat.Message, app: beat.App, continue: fun(message: beat.Message?))
+---@field plugin beat.Plugin
 
 --- A plugin while it is loaded, and what the plugins page shows about it. Built-in plugins are
 --- not protected: their mistakes are the app's.
@@ -59,6 +123,27 @@ local Log = require("beat.log")
 ---@field state "loaded"|"off"|"failed"|"doesn't fit"|"switched off"
 ---@field reason string? # Why it is not loaded, or why it was switched off
 
+--- What a plugin module declares before it is loaded. `setup` is handed the handle that records
+--- everything it registers, so a plugin that cannot finish is taken back out of the app whole.
+---@class beat.PluginModule
+---@field name string
+---@field version string
+---@field requires table<string, string>? # Plugin name to the version it needs
+---@field setup fun(handle: beat.PluginHandle)
+
+--- What a plugin registers through: one function per kind of registration, each answering the
+--- undo that takes it out again.
+---@class beat.PluginHandle
+---@field msg beat.Messages
+---@field service fun(name: string, module: beat.Service)
+---@field page fun(kind: string, surface: beat.PageSurface)
+---@field overlay fun(name: string, surface: beat.OverlaySurface)
+---@field action fun(action: beat.Action)
+---@field on fun(kind: string, listener: fun(message: table, app: beat.App))
+---@field intercept fun(kind: string, interceptor: fun(message: table, app: beat.App, continue: fun(message: table?)))
+---@field wrap fun(name: string, fn: fun(original: any): any)
+---@field replace fun(name: string, value: any)
+
 ---@class beat.Registration
 ---@field value any
 ---@field plugin beat.Plugin
@@ -70,16 +155,17 @@ local Log = require("beat.log")
 ---@field services table<string, beat.Registration>
 ---@field pages table<string, beat.Registration>
 ---@field overlays table<string, beat.Registration>
----@field mods table<string, table[]> # By `page:home`, `overlay:queue`, `service:playback`
+---@field mods table<string, beat.Mod[]> # By `page:home`, `overlay:queue`, `service:playback`
 ---@field handled table<string, beat.Registration> # The service that answers each message type
----@field actionsList table[] # In registration order; sorted when a menu asks
----@field listeners table<string, table[]>
----@field interceptors table<string, table[]>
+---@field actionsList beat.ActionEntry[] # In registration order; sorted when a menu asks
+---@field listeners table<string, beat.ListenerEntry[]>
+---@field interceptors table<string, beat.InterceptorEntry[]>
 ---@field reports string[] # Problems found before the toasts service could be told
----@field toasts table?
+---@field toasts beat.ToastsService?
 local Registry = {}
 Registry.__index = Registry
 
+---@type table<string, string>
 local KINDS = { service = "services", page = "pages", overlay = "overlays" }
 
 ---@param app beat.App
@@ -111,7 +197,7 @@ function Registry:report(text)
 end
 
 --- The services are built; from now on a problem can be shown rather than only written down.
----@param services table<string, table>
+---@param services beat.Services
 function Registry:attach(services)
 	self.toasts = services.toasts
 	local reports = self.reports
@@ -180,16 +266,19 @@ end
 --- a service's methods are usually found through the metatable its `new` put on the instance, and
 --- a copy would never be called.
 ---@param self beat.Registry
----@param module table
+---@param module beat.Service
 ---@param plugin beat.Plugin
----@return table
 local function guardService(self, module, plugin)
 	if plugin.builtin then return module end
-	local guarded = {}
-	for key, value in pairs(module) do guarded[key] = value end
+	-- What the collection asks a module for, and nothing else: the plugin's own fields are not
+	-- the app's to copy, and the guard is about the calls the plugin wrote.
+	---@type beat.Service
+	local guarded = { needs = module.needs, handles = module.handles }
 
-	guarded.new = function(deps)
-		local instance = module.new(deps)
+	---@param ... any
+	---@return beat.ServiceInstance?
+	guarded.new = function(...)
+		local instance = module.new(...)
 		if instance == nil then return nil end
 
 		local step = instance.step or module.step
@@ -320,7 +409,7 @@ function Registry:addAction(action, plugin)
 end
 
 ---@param kind string
----@param listener fun(message: table, app: beat.App)
+---@param listener fun(message: beat.Message, app: beat.App)
 ---@param plugin beat.Plugin
 ---@return fun() undo
 function Registry:addListener(kind, listener, plugin)
@@ -343,7 +432,7 @@ function Registry:addListener(kind, listener, plugin)
 end
 
 ---@param kind string
----@param interceptor fun(message: table, app: beat.App, continue: fun(message: table?))
+---@param interceptor fun(message: beat.Message, app: beat.App, continue: fun(message: beat.Message?))
 ---@param plugin beat.Plugin
 ---@return fun() undo
 function Registry:addInterceptor(kind, interceptor, plugin)
@@ -429,6 +518,26 @@ function Registry:addReplace(name, value, plugin)
 	end
 end
 
+--- One plugin's change to a registered value: a replace ignores what was there, a wrap sees it.
+---@param mod beat.Mod
+---@param value any
+---@param disable fun(plugin: beat.Plugin, reason: any)
+---@param name string
+local function applyMod(mod, value, disable, name)
+	if mod.kind == "replace" then return mod.value end
+	if mod.plugin.builtin then return mod.fn(value) end
+	local ok, wrapped = pcall(mod.fn, value)
+	if not ok then
+		disable(mod.plugin, wrapped)
+	elseif wrapped == nil then
+		disable(mod.plugin, "wrap returned nothing for " .. name)
+	else
+		return wrapped
+	end
+	return value
+end
+
+---@param self beat.Registry
 ---@param field string
 ---@param name string
 ---@return any
@@ -437,25 +546,12 @@ local function resolve(self, field, name)
 	if registration == nil then return nil end
 	local value = registration.value
 	local list = self.mods[field == "services" and ("service:" .. name)
-		or field == "pages" and ("page:" .. name)
-		or ("overlay:" .. name)]
+	or field == "pages" and ("page:" .. name)
+	or ("overlay:" .. name)]
 	if list ~= nil then
 		for _, mod in ipairs(list) do
 			if not mod.plugin.disabled then
-				if mod.kind == "replace" then
-					value = mod.value
-				elseif mod.plugin.builtin then
-					value = mod.fn(value)
-				else
-					local ok, wrapped = pcall(mod.fn, value)
-					if not ok then
-						self:disable(mod.plugin, wrapped)
-					elseif wrapped == nil then
-						self:disable(mod.plugin, "wrap returned nothing for " .. name)
-					else
-						value = wrapped
-					end
-				end
+				value = applyMod(mod, value, function(plugin, reason) self:disable(plugin, reason) end, name)
 			end
 		end
 	end
@@ -463,24 +559,22 @@ local function resolve(self, field, name)
 end
 
 ---@param kind string
----@return beat.PageSurface
 function Registry:page(kind)
-	local surface = resolve(self, "pages", kind)
+	local surface = resolve(self, "pages", kind) --[[@as beat.PageSurface?]]
 	if surface == nil then error("no page is registered for " .. tostring(kind), 2) end
 	return surface
 end
 
 ---@param name string
----@return beat.OverlaySurface
 function Registry:overlay(name)
-	local surface = resolve(self, "overlays", name)
+	local surface = resolve(self, "overlays", name) --[[@as beat.OverlaySurface?]]
 	if surface == nil then error("no overlay is registered as " .. tostring(name), 2) end
 	return surface
 end
 
 --- Every service, resolved with the wraps and replacements plugins asked for, ready for
 --- `ServiceCollection` to work out the order they are made in.
----@return table<string, table>
+---@return table<string, beat.Service>
 function Registry:serviceModules()
 	local services = {}
 	for name in pairs(self.services) do services[name] = resolve(self, "services", name) end
@@ -493,6 +587,9 @@ end
 ---@param ctx table
 ---@return { title: string, message: table, tone: string? }[]
 function Registry:actions(menu, ctx)
+	-- The constructors are the context's, so an action written anywhere can make its message
+	-- without the screen that opened the menu having to carry them.
+	ctx.message = messages
 	local shown = {}
 	for _, entry in ipairs(self.actionsList) do
 		if entry.menu == menu and not entry.plugin.disabled then
@@ -547,21 +644,28 @@ end
 
 --- Runs the interceptors for a message before it is delivered. `continue` is how one passes the
 --- message on, possibly changed; not calling it cancels the message for everything below.
----@param message table
+---@param message beat.Message
 ---@param app beat.App
 ---@return boolean proceed
----@return table message
+---@return beat.Message message
 function Registry:intercept(message, app)
 	local list = self.interceptors[message.type]
 	if list == nil then return true, message end
 
+	---@param at number
+	---@param current beat.Message
+	---@return boolean proceed
+	---@return beat.Message message
 	local function run(at, current)
 		while at <= #list do
 			local entry = list[at]
 			if entry.plugin.disabled then
-				at = at + 1
+				at += 1
 			else
 				local proceeded, result, delivered = false, true, current
+				---@param next beat.Message?
+				---@return boolean proceed
+				---@return beat.Message message
 				local function proceed(next)
 					if proceeded then return result end
 					proceeded = true
@@ -593,7 +697,7 @@ function Registry:intercept(message, app)
 end
 
 --- Calls the listeners for a message after it has been delivered.
----@param message table
+---@param message beat.Message
 ---@param app beat.App
 function Registry:notify(message, app)
 	local list = self.listeners[message.type]

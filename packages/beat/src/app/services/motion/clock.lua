@@ -18,14 +18,14 @@ local function clamp01(value)
 end
 
 motion.ease = {
-	linear = function(t) return t end,
-	outCubic = function(t) return 1 - (1 - t) ^ 3 end,
-	inCubic = function(t) return t * t * t end,
+	linear = |t| -> t,
+	outCubic = |t| -> 1 - (1 - t) ^ 3,
+	inCubic = |t| -> t * t * t,
 	inOutCubic = function(t)
 		if t < 0.5 then return 4 * t * t * t end
 		return 1 - ((-2 * t + 2) ^ 3) / 2
 	end,
-	outQuint = function(t) return 1 - (1 - t) ^ 5 end,
+	outQuint = |t| -> 1 - (1 - t) ^ 5,
 	outBack = function(t)
 		local c1, c3 = 1.70158, 2.70158
 		return 1 + c3 * (t - 1) ^ 3 + c1 * (t - 1) ^ 2
@@ -51,7 +51,7 @@ Motion.__index = Motion
 ---@param reduce boolean?
 ---@return beat.Motion
 function motion.new(reduce)
-	return setmetatable({ values = {}, now = 0, reduce = reduce or false, active = false }, Motion)
+	return setmetatable({ values = {}, now = 0, reduce = reduce ?? false, active = false }, Motion)
 end
 
 ---@param key string
@@ -73,7 +73,7 @@ end
 ---@param easing fun(t: number): number?
 function Motion:animate(key, target, duration, easing)
 	local known = self.values[key]
-	local from = known and known.value or target
+	local from = known?.value or target
 	if self.reduce or duration <= 0 then
 		self:set(key, target)
 		return

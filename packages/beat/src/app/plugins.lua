@@ -3,10 +3,11 @@
 -- registers what it adds through the handle it is given. Built-in plugins are part of beat, so a
 -- mistake in one stops the app; an outside plugin that does not fit is reported and left out,
 -- taking its own registrations with it.
+local Messages = require("beat.message")
+
 local Plugins = {}
 
 ---@param text string
----@return number[]?
 local function parseVersion(text)
 	local major, minor, patch = text:match("^(%d+)%.(%d+)%.(%d+)$")
 	if major ~= nil then return { tonumber(major), tonumber(minor), tonumber(patch) } end
@@ -63,13 +64,12 @@ end
 --- A setup error that is about the plugin not fitting -- a registration named outside its
 --- namespace, a name another plugin already took -- rather than the plugin's own code failing.
 ---@param value any
----@return boolean
 local function readsAsClash(value)
 	local text = tostring(value)
 	return text:find("must be named", 1, true) ~= nil
-		or text:find("registered twice", 1, true) ~= nil
-		or text:find("is already handled", 1, true) ~= nil
-		or text:find("nothing is registered as", 1, true) ~= nil
+	or text:find("registered twice", 1, true) ~= nil
+	or text:find("is already handled", 1, true) ~= nil
+	or text:find("nothing is registered as", 1, true) ~= nil
 end
 
 --- Whether a version satisfies one requirement. `^1` and `~1` are read as `^1.0.0` and `~1.0.0`:
@@ -106,7 +106,7 @@ local function satisfies(version, requirement)
 	return have[1] == want[1] and have[2] == want[2]
 end
 
----@param module table
+---@param module any
 ---@return boolean
 ---@return string?
 local function checkModule(module)
@@ -129,7 +129,9 @@ end
 ---@return boolean
 ---@return string?
 local function requiresMet(module, loaded)
-	for name, requirement in pairs(module.requires or {}) do
+	---@type table<string, string>
+	local requires = module.requires or {}
+	for name, requirement in pairs(requires) do
 		local dependency = loaded[name]
 		if dependency == nil then
 			return false, "it needs plugin " .. name .. " " .. tostring(requirement) .. ", which is not loaded"
@@ -137,7 +139,7 @@ local function requiresMet(module, loaded)
 		local met, why = satisfies(dependency.version, requirement)
 		if not met then
 			return false, "it needs plugin " .. name .. " " .. tostring(requirement) .. ", but "
-				.. dependency.version .. " is loaded" .. (why ~= nil and (": " .. why) or "")
+			.. dependency.version .. " is loaded" .. (why ~= nil and (": " .. why) or "")
 		end
 	end
 	return true
@@ -148,27 +150,53 @@ end
 ---@param registry beat.Registry
 ---@param plugin beat.Plugin
 ---@param undo fun()[]
----@return table
 local function handleFor(registry, plugin, undo)
-	local handle = {}
+	---@type beat.PluginHandle
+	local handle = { msg = Messages }
 
 	---@param callback fun()
 	local function record(callback) undo[#undo + 1] = callback end
 
+	---@param name string
+	---@param module beat.Service
 	function handle.service(name, module) record(registry:addService(name, module, plugin)) end
+	---@param kind string
+	---@param surface beat.PageSurface
 	function handle.page(kind, surface) record(registry:addPage(kind, surface, plugin)) end
+	---@param name string
+	---@param surface beat.OverlaySurface
 	function handle.overlay(name, surface) record(registry:addOverlay(name, surface, plugin)) end
+	---@param action beat.Action
 	function handle.action(action) record(registry:addAction(action, plugin)) end
+	---@param kind string
+	---@param listener fun(message: table, app: beat.App)
 	function handle.on(kind, listener) record(registry:addListener(kind, listener, plugin)) end
+	---@param kind string
+	---@param interceptor fun(message: table, app: beat.App, continue: fun(message: table?))
 	function handle.intercept(kind, interceptor) record(registry:addInterceptor(kind, interceptor, plugin)) end
+	---@param name string
+	---@param fn fun(original: any): any
 	function handle.wrap(name, fn) record(registry:addWrap(name, fn, plugin)) end
+	---@param name string
+	---@param value any
 	function handle.replace(name, value) record(registry:addReplace(name, value, plugin)) end
 
 	return handle
 end
 
+--- One thing eligible to load: a built-in module, a file's result, or a caller's plugin.
+---@class beat.PluginCandidate
+---@field module any? # The plugin table; nil when the file could not run
+---@field source string? # "built-in", or the name a person sees
+---@field file string?
+---@field name string?
+---@field error string?
+---@field clashes string[]?
+---@field release (fun())?
+---@field disabled boolean?
+
 ---@param registry beat.Registry
----@param candidate table # { module = table, source = string?, name = string?, release = fun()? }
+---@param candidate beat.PluginCandidate
 ---@param builtin boolean
 ---@param loaded table<string, beat.Plugin>
 ---@param entries beat.PluginStatus[]
@@ -191,7 +219,7 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 		local reason = "the name is already taken"
 		registry:report("Plugin " .. module.name .. " was not loaded: " .. reason)
 		entries[#entries + 1] = status(module.name, module.version, source, "doesn't fit",
-			reason, builtin, candidate.file)
+		reason, builtin, candidate.file)
 		if candidate.release ~= nil then candidate.release() end
 		return
 	end
@@ -201,7 +229,7 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 		if builtin then error("beat plugin " .. module.name .. " " .. why, 0) end
 		registry:report("Plugin " .. module.name .. " was not loaded: " .. why)
 		entries[#entries + 1] = status(module.name, module.version, source, "doesn't fit",
-			why, builtin, candidate.file)
+		why, builtin, candidate.file)
 		if candidate.release ~= nil then candidate.release() end
 		return
 	end
@@ -224,7 +252,7 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 		local reason = tostring(setupErr)
 		registry:report("Plugin " .. plugin.name .. " was not loaded: " .. reason)
 		entries[#entries + 1] = status(plugin.name, plugin.version, source,
-			readsAsClash(setupErr) and "doesn't fit" or "failed", reason, builtin, candidate.file)
+		readsAsClash(setupErr) and "doesn't fit" or "failed", reason, builtin, candidate.file)
 		if candidate.release ~= nil then candidate.release() end
 		return
 	end
@@ -238,7 +266,7 @@ end
 --- for every plugin the page can list -- including the ones that are off, failed or did not fit.
 ---@param registry beat.Registry
 ---@param builtins string[] # Module names under `beat.plugins`
----@param outside table[]? # `beat.PluginFile`s, or `{ module = plugin }` from a caller
+---@param outside beat.PluginCandidate[]? # `beat.PluginFile`s, or `{ module = plugin }` from a caller
 ---@return table<string, beat.Plugin>
 ---@return beat.PluginStatus[]
 function Plugins.load(registry, builtins, outside)
@@ -247,7 +275,7 @@ function Plugins.load(registry, builtins, outside)
 
 	for _, name in ipairs(builtins) do
 		loadOne(registry, { module = require("beat.plugins." .. name), source = "built-in" },
-			true, loaded, entries)
+		true, loaded, entries)
 	end
 
 	for _, candidate in ipairs(outside or {}) do
@@ -255,26 +283,26 @@ function Plugins.load(registry, builtins, outside)
 		if candidate.disabled then
 			-- The finder did not run this file at all, so there is no name or version to show:
 			-- the switch is keyed by the file name and that is what the page lists.
-			entries[#entries + 1] = status(candidate.name, nil, candidate.file, "off",
-				"switched off in Settings", false, candidate.file)
+			entries[#entries + 1] = status(candidate.name or candidate.file or "a plugin file", nil,
+			candidate.file or "given to the app", "off", "switched off in Settings", false, candidate.file)
 		elseif module == nil then
 			local reason = candidate.error or "the file did not return a plugin"
 			registry:report((candidate.name or "a plugin file") .. " was not loaded: " .. reason)
 			entries[#entries + 1] = status(candidate.name or "a plugin file", nil,
-				candidate.file or "given to the app", "failed", reason, false, candidate.file)
+			candidate.file or "given to the app", "failed", reason, false, candidate.file)
 			if candidate.release ~= nil then candidate.release() end
 		else
 			local ok, err = checkModule(module)
 			if not ok then
 				registry:report((candidate.name or "A plugin") .. " was not loaded: " .. err)
 				entries[#entries + 1] = status(candidate.name or "A plugin", nil,
-					candidate.file or "given to the app", "failed", err, false, candidate.file)
+				candidate.file or "given to the app", "failed", err, false, candidate.file)
 				if candidate.release ~= nil then candidate.release() end
 			else
 				if candidate.clashes ~= nil and #candidate.clashes > 0 then
 					registry:report((candidate.name or module.name)
-						.. " brought modules another plugin already provides, which were not used: "
-						.. table.concat(candidate.clashes, ", "))
+					.. " brought modules another plugin already provides, which were not used: "
+					.. table.concat(candidate.clashes, ", "))
 				end
 				loadOne(registry, candidate, false, loaded, entries)
 			end

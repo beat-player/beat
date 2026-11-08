@@ -30,11 +30,11 @@ test.it("copies a cropped square one row at a time", function()
 	local source = image.new(4, 2, 4)
 	local pixels = ffi.cast("uint8_t*", source.pixels)
 	for y = 0, 1 do
-			for x = 0, 3 do
-					local at = (y * 4 + x) * 4
-					pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3] = x + 1, y + 1, 0, 255
-				end
+		for x = 0, 3 do
+			local at = (y * 4 + x) * 4
+			pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3] = x + 1, y + 1, 0, 255
 		end
+	end
 
 	local fitted = artwork.fit(source, 2)
 	local out = ffi.cast("uint8_t*", fitted.pixels)
@@ -82,12 +82,13 @@ test.it("uses the picture inside a track for its album cover", function()
 	library:add(info, { path = file, dir = here, name = "tagged.flac", ext = "flac"})
 	library:finish()
 	local album = library.albums[1]
-	test.equal(album.coverTrack.path, file)
+	local coverTrack = assert(album.coverTrack)
+	test.equal(coverTrack.path, file)
 
 	local cache = assert(artwork.cacheCover({
-	path = file,
-	hasPicture = true,
-	modified = 1,
+		path = file,
+		hasPicture = true,
+		modified = 1,
 	}, 128, "/beat-art-test"))
 	album.coverCache = cache
 
@@ -103,9 +104,18 @@ end)
 
 test.it("does not read the music folder when an album has no cached cover", function()
 	local album = {
-	coverPath = "/definitely/not/a/real/cover.png",
-	coverCache = nil,
-	tracks = {},
+		id = 1,
+		key = "Album\0Artist",
+		title = "Album",
+		artist = "Artist",
+		artistId = 1,
+		tracks = {},
+		duration = 0,
+		trackCount = 0,
+		coverPath = "/definitely/not/a/real/cover.png",
+		coverCache = nil,
+		modified = 0,
+		hash = "hash",
 	}
 
 	local fitted, colour, err = artwork.forAlbum(album, 128)
@@ -116,17 +126,17 @@ end)
 
 test.it("reports when an album gains its first cached cover", function()
 	local library = Library.new("/tmp/cache-test")
-	local info = { format = "WAV", duration = 10, hasPicture = false,
-	tags = { title = "One", artist = "Artist", album = "Album", albumArtist = "Artist"}}
+	local info = { format = "WAV", sampleRate = 44100, channels = 2, duration = 10, hasPicture = false,
+		tags = { title = "One", artist = "Artist", album = "Album", albumArtist = "Artist"}}
 
 	local first, gained = library:add(info, {
-	path = "/tmp/cache-test/1.wav", dir = "/tmp/cache-test", name = "1.wav", ext = "wav",
+		path = "/tmp/cache-test/1.wav", dir = "/tmp/cache-test", name = "1.wav", ext = "wav",
 	})
 	test.falsy(gained)
 	test.equal(first.albumId, 1)
 
 	local second, gainedAgain = library:add(info, {
-	path = "/tmp/cache-test/2.wav", dir = "/tmp/cache-test", name = "2.wav", ext = "wav",
+		path = "/tmp/cache-test/2.wav", dir = "/tmp/cache-test", name = "2.wav", ext = "wav",
 	}, nil, "/tmp/cover.jpg")
 	test.truthy(gainedAgain)
 	test.equal(second.albumId, first.albumId)

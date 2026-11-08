@@ -8,7 +8,8 @@ local wonderland = require("wonderland")
 
 local time = wonderland.time
 
----@class beat.ScrollService
+---@class beat.ScrollService: beat.Service
+---@field appearance beat.AppearanceService
 ---@field offsets table<string, number>
 ---@field targets table<string, number>
 ---@field limits table<string, number>
@@ -60,31 +61,33 @@ function Scroll:reset(key)
 	self.targets[key] = nil
 end
 
+---@param message beat.Message
 function Scroll:update(message)
 	local key = message.key
 	-- A box that scrolls by itself names itself; anything else is the page, and the shell names it
 	-- so this service never has to know where the app is.
-	if key == nil then error("a scroll message must name its key", 2) end
+	if type(key) ~= "string" then error("a scroll message must name its key", 2) end
 
 	local offset = self.offsets[key] or 0
-	local limit = message.max or self.limits[key]
+	local limit = tonumber(message.max) or self.limits[key]
 	---@param value number
 	local function clampScroll(value)
 		value = math.max(0, value)
-		return limit ~= nil and math.min(value, limit) or value
+		return limit ~= nil ? math.min(value, limit) : value
 	end
 
-	if message.to ~= nil then
+	local to = tonumber(message.to)
+	if to ~= nil then
 		-- A bar dragged is already where the pointer put it: chasing it would make the thumb lag
 		-- the hand moving it.
-		offset = clampScroll(message.to --[[@as number]])
+		offset = clampScroll(to)
 		self.offsets[key] = offset
 		self.targets[key] = offset
 		self.animating = false
 	else
 		self.offsets[key] = offset
 		self.targets[key] = clampScroll(
-		(self.targets[key] or offset) + (message.by --[[@as number?]] or 0) * self.appearance.theme:px(60))
+		(self.targets[key] or offset) + (tonumber(message.by) or 0) * self.appearance.theme:px(60))
 		self.animating = true
 		-- Start the easing clock now, then let the next frame ease away from here instead of the
 		-- frame after the next idle interval.

@@ -5,6 +5,8 @@ local wonderland = require("wonderland")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Queue = require("beat.app.services.playback.queue")
+local PlayerService = require("beat.app.services.playback.player")
+local ScanJob = require("beat.app.services.scan.job")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
 local App = require("beat.app")
 local TagStore = require("beat.app.services.collections.store")
@@ -37,32 +39,104 @@ end)
 local function fixture()
 	local library = Library.new("/beat-fixtures")
 	for albumAt = 1, 3 do
-			local artist = "Artist " .. albumAt
-			local dir = "/beat-fixtures/" .. artist .. "/Album " .. albumAt
-			for trackAt = 1, 3 do
-					library:add({
-					format = "FLAC",
-					sampleRate = 44100,
-					channels = 2,
-					duration = 180,
-					hasPicture = false,
-					tags = {
+		local artist = "Artist " .. albumAt
+		local dir = "/beat-fixtures/" .. artist .. "/Album " .. albumAt
+		for trackAt = 1, 3 do
+			library:add({
+				format = "FLAC",
+				sampleRate = 44100,
+				channels = 2,
+				duration = 180,
+				hasPicture = false,
+				tags = {
 					title = "Track " .. trackAt,
 					artist = artist,
 					album = "Album " .. albumAt,
 					albumArtist = artist,
 					track = trackAt,
-					},
-					}, {
-					path = dir .. "/" .. trackAt .. ".flac",
-					dir = dir,
-					name = trackAt .. ".flac",
-					ext = "flac",
-					}, nil)
-				end
+				},
+			}, {
+				path = dir .. "/" .. trackAt .. ".flac",
+				dir = dir,
+				name = trackAt .. ".flac",
+				ext = "flac",
+			}, nil)
 		end
+	end
 	library:finish()
 	return library
+end
+
+-- What a test reads and writes on the audio player's state. Every field is optional, so a test
+-- only names what its own case is about.
+---@class TestAudioState
+---@field playing boolean?
+---@field at number?
+---@field duration number?
+---@field seeks number[]?
+---@field closes number?
+---@field applied treble.Equalizer.Band[]?
+
+--- A treble player that makes no sound. Every method treble declares is here, so the playback
+--- service can be driven without a device, and `state` is where the test watches what it did.
+---@param state TestAudioState?
+---@return treble.Player
+local function fakeAudio(state)
+	state = state or {}
+
+	local player
+	---@type treble.Player
+	player = {
+		volume = 1,
+		queue = {},
+		streamFactory = function() error("no audio device in tests") end,
+		stagingCapacity = 0,
+		stagingSeconds = 0,
+		stagedOffset = 0,
+		stagedFrames = 0,
+		framesWritten = 0,
+		isPaused = false,
+		isStopped = false,
+		onTrackEnd = nil,
+		onError = nil,
+		onSamples = nil,
+		equalizer = nil,
+		playing = nil,
+		decoding = nil,
+		stream = nil,
+		device = nil,
+		staging = nil,
+		enqueue = function() end,
+		requeue = function() end,
+		playedFrames = function() return 0 end,
+		adopt = function() return 0, 0, nil end,
+		releaseHeard = function() end,
+		reportError = function() end,
+		openStream = function() return true end,
+		needsNewStream = function() return false end,
+		applyVolume = function() end,
+		fill = function() end,
+		writeStaged = function() end,
+		isFeeding = function() return false end,
+		update = function() end,
+		pump = function() end,
+		next = function() return true end,
+		play = function() state.playing = true end,
+		pause = function() state.playing = false end,
+		stop = function() state.playing = false end,
+		close = function() state.closes = (state.closes or 0) + 1 end,
+		seek = function(_, seconds)
+			state.seeks = state.seeks or {}
+			state.seeks[#state.seeks + 1] = seconds
+		end,
+		position = function() return state.at or 0 end,
+		duration = function() return state.duration or 0 end,
+		isPlaying = function() return state.playing or false end,
+		isFinished = function() return false end,
+		setEqualizer = function(_, bands) state.applied = bands end,
+		setVolume = function() end,
+	}
+	return player
 end
 
 test.skipIf(not canRender)("draws every page the app has", function()
@@ -73,18 +147,8 @@ test.skipIf(not canRender)("draws every page the app has", function()
 	App.services.scan.job = nil
 	App.services.playback.player.queue = Queue.new(library.albums[1].tracks, 1, { repeatMode = "all"})
 	App.services.playback.player.loaded = true
-	local playhead = 12
-	App.services.playback.player.player = {
-	isPlaying = function() return true end,
-	position = function() return playhead end,
-	duration = function() return 180 end,
-	play = function() end,
-	pause = function() end,
-	seek = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() end,
-	}
+	local audioState = { playing = true, at = 12, duration = 180 }
+	App.services.playback.player.player = fakeAudio(audioState)
 
 	local screen = wonderland.headless.new(function(window, assets)
 		App.window = window
@@ -94,23 +158,23 @@ test.skipIf(not canRender)("draws every page the app has", function()
 	end, { width = 1200, height = 720})
 
 	local pages = {
-	{ kind = "home"},
-	{ kind = "library"},
-	{ kind = "album", id = library.albums[1].id},
-	{ kind = "artist", id = library.artists[1].id},
-	{ kind = "search"},
-	{ kind = "playlists"},
-	{ kind = "settings"},
-	{ kind = "plugins"},
-	{ kind = "folders"},
+		{ kind = "home"},
+		{ kind = "library"},
+		{ kind = "album", id = library.albums[1].id},
+		{ kind = "artist", id = library.artists[1].id},
+		{ kind = "search"},
+		{ kind = "playlists"},
+		{ kind = "settings"},
+		{ kind = "plugins"},
+		{ kind = "folders"},
 	}
 
 	for _, page in ipairs(pages) do
-			App.page = page
-			App.services.search.query = page.kind == "search" and "track" or ""
-			screen:draw()
-			test.truthy(screen.window.width > 0)
-		end
+		App.page = page
+		App.services.search.query = page.kind == "search" and "track" or ""
+		screen:draw()
+		test.truthy(screen.window.width > 0)
+	end
 
 	App.services.search.query = "night"
 	App.page = { kind = "searchAll", category = "tracks"}
@@ -132,9 +196,9 @@ test.skipIf(not canRender)("draws every page the app has", function()
 
 	local styles = style.count()
 	for at = 1, 20 do
-			playhead = 12 + at / 10
-			screen:draw()
-		end
+		audioState.at = 12 + at / 10
+		screen:draw()
+	end
 	test.equal(style.count(), styles, "a moving playhead does not intern a style a frame")
 
 	screen:close()
@@ -161,9 +225,9 @@ test.skipIf(not canRender)("reuses the page-transition styles", function()
 	local started = wonderland.time.now()
 	local function slide()
 		for step = 0, 64 do
-				App.services.motion:slide(1, started - step / 64 * 0.28)
-				screen:draw()
-			end
+			App.services.motion:slide(1, started - step / 64 * 0.28)
+			screen:draw()
+		end
 	end
 	slide()
 	local warm = style.count()
@@ -179,10 +243,10 @@ test.it("wakes the ticker when navigation starts an animation", function()
 	App.page = { kind = "home"}
 	App.ticker = { due = 99}
 	App.services.motion:slide(1)
-	App:go({ kind = "home"})
+	App:go({ kind = "home" })
 	test.equal(App.ticker.due, 0, "a repeat click wakes a transition already in flight")
 	App.ticker.due = 99
-	App:go({ kind = "settings"})
+	App:go({ kind = "settings" })
 	test.equal(App.ticker.due, 0, "a page transition asks for its first frame now")
 	App.ticker = ticker
 end)
@@ -209,8 +273,8 @@ test.it("logs an error toast where the app keeps its files", function()
 	local contents = fs.read(logFile)
 
 	test.truthy(contents ~= nil, "the error is written to beat.log")
-	test.truthy(contents and contents:find("a test failure", 1, true) ~= nil,
-		"and it names the error")
+	test.truthy(contents and contents:find("a test failure") ~= nil,
+	"and it names the error")
 end)
 
 test.it("keeps an error toast under the pointer", function()
@@ -251,54 +315,50 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 		App.services.covers:use(assets)
 		return require("beat.app.shell").view(App, window)
 	end, {
-	width = 1200,
-	height = 720,
-	onMessage = function(message)
-		App:act(message)
-		screen:draw()
-	end,
+		width = 1200,
+		height = 720,
+		onMessage = function(message)
+			App:act(message)
+			screen:draw()
+		end,
 	})
-	App.layoutPlugin = screen:getPlugin("layout")
-	App.layoutPlugin.clipboard = {
-	text = "",
-	setText = function(self, value) self.text = value end,
-	getText = function(self) return self.text end,
-	}
+	local layout = assert(screen:getPlugin("layout"))
+	App.layoutPlugin = layout
 	screen:draw()
 
 	App:act({ type = "open", overlay = "tag_dialog"})
 	screen:draw()
-	test.equal(App.layoutPlugin:getFocusedId(screen.window), "newTag")
+	test.equal(layout:getFocusedId(screen.window), "newTag")
 	local function key(name, ctrl)
 		screen:event({
-		name = "keyPress",
-		key = name,
-		modifiers = ctrl and { ctrl = true} or {},
-		window = screen.window,
+			name = "keyPress",
+			key = name,
+			modifiers = ctrl and { ctrl = true} or {},
+			window = screen.window,
 		})
 		screen:draw()
 	end
 	key("x")
-	test.equal(App:overlay("tag_dialog").state.draft, "x", "typing lands in the tag name without a click")
+	test.equal(assert(App:overlay("tag_dialog")).state.draft, "x", "typing lands in the tag name without a click")
 	key("backspace")
 	key("H")
 	key("i")
 	key("g")
 	key("h")
 	key("a", true)
-	local _, _, _, from, to = App.layoutPlugin:getCaret(screen.window)
+	local _, _, _, from, to = layout:getCaret(screen.window)
 	test.equal(from, 0)
 	test.equal(to, 4)
 	key("c", true)
-	test.equal(App.layoutPlugin.clipboard.text, "High")
+	test.equal(assert(layout.clipboard):getText(), "High")
 	key("x", true)
-	test.equal(App:overlay("tag_dialog").state.draft, "")
+	test.equal(assert(App:overlay("tag_dialog")).state.draft, "")
 	key("v", true)
-	test.equal(App:overlay("tag_dialog").state.draft, "High")
+	test.equal(assert(App:overlay("tag_dialog")).state.draft, "High")
 
 	local elements = require("wonderland.element")
 	local ctx
-	for _, value in pairs(App.layoutPlugin.contexts) do ctx = value end
+	for _, value in pairs(layout.contexts) do ctx = value end
 	local fieldX, fieldY, fieldWidth, fieldHeight
 	local function findField(index, parentX, parentY)
 		local node = ctx.screen:node(index)
@@ -308,9 +368,9 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 			fieldX, fieldY, fieldWidth, fieldHeight = x, y, node.width, node.height
 		end
 		for child = 0, node.childCount - 1 do
-				local nextIndex = ctx.screen.childIndices[node.firstChild + child - 1]
-				if nextIndex ~= nil then findField(nextIndex, x, y) end
-			end
+			local nextIndex = ctx.screen.childIndices[node.firstChild + child - 1]
+			if nextIndex ~= nil then findField(nextIndex, x, y) end
+		end
 	end
 	findField(ctx.root, 0, 0)
 	test.truthy(fieldX ~= nil and fieldWidth > 0)
@@ -319,9 +379,9 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 		screen:event({ name = "mousePress", window = screen.window, x = fieldX + 12, y = y, button = 1})
 		screen:event({ name = "mouseMove", window = screen.window, x = fieldX + fieldWidth - 20, y = y})
 		screen:event({ name = "mouseRelease", window = screen.window, x = fieldX + fieldWidth - 20,
-		y = y, button = 1})
+			y = y, button = 1})
 		screen:draw()
-		local _, _, _, mouseFrom, mouseTo = App.layoutPlugin:getCaret(screen.window)
+		local _, _, _, mouseFrom, mouseTo = layout:getCaret(screen.window)
 		test.equal(mouseFrom, 0)
 		test.equal(mouseTo, 4, "a drag selects the whole name")
 
@@ -329,15 +389,15 @@ test.skipIf(not canRender)("focuses the new tag field for typing", function()
 		screen:event({ name = "mousePress", window = screen.window, x = fieldX + 40, y = y, button = 1})
 		screen:event({ name = "mouseRelease", window = screen.window, x = fieldX + 40, y = y, button = 1})
 		screen:draw()
-		local _, _, _, singleFrom, singleTo = App.layoutPlugin:getCaret(screen.window)
+		local _, _, _, singleFrom, singleTo = layout:getCaret(screen.window)
 		test.equal(singleFrom, nil)
 		test.equal(singleTo, nil, "a click leaves the caret without a selection")
 		for _ = 1, 2 do
-				screen:event({ name = "mousePress", window = screen.window, x = fieldX + 12, y = y, button = 1})
-				screen:event({ name = "mouseRelease", window = screen.window, x = fieldX + 12, y = y, button = 1})
-			end
+			screen:event({ name = "mousePress", window = screen.window, x = fieldX + 12, y = y, button = 1})
+			screen:event({ name = "mouseRelease", window = screen.window, x = fieldX + 12, y = y, button = 1})
+		end
 		screen:draw()
-		local _, _, _, doubleFrom, doubleTo = App.layoutPlugin:getCaret(screen.window)
+		local _, _, _, doubleFrom, doubleTo = layout:getCaret(screen.window)
 		test.equal(doubleFrom, 0)
 		test.equal(doubleTo, 4, "a double click selects the word")
 	end
@@ -387,21 +447,24 @@ test.it("starts a playlist from its page with shuffle", function()
 	App.services.collections.taxonomy:setPlaylistAlbum(playlist, library.albums[1])
 	App.page = { kind = "playlist", id = playlist.id}
 
-	local captured
+	local capturedTracks, capturedIndex, capturedShuffle, capturedSource
 	local real = App.services.playback.player
-	App.services.playback.player = {
-	playTracks = function(_, tracks, index, opts)
-		captured = { tracks = tracks, index = index, opts = opts}
-	end,
-	}
+	local capture = PlayerService.new()
+	capture.playTracks = function(...)
+		local _, tracks, index, opts = ...
+		capturedTracks, capturedIndex = tracks, index
+		capturedShuffle = opts and opts.shuffle
+		capturedSource = opts and opts.source
+	end
+	App.services.playback.player = capture
 	App:act({ type = "playPlaylist", id = playlist.id, shuffle = true})
 	App.services.playback.player = real
 
-	test.truthy(captured ~= nil, "the page starts the playlist")
-	test.equal(#captured.tracks, #library.albums[1].tracks)
-	test.equal(captured.index, 1)
-	test.equal(captured.opts.shuffle, true, "the shuffle control reaches the queue")
-	test.equal(captured.opts.source, "playlist:" .. tostring(playlist.id))
+	test.truthy(capturedTracks ~= nil, "the page starts the playlist")
+	test.equal(#assert(capturedTracks), #library.albums[1].tracks)
+	test.equal(capturedIndex, 1)
+	test.equal(capturedShuffle, true, "the shuffle control reaches the queue")
+	test.equal(capturedSource, "playlist:" .. tostring(playlist.id))
 	real:close()
 end)
 
@@ -414,17 +477,7 @@ test.it("records a listen when playback starts a track", function()
 	App.services.playback.lastListenedTrackId = nil
 	App.services.playback.player.queue = Queue.new(library.albums[1].tracks, 1, { source = "playlist:9"})
 	App.services.playback.player.loaded = true
-	App.services.playback.player.player = {
-	isPlaying = function() return true end,
-	position = function() return 1 end,
-	duration = function() return 180 end,
-	play = function() end,
-	pause = function() end,
-	seek = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() end,
-	}
+	App.services.playback.player.player = fakeAudio({ playing = true, at = 1, duration = 180 })
 
 	App:tick(10, { width = 1200, height = 720, shouldRedraw = false})
 	local track = library.albums[1].tracks[1]
@@ -441,21 +494,11 @@ test.it("starts an album from its menu even while it is the one playing", functi
 	App.page = { kind = "home"}
 	local album = library.albums[1]
 	local player = App.services.playback.player
-	local playing, closes = false, 0
-	player.player = {
-	isPlaying = function() return playing end,
-	play = function() playing = true end,
-	pause = function() playing = false end,
-	stop = function() playing = false end,
-	position = function() return 0 end,
-	enqueue = function() end,
-	seek = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() closes = closes + 1 end,
-	}
+	---@type TestAudioState
+	local audioState = {}
+	player.player = fakeAudio(audioState)
 	player:playTracks(album.tracks, 2)
-	local before = closes
+	local before = audioState.closes or 0
 
 	local play
 	for _, action in ipairs(App.registry:actions("album", { album = album})) do
@@ -463,8 +506,8 @@ test.it("starts an album from its menu even while it is the one playing", functi
 	end
 	App:act(assert(play))
 	test.truthy(player:isPlaying(), "the menu's play does not pause the album that is playing")
-	test.equal(closes, before + 1, "it starts it again")
-	test.equal(player:current().id, album.tracks[1].id, "from its first track")
+	test.equal(audioState.closes, before + 1, "it starts it again")
+	test.equal(assert(player:current()).id, album.tracks[1].id, "from its first track")
 	player:close()
 end)
 
@@ -476,21 +519,8 @@ test.it("plays, pauses, stops and skips from the media keys", function()
 	local player = App.services.playback.player
 	player.queue = Queue.new(library.albums[1].tracks, 1)
 	player.loaded = true
-	local playing = false
-	player.player = {
-	isPlaying = function() return playing end,
-	play = function() playing = true end,
-	pause = function() playing = false end,
-	stop = function() playing = false end,
-	position = function() return 0 end,
-	duration = function() return 180 end,
-	enqueue = function() end,
-	seek = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() end,
-	}
-	local first = player.queue:current().id
+	player.player = fakeAudio({ playing = false, duration = 180 })
+	local first = assert(assert(player.queue):current()).id
 
 	App:event({ name = "mediaKey", action = "playPause"})
 	test.truthy(player:isPlaying(), "play/pause starts what is queued")
@@ -503,11 +533,11 @@ test.it("plays, pauses, stops and skips from the media keys", function()
 	App:event({ name = "mediaKey", action = "play"})
 	App:event({ name = "mediaKey", action = "stop"})
 	test.falsy(player:isPlaying(), "stop silences")
-	test.equal(player.queue:current().id, first, "and keeps the track")
+	test.equal(assert(assert(player.queue):current()).id, first, "and keeps the track")
 	App:event({ name = "mediaKey", action = "next"})
-	test.truthy(player.queue:current().id ~= first, "next moves the queue on")
+	test.truthy(assert(assert(player.queue):current()).id ~= first, "next moves the queue on")
 	App:event({ name = "mediaKey", action = "previous"})
-	test.equal(player.queue:current().id, first, "previous comes back")
+	test.equal(assert(assert(player.queue):current()).id, first, "previous comes back")
 
 	player:close()
 end)
@@ -520,47 +550,29 @@ test.it("carries on after a restart from the track and the place it was left at"
 	local player = App.services.playback.player
 	player.queue = Queue.new(tracks, 2, { repeatMode = "all"})
 	player.loaded = true
-	player.player = {
-	isPlaying = function() return true end,
-	position = function() return 42 end,
-	duration = function() return 180 end,
-	play = function() end,
-	pause = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() end,
-	}
+	player.player = fakeAudio({ playing = true, at = 42, duration = 180 })
 	App:event({ name = "windowClose"})
 	player:close()
 
 	-- The next launch: its playback service is made once the library cache has been loaded.
 	local Playback = require("beat.app.services.playback")
 	local again = Playback.new({
-	settings = App.services.settings,
-	library = App.services.library,
-	collections = App.services.collections,
-	toasts = App.services.toasts,
-	emit = function() end,
+		settings = App.services.settings,
+		library = App.services.library,
+		collections = App.services.collections,
+		toasts = App.services.toasts,
+		emit = function() end,
 	})
-	test.equal(again:current().path, tracks[2].path, "the same track is current")
+	test.equal(assert(again:current()).path, tracks[2].path, "the same track is current")
 	test.falsy(again.player:isPlaying(), "it comes back paused")
 	test.equal(again.player:position(), 42, "where it was left")
-	test.equal(again.player.queue.repeatMode, "all")
+	test.equal(assert(again.player.queue).repeatMode, "all")
 
-	local seeks, playing = {}, false
-	again.player.player = {
-	isPlaying = function() return playing end,
-	position = function() return 0 end,
-	play = function() playing = true end,
-	seek = function(_, seconds) seeks[#seeks + 1] = seconds end,
-	enqueue = function() end,
-	setVolume = function() end,
-	update = function() end,
-	close = function() end,
-	}
+	local audioState = { seeks = {} }
+	again.player.player = fakeAudio(audioState)
 	again:update({ type = "togglePlay"})
-	test.truthy(playing)
-	test.equal(seeks[1], 42, "play goes on from there")
+	test.truthy(again.player:isPlaying())
+	test.equal(audioState.seeks[1], 42, "play goes on from there")
 	again:close()
 end)
 
@@ -612,7 +624,7 @@ test.it("confirms deleting a tag only when it has been applied", function()
 	test.equal(used.count, 1)
 	App:act({ type = "deleteTag", id = used.id})
 	test.truthy(App.services.collections.taxonomy.tagById[used.id] ~= nil, "a used tag waits for confirmation")
-	test.equal(App:overlay("tag_delete").state.id, used.id)
+	test.equal(assert(App:overlay("tag_delete")).state.id, used.id)
 
 	App:act({ type = "cancelDeleteTag"})
 	test.truthy(App.services.collections.taxonomy.tagById[used.id] ~= nil, "cancelling keeps the tag")
@@ -647,15 +659,15 @@ test.it("filters search results with selected tags", function()
 	App.services.collections.taxonomy:setTag(library.albums[1].tracks[2].path, late.id, true)
 	search.tagFilter = { [high.id] = true, [late.id] = true}
 	search.match = "all"
-	_, _, tracks = search:results()
-	test.equal(#tracks, 0, "all tags means a track must carry both")
+	local _, _, allTags = search:results()
+	test.equal(#allTags, 0, "all tags means a track must carry both")
 	search.match = "any"
-	_, _, tracks = search:results()
-	test.equal(#tracks, 2, "any tag means either tag qualifies")
+	local _, _, anyTag = search:results()
+	test.equal(#anyTag, 2, "any tag means either tag qualifies")
 
 	search.tagFilter = {}
-	albums, artists, tracks = search:results()
-	test.equal(#tracks, 9, "clearing the filter restores the search")
+	local _, _, restored = search:results()
+	test.equal(#restored, 9, "clearing the filter restores the search")
 end)
 
 test.it("drops tags that no longer exist from the search filter", function()
@@ -694,11 +706,13 @@ test.it("searches the library again after a track is added", function()
 	local _, _, before = search:results()
 	test.equal(#before, 9, "the first search sees the fixture")
 
-	App.services.library:add({
+	---@type treble.audio.Inspect
+	local info = {
 		format = "FLAC", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false,
 		tags = { title = "Track 4", artist = "Artist Extra", album = "Album Extra",
-		albumArtist = "Artist Extra", track = 4},
-	}, {
+			albumArtist = "Artist Extra", track = 4},
+	}
+	App.services.library:add(info, {
 		path = "/beat-fixtures/Artist Extra/Album Extra/4.flac",
 		dir = "/beat-fixtures/Artist Extra/Album Extra", name = "4.flac", ext = "flac",
 	}, nil)
@@ -722,10 +736,16 @@ test.it("persists tags and playlists beside settings", function()
 	local loaded = TagStore.load(dir)
 	test.equal(#loaded:visibleTags(), 1)
 	test.truthy(loaded:isTagged("/music/a.flac", loaded:visibleTags()[1].id))
-	test.equal(#loaded:playlistTracks(loaded:playlist(smart.id),
-	{ tracks = {{ path = "/music/a.flac"}}}), 1)
-	test.equal(#loaded:playlistTracks(loaded:playlist(manual.id),
-	{ tracks = {{ path = "/music/b.flac"}}}), 1)
+	local library = Library.new("/music")
+	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false,
+		tags = { title = "A", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1}},
+	{ path = "/music/a.flac", dir = "/music", name = "a.flac", ext = "flac"}, nil)
+	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false,
+		tags = { title = "B", artist = "Artist", album = "Album", albumArtist = "Artist", track = 2}},
+	{ path = "/music/b.flac", dir = "/music", name = "b.flac", ext = "flac"}, nil)
+	library:finish()
+	test.equal(#loaded:playlistTracks(assert(loaded:playlist(smart.id)), library), 1)
+	test.equal(#loaded:playlistTracks(assert(loaded:playlist(manual.id)), library), 1)
 	fs.rmdir(dir)
 end)
 
@@ -750,8 +770,8 @@ test.it("creates tags and playlists from the app actions", function()
 	App:act({ type = "createPlaylist"})
 	local smart
 	for _, playlist in ipairs(App.services.collections.taxonomy.playlists) do
-			if playlist.name == "Night" then smart = playlist end
-		end
+		if playlist.name == "Night" then smart = playlist end
+	end
 	test.truthy(smart ~= nil)
 	test.equal(smart.name, "Night")
 	test.truthy(smart.smart)
@@ -765,15 +785,15 @@ test.it("creates tags and playlists from the app actions", function()
 	App:act({ type = "createPlaylist"})
 	local manual
 	for _, playlist in ipairs(App.services.collections.taxonomy.playlists) do
-			if playlist.name == "Favourites" then manual = playlist end
-		end
+		if playlist.name == "Favourites" then manual = playlist end
+	end
 	test.truthy(manual ~= nil)
 	App:act({ type = "open", overlay = "playlist_picker", kind = "album",
-	id = library.albums[2].id})
+		id = library.albums[2].id})
 	App:act({ type = "addToPlaylist", playlistId = manual.id})
 	test.equal(#App.services.collections.taxonomy:playlistTracks(manual, library), 3, "an album is added by hand")
 	App:act({ type = "open", overlay = "playlist_picker", kind = "track",
-	id = library.albums[1].tracks[1].id})
+		id = library.albums[1].tracks[1].id})
 	App:act({ type = "addToPlaylist", playlistId = manual.id})
 	test.equal(#App.services.collections.taxonomy:playlistTracks(manual, library), 4, "a track is added by hand")
 end)
@@ -793,15 +813,16 @@ test.skipIf(not canRender)("types into the search field and opens search", funct
 		App.services.covers:use(assets)
 		return require("beat.app.shell").view(App, window)
 	end, {
-	width = 1200,
-	height = 720,
-	onMessage = function(message)
-		App:act(message)
-		screen:draw()
-	end,
+		width = 1200,
+		height = 720,
+		onMessage = function(message)
+			App:act(message)
+			screen:draw()
+		end,
 	})
 	local previousLayout = App.layoutPlugin
-	App.layoutPlugin = screen:getPlugin("layout")
+	local layout = assert(screen:getPlugin("layout"))
+	App.layoutPlugin = layout
 
 	screen:draw()
 	screen:click(500, 35)
@@ -811,14 +832,14 @@ test.skipIf(not canRender)("types into the search field and opens search", funct
 	end
 
 	key("n")
-	test.equal(App.layoutPlugin:getFocusedId(screen.window), "search", "the first key keeps the search field")
+	test.equal(layout:getFocusedId(screen.window), "search", "the first key keeps the search field")
 	key("i")
 	key("g")
 	screen:draw()
 
 	test.equal(App.services.search.query, "nig")
 	test.equal(App.page.kind, "search")
-	test.equal(App.layoutPlugin:getFocusedId(screen.window), "search")
+	test.equal(layout:getFocusedId(screen.window), "search")
 
 	screen:close()
 	App.layoutPlugin = previousLayout
@@ -830,20 +851,24 @@ test.skipIf(not canRender)("windows the library as it scrolls", function()
 	App.services.settings.values.root = "/beat-fixtures"
 	local library = Library.new("/beat-fixtures")
 	for albumAt = 1, 40 do
-			local name = string.format("Album %03d", albumAt)
-			for trackAt = 1, 2 do
-					library:add({
-					format = "WAV",
-					duration = 180,
-					tags = { title = name .. " " .. trackAt, artist = "Artist", album = name,
+		local name = string.format("Album %03d", albumAt)
+		for trackAt = 1, 2 do
+			library:add({
+				format = "WAV",
+				sampleRate = 44100,
+				channels = 2,
+				duration = 180,
+				hasPicture = false,
+				tags = { title = name .. " " .. trackAt, artist = "Artist", album = name,
 					albumArtist = "Artist", track = trackAt},
-					}, {
-					path = "/beat-fixtures/" .. albumAt .. "/" .. trackAt .. ".wav",
-					dir = "/beat-fixtures/" .. albumAt,
-					name = trackAt .. ".wav",
-					})
-				end
+			}, {
+				path = "/beat-fixtures/" .. albumAt .. "/" .. trackAt .. ".wav",
+				dir = "/beat-fixtures/" .. albumAt,
+				name = trackAt .. ".wav",
+				ext = "wav",
+			})
 		end
+	end
 	library:finish()
 	App.services.library.current = library
 	App.services.scan.job = nil
@@ -871,14 +896,14 @@ test.skipIf(not canRender)("windows the library as it scrolls", function()
 			local node = tree:node(index)
 			local x, y = parentX + node.x, parentY + node.y
 			local element = elements.pointers[node.element]
-			if element ~= nil and element.text ~= 0 then
-				local value = elements.strings[element.text]
-				if value:match("^Album %d+$") and x > 290 then found[#found + 1] = { text = value, x = x, y = y} end
+			local value = element ~= nil and elements.textOf(element) or nil
+			if value ~= nil and value:match("^Album %d+$") and x > 290 then
+				found[#found + 1] = { text = value, x = x, y = y}
 			end
 			for child = 0, node.childCount - 1 do
-					local nextIndex = tree.childIndices[node.firstChild + child - 1]
-					if nextIndex ~= nil then walk(nextIndex, x, y) end
-				end
+				local nextIndex = tree.childIndices[node.firstChild + child - 1]
+				if nextIndex ~= nil then walk(nextIndex, x, y) end
+			end
 		end
 		walk(ctx.root, 0, 0)
 		table.sort(found, function(a, b)
@@ -945,11 +970,11 @@ test.skipIf(not canRender)("draws the phone shell and switches tabs", function()
 
 	-- The second row of the phone shell is the tab bar; Search is the third of four tabs.
 	local message = screen:event({
-	name = "mousePress",
-	window = screen.window,
-	x = 243,
-	y = 815,
-	button = 1,
+		name = "mousePress",
+		window = screen.window,
+		x = 243,
+		y = 815,
+		button = 1,
 	})
 	test.truthy(message ~= nil, "the bottom tab is a touch target")
 	App:act(message)
@@ -1023,14 +1048,14 @@ test.skipIf(not canRender)("shows a sidebar playlist name only in its hover tool
 		local function walk(index)
 			local node = tree:node(index)
 			local element = elements.pointers[node.element]
-			if element ~= nil and element.text ~= 0 and elements.strings[element.text] == value then
+			if element ~= nil and elements.textOf(element) == value then
 				found = true
 			end
 			if not found then
 				for child = 0, node.childCount - 1 do
-						local nextIndex = tree.childIndices[node.firstChild + child - 1]
-						if nextIndex ~= nil then walk(nextIndex) end
-					end
+					local nextIndex = tree.childIndices[node.firstChild + child - 1]
+					if nextIndex ~= nil then walk(nextIndex) end
+				end
 			end
 		end
 		walk(ctx.root)
@@ -1042,17 +1067,17 @@ test.skipIf(not canRender)("shows a sidebar playlist name only in its hover tool
 
 	local message
 	for y = 100, 500, 4 do
-			local candidate = screen:event({
+		local candidate = screen:event({
 			name = "mouseMove",
 			window = screen.window,
 			x = 60,
 			y = y,
-			})
-			if candidate ~= nil and candidate.type == "hoverPlaylist" and candidate.id == playlist.id then
-				message = candidate
-				break
-			end
+		})
+		if candidate ~= nil and candidate.type == "hoverPlaylist" and candidate.id == playlist.id then
+			message = candidate
+			break
 		end
+	end
 	test.truthy(message ~= nil, "the sidebar row answers the pointer")
 	test.equal(message.type, "hoverPlaylist", "the sidebar row answers the pointer")
 	test.equal(message.id, playlist.id)
@@ -1061,10 +1086,10 @@ test.skipIf(not canRender)("shows a sidebar playlist name only in its hover tool
 	test.truthy(hasText("Night Mix"), "the tooltip names the playlist under the pointer")
 
 	message = screen:event({
-	name = "mouseMove",
-	window = screen.window,
-	x = 800,
-	y = 500,
+		name = "mouseMove",
+		window = screen.window,
+		x = 800,
+		y = 500,
 	})
 	test.equal(message.type, "hoverPlaylist")
 	test.equal(message.id, nil, "the page clears the tooltip when the pointer leaves")
@@ -1096,19 +1121,19 @@ test.skipIf(not canRender)("opens the playlist dialog from the sidebar tile", fu
 
 	local message
 	for y = 100, 600, 4 do
-			local candidate = screen:event({
+		local candidate = screen:event({
 			name = "mousePress",
 			window = screen.window,
 			x = 60,
 			y = y,
 			button = 1,
-			})
-			if candidate ~= nil and candidate.type == "open"
-			and candidate.overlay == "playlist_dialog" and candidate.smart == false then
-				message = candidate
-				break
-			end
+		})
+		if candidate ~= nil and candidate.type == "open"
+		and candidate.overlay == "playlist_dialog" and candidate.smart == false then
+			message = candidate
+			break
 		end
+	end
 	test.truthy(message ~= nil, "the empty playlist tile is a button")
 	App:act(message)
 	local dialog = App:overlay("playlist_dialog")
@@ -1146,15 +1171,13 @@ test.skipIf(not canRender)("aligns track times with the TIME header", function()
 		local node = tree:node(index)
 		local x = parentX + node.x
 		local element = elements.pointers[node.element]
-		if element ~= nil and element.text ~= 0 then
-			local value = elements.strings[element.text]
-			if value == "TIME" then headerX = x
-			elseif value == "3:00" and timeX == nil then timeX = x end
-		end
+		local value = element ~= nil and elements.textOf(element) or nil
+		if value == "TIME" then headerX = x
+		elseif value == "3:00" and timeX == nil then timeX = x end
 		for child = 0, node.childCount - 1 do
-				local nextIndex = tree.childIndices[node.firstChild + child - 1]
-				if nextIndex ~= nil then walk(nextIndex, x) end
-			end
+			local nextIndex = tree.childIndices[node.firstChild + child - 1]
+			if nextIndex ~= nil then walk(nextIndex, x) end
+		end
 	end
 	walk(ctx.root, 0)
 
@@ -1173,17 +1196,21 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 	App.services.settings.values.sidebarCollapsed = false
 	local library = Library.new("/beat-fixtures")
 	for trackAt = 1, 100 do
-			library:add({
+		library:add({
 			format = "WAV",
+			sampleRate = 44100,
+			channels = 2,
 			duration = 180,
+			hasPicture = false,
 			tags = { title = string.format("Song %03d", trackAt), artist = "Artist", album = "Long Album",
-			albumArtist = "Artist", track = trackAt},
-			}, {
+				albumArtist = "Artist", track = trackAt},
+		}, {
 			path = "/beat-fixtures/Long/" .. trackAt .. ".wav",
 			dir = "/beat-fixtures/Long",
 			name = trackAt .. ".wav",
-			})
-		end
+			ext = "wav",
+		})
+	end
 	library:finish()
 	App.services.library.current = library
 	App.services.scan.job = nil
@@ -1207,14 +1234,12 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 			local node = tree:node(index)
 			local x, y = parentX + node.x, parentY + node.y
 			local element = elements.pointers[node.element]
-			if element ~= nil and element.text ~= 0 then
-				local value = elements.strings[element.text]
-				if value:match("^Song %d+$") and x > 290 then found[#found + 1] = value end
-			end
+			local value = element ~= nil and elements.textOf(element) or nil
+			if value ~= nil and value:match("^Song %d+$") and x > 290 then found[#found + 1] = value end
 			for child = 0, node.childCount - 1 do
-					local nextIndex = tree.childIndices[node.firstChild + child - 1]
-					if nextIndex ~= nil then walk(nextIndex, x, y) end
-				end
+				local nextIndex = tree.childIndices[node.firstChild + child - 1]
+				if nextIndex ~= nil then walk(nextIndex, x, y) end
+			end
 		end
 		walk(ctx.root, 0, 0)
 		return found
@@ -1239,29 +1264,25 @@ test.it("adds tracks from a background scan as they arrive", function()
 	App.services.library.current = Library.new("/beat-fixtures")
 	App.page = { kind = "home"}
 
+	---@type table[]
 	local queued = {
-	{
-	type = "track",
-	info = { format = "WAV", duration = 180, tags = { title = "First", artist = "Artist",
-	album = "Album", albumArtist = "Artist", track = 1}},
-	entry = { path = "/beat-fixtures/1.wav", dir = "/beat-fixtures", name = "1.wav", ext = "wav"},
-	coverCache = "/tmp/beat-test-cover.jpg",
-	},
+		{
+			type = "track",
+			info = { format = "WAV", sampleRate = 44100, channels = 2, duration = 180,
+				hasPicture = false, tags = { title = "First", artist = "Artist",
+					album = "Album", albumArtist = "Artist", track = 1}},
+			entry = { path = "/beat-fixtures/1.wav", dir = "/beat-fixtures", name = "1.wav", ext = "wav"},
+			coverCache = "/tmp/beat-test-cover.jpg",
+		},
 	}
-	local job = {
-	done = false,
-	latest = { phase = "inspect", files = 2, inspected = 1, tracks = 1, skipped = 0, errors = {},
-	current = "/beat-fixtures/1.wav"},
-	}
-	function job:poll()
-		local events = queued
-		queued = {}
-		return events, true
-	end
-	function job:isDone() return self.done end
-	function job:hasPending() return #queued > 0 end
-	function job:progress() return self.latest end
-	function job:close() self.closed = true end
+	local job = ScanJob.new("/beat-fixtures", os.tmpname() .. "-beat-scan.jsonl",
+	os.tmpname() .. "-beat-scan.cancel")
+	job.queued = queued
+	job.changed = true
+	job.latest = { phase = "inspect", files = 2, inspected = 1, tracks = 1, skipped = 0, errors = {},
+		current = "/beat-fixtures/1.wav"}
+	local closed = false
+	function job:close() closed = true end
 	App.services.scan.job = job
 
 	local window = { width = 1200, height = 720, shouldRedraw = false}
@@ -1276,7 +1297,7 @@ test.it("adds tracks from a background scan as they arrive", function()
 	job.latest.phase = "done"
 	App:tick(11, window)
 	test.equal(App.services.scan.job, nil)
-	test.equal(job.closed, true)
+	test.equal(closed, true)
 	local summary = App.services.scan.summary
 	test.truthy(summary ~= nil, "the completed scan is summarised")
 	if summary ~= nil then
@@ -1329,18 +1350,19 @@ test.it("sorts albums by the newest file they contain", function()
 	local library = Library.new("/modified-fixtures")
 	local function add(album, modified)
 		library:add({
-		format = "FLAC",
-		sampleRate = 44100,
-		channels = 2,
-		duration = 120,
-		tags = { title = album .. " track", artist = "Artist", album = album,
-		albumArtist = "Artist", track = 1},
+			format = "FLAC",
+			sampleRate = 44100,
+			channels = 2,
+			duration = 120,
+			hasPicture = false,
+			tags = { title = album .. " track", artist = "Artist", album = album,
+				albumArtist = "Artist", track = 1},
 		}, {
-		path = "/modified-fixtures/" .. album .. "/1.flac",
-		dir = "/modified-fixtures/" .. album,
-		name = "1.flac",
-		ext = "flac",
-		modifyTime = modified,
+			path = "/modified-fixtures/" .. album .. "/1.flac",
+			dir = "/modified-fixtures/" .. album,
+			name = "1.flac",
+			ext = "flac",
+			modifyTime = modified,
 		}, nil)
 	end
 	add("Old", 100)
@@ -1375,9 +1397,11 @@ test.it("sets the logo as the window icon", function()
 	App:init({ scan = false})
 	local got
 	local window = {
-	setIcon = function(_, width, height, rgba)
-		got = { width = width, height = height, rgba = rgba}
-	end,
+		width = 1200,
+		height = 720,
+		setIcon = function(_, width, height, rgba)
+			got = { width = width, height = height, rgba = rgba}
+		end,
 	}
 
 	App:setIcon(window)
@@ -1409,8 +1433,8 @@ test.it("opens and confirms a custom accent colour", function()
 	test.truthy(App:overlay("accent_picker"), "the Custom button opens the picker")
 
 	App:act({ type = "pickAccent", value = "#FF7A66"})
-	test.equal(App:overlay("accent_picker").state.draft, "#ff7a66",
-		"choosing a swatch only changes the draft")
+	test.equal(assert(App:overlay("accent_picker")).state.draft, "#ff7a66",
+	"choosing a swatch only changes the draft")
 
 	App:act({ type = "confirmAccent"})
 	test.equal(App.services.settings.values.accent, "#ff7a66")
@@ -1427,12 +1451,15 @@ test.it("opens an album context menu and dispatches its actions", function()
 
 	App:act({ type = "open", overlay = "menu", menu = "album", id = album.id, x = 40, y = 50})
 	test.truthy(App:overlay("menu"), "the right click opened a menu")
-	test.equal(App:overlay("menu").state.id, album.id)
+	test.equal(assert(App:overlay("menu")).state.id, album.id)
 
 	local real = App.services.playback.player
-	App.services.playback.player = {
-	playNext = function(_, tracks) queued = #tracks end,
-	}
+	local capture = PlayerService.new()
+	capture.playNext = function(...)
+		local _, tracks = ...
+		queued = #tracks
+	end
+	App.services.playback.player = capture
 	App:act({ type = "queueAlbum", id = album.id, next = true})
 	test.equal(queued, #album.tracks, "Play next receives the album's tracks")
 	test.equal(App:overlay("menu"), nil, "and the menu closes")
@@ -1443,22 +1470,23 @@ end)
 
 test.it("stores equalizer presets and custom band gains", function()
 	App:init({ scan = false})
-	local applied = {}
-	App.services.playback.player.player = {
-	setEqualizer = function(_, bands) applied = bands end,
-	}
+	---@type TestAudioState
+	local audioState = {}
+	App.services.playback.player.player = fakeAudio(audioState)
 
 	App:open("equalizer")
 	App:act({ type = "equalizerPreset", id = "club"})
 	test.truthy(App:overlay("equalizer") ~= nil, "the panel stays open while a preset is chosen")
 	test.equal(App.services.settings.values.equalizerPreset, "club")
-	test.equal(App.services.settings.values.equalizerGains[1], 5)
-	test.equal(applied[1].gain, 5, "the audio player receives the preset bands")
+	local gains = assert(App.services.settings.values.equalizerGains)
+	test.equal(gains[1], 5)
+	test.equal(assert(audioState.applied)[1].gain, 5, "the audio player receives the preset bands")
 
 	App:act({ type = "equalizerGain", band = 2, value = 99})
 	test.equal(App.services.settings.values.equalizerPreset, "custom")
-	test.equal(App.services.settings.values.equalizerGains[2], 12, "a band is held to the gain range")
-	test.equal(applied[2].gain, 12, "and the change reaches the player immediately")
+	local adjusted = assert(App.services.settings.values.equalizerGains)
+	test.equal(adjusted[2], 12, "a band is held to the gain range")
+	test.equal(assert(audioState.applied)[2].gain, 12, "and the change reaches the player immediately")
 
 	App.services.playback.player.player = nil
 end)
@@ -1468,7 +1496,7 @@ test.it("creates, renames and deletes custom equalizer presets", function()
 	App.services.settings.values.equalizerCustomPresets = {}
 	App.services.settings.values.equalizerPreset = "flat"
 	App.services.settings.values.equalizerGains = { 0, 0, 0, 0, 0}
-	App.services.playback.player.player = { setEqualizer = function() end}
+	App.services.playback.player.player = fakeAudio({})
 
 	App:open("equalizer")
 	App:act({ type = "equalizerGain", band = 1, value = 6})
@@ -1512,8 +1540,8 @@ end)
 
 test.it("uses only a playlist's real tracks in its mosaic", function()
 	local PlaylistArt = require("beat.app.components.playlist_art")
-	local tracks = {}
-	for at = 1, 5 do tracks[at] = { id = at} end
+	local all = fixture().tracks
+	local tracks = { all[1], all[2], all[3], all[4], all[5] }
 
 	local one = PlaylistArt.mosaicTracks({ tracks[1]})
 	test.equal(#one, 1, "one track is not repeated")

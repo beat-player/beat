@@ -12,7 +12,6 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param action any
 ---@param width number
 ---@param height number
----@return wonderland.Element
 local function nowPlayingEntry(app, label, action, width, height)
 	local theme = app.services.appearance.theme
 	return div()
@@ -33,7 +32,7 @@ end
 ---@class beat.MoreState
 ---@field anchor beat.MoreAnchor?
 
----@type beat.OverlaySurface
+---@class beat.MoreOverlay: beat.OverlaySurface
 local more = { light = true, anchored = true}
 
 function more.new()
@@ -41,6 +40,9 @@ function more.new()
 	return {}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.MoreState>
+---@param message beat.Message
 function more.update(app, overlay, message)
 	if message.type == "toggleMore" then
 		-- The three dots close what they opened rather than opening a second menu.
@@ -51,11 +53,11 @@ function more.update(app, overlay, message)
 end
 
 ---@param app beat.App
----@param overlay beat.OverlayInstance
+---@param overlay beat.OverlayInstance<beat.MoreState>
 ---@param _window wonderland.RenderWindow
 ---@return wonderland.Element?
 function more.view(app, overlay, _window)
-	local state = overlay.state --[[@as beat.MoreState]]
+	local state = overlay.state
 	local anchor = state.anchor
 	if anchor == nil then return nil end
 	local track = app.services.playback:current()
@@ -64,17 +66,18 @@ function more.view(app, overlay, _window)
 	local room = anchor.room
 	local x = anchor.x
 	local theme = app.services.appearance.theme
-	local album = app.services.library.current and app.services.library.current:album(track.albumId) or nil
+	local album = app.services.library.current ? (app.services.library.current:album(track.albumId)) : nil
+	---@type { [1]: string, [2]: beat.Message }[]
 	local entries = {
-	{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id}},
-	{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track",
-	id = track.id}},
+		{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id}},
+		{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track",
+				id = track.id}},
 	}
 	if album ~= nil then
 		entries[#entries + 1] = { "Go to album",
-		{ type = "navigate", page = { kind = "album", id = album.id}}}
+			{ type = "navigate", page = { kind = "album", id = album.id}}}
 		entries[#entries + 1] = { "Go to artist",
-		{ type = "navigate", page = { kind = "artist", id = album.artistId}}}
+			{ type = "navigate", page = { kind = "artist", id = album.artistId}}}
 	end
 	entries[#entries + 1] = { "Open queue", { type = "open", overlay = "queue"}}
 
@@ -87,9 +90,9 @@ function more.view(app, overlay, _window)
 	local height = padding * 2 + #entries * rowHeight + math.max(0, #entries - 1) * gap
 	local rows = {}
 	for _, entry in ipairs(entries) do
-			rows[#rows + 1] = nowPlayingEntry(app, entry[1] --[[@as string]], entry[2],
-			width - padding * 2, rowHeight)
-		end
+		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2],
+		width - padding * 2, rowHeight)
+	end
 
 	local panel = div()
 	:style(sty():w(width):h(height):column():pad(padding):gap(gap)

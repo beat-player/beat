@@ -57,7 +57,6 @@ end
 --- waiting for the next start.
 ---@param entry beat.PluginStatus
 ---@param values beat.Settings
----@return string?
 local function pending(entry, values)
 	local off = isOff(values, entry)
 	if entry.state == "off" and not off then return "on after restart" end
@@ -67,7 +66,6 @@ end
 
 ---@param entry beat.PluginStatus
 ---@param values beat.Settings
----@return string
 local function detail(entry, values)
 	local state = STATE[entry.state] or STATE.failed
 	local parts = { state.label }
@@ -82,7 +80,6 @@ end
 ---@param app beat.App
 ---@param entry beat.PluginStatus
 ---@param width number # The card's inner width, which the name and the check box share
----@return wonderland.Element
 local function row(app, entry, width)
 	local theme = app.services.appearance.theme
 	local values = app.services.settings.values
@@ -92,11 +89,11 @@ local function row(app, entry, width)
 
 	local children = {
 		div():style(sty():column():w(math.max(theme:px(80), textWidth)):h(theme:px(40))
-			:gap(theme:px(2)):justify("center")):children({
+		:gap(theme:px(2)):justify("center")):children({
 			text(entry.name):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("semibold")
-				:fg(theme:color("text")):ellipsis()),
+			:fg(theme:color("text")):ellipsis()),
 			text(detail(entry, values)):style(theme:s():wrel(1.0):text(theme:type("xs"))
-				:fg(theme:color(state.tone)):ellipsis()),
+			:fg(theme:color(state.tone)):ellipsis()),
 		}),
 	}
 	if file ~= nil then
@@ -109,17 +106,17 @@ local function row(app, entry, width)
 			box:border(theme:px(1.5), theme:color("muted"))
 		end
 		children[#children + 1] = div()
-			:style(sty():size(theme:px(CHECK_TARGET), theme:px(CHECK_TARGET)):align("center"):justify("center"))
-			:onClick({ type = "pluginEnabled", file = file, enabled = not on})
-			:children({
-				div():style(box):children(on
-					and icon.view(app, { name = "check", size = theme:px(14), colour = theme.accentInk })
-					or div()),
-			})
+		:style(sty():size(theme:px(CHECK_TARGET), theme:px(CHECK_TARGET)):align("center"):justify("center"))
+		:onClick({ type = "pluginEnabled", file = file, enabled = not on})
+		:children({
+			div():style(box):children(on
+			and icon.view(app, { name = "check", size = theme:px(14), colour = theme.accentInk })
+			or div()),
+		})
 	end
 
 	return div():style(sty():row():wrel(1.0):h(theme:px(ROW)):gap(theme:px(10)):align("center"))
-		:children(children)
+	:children(children)
 end
 
 ---@param app beat.App
@@ -146,44 +143,44 @@ function plugins.view(app, page, window)
 	if #rows == 0 then
 		rows[1] = div():style(sty():row():wrel(1.0):h(theme:px(ROW)):align("center")):children({
 			text("No plugins yet. Put one in the plugins folder; the folder button opens it.")
-				:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
 		})
 	end
 
 	-- The folder is where a plugin is installed, so it is opened from the list it fills.
 	local header = div():style(sty():row():wrel(1.0):h(theme:px(32)):align("center")
-		:justify("space-between")):children({
-			text("Installed"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-			iconButton.view(app, { name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder"} }),
-		})
+	:justify("space-between")):children({
+		text("Installed"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+		iconButton.view(app, { name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder"} }),
+	})
 	local content = {
 		header,
 		text("Plugins are files made with lde bundle. Changes apply after a restart.")
-			:style(theme:s():wrel(1.0):h(theme:px(20)):text(theme:type("sm")):fg(theme:color("muted"))
-			:ellipsis()),
+		:style(theme:s():wrel(1.0):h(theme:px(20)):text(theme:type("sm")):fg(theme:color("muted"))
+		:ellipsis()),
 	}
 	for _, item in ipairs(rows) do content[#content + 1] = item end
 
 	-- Every child is followed by a gap but the last: the header, the line under it, and the rows.
 	local cardHeight = PAD * 2 + 2 + 32 + 20 + #rows * ROW + (#content - 1) * GAP
 	local card = div():style(sty():column():wrel(1.0):h(theme:px(cardHeight)):gap(theme:px(GAP))
-		:pad(theme:px(PAD)):radius(theme:radius("md")):bg(theme:color("surface"))
-		:border(theme:px(1), theme:color("border"))):children(content)
+	:pad(theme:px(PAD)):radius(theme:radius("md")):bg(theme:color("surface"))
+	:border(theme:px(1), theme:color("border"))):children(content)
 
 	return div():style(sty():column():wrel(1.0):h(theme:px(32 + 16 + cardHeight)):gap(theme:px(16)))
+	:children({
+		div():style(sty():row():wrel(1.0):h(theme:px(32)):align("center"):justify("space-between"))
 		:children({
-			div():style(sty():row():wrel(1.0):h(theme:px(32)):align("center"):justify("space-between"))
-				:children({
-				text("Plugins"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-				button.view(app, {
-					label = "Back to settings",
-					onClick = { type = "navigate", page = { kind = "settings"}},
-					height = theme:px(32),
-					width = theme:px(narrow and 160 or 140),
-				}),
+			text("Plugins"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
+			button.view(app, {
+				label = "Back to settings",
+				onClick = { type = "navigate", page = { kind = "settings"}},
+				height = theme:px(32),
+				width = theme:px(narrow and 160 or 140),
 			}),
-			card,
-		})
+		}),
+		card,
+	})
 end
 
 return plugins

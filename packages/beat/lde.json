@@ -1,6 +1,7 @@
 {
 	"name": "beat",
 	"version": "0.1.0",
+	"bin": "main.lua",
 	"dependencies": {
 		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
 		"wonderland": {

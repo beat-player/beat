@@ -4,23 +4,47 @@ local json = require("json")
 local paths = require("beat.paths")
 local settingsModel = require("beat.app.services.settings.model")
 local Equalizer = require("beat.app.services.equalizer")
+local Player = require("beat.app.services.playback.player")
+local Spectrum = require("beat.app.services.playback.spectrum")
+
+--- What a hand-edited settings file may hold for the equalizer: any preset name, and gains or
+--- saved presets that are not what the panel would write.
+---@class beat.EqualizerFileFixture
+---@field equalizerPreset string?
+---@field equalizerGains (number|string|nil)[]?
+---@field equalizerCustomPresets { name: string, gains: (number|string|nil)[] }[]?
 
 --- The service over a settings file holding `data`, with stand-ins that record what it asks them
 --- to do. The rules that read and rewrite what the file held are what these tests are about; the
 --- panel and the player are only where the result shows.
+---@param data beat.EqualizerFileFixture
 local function start(data)
 	local dir = os.tmpname() .. "-beat-equalizer"
 	fs.mkdirAll(dir)
 	fs.write(paths.file("settings.json", dir), json.encode(data))
 
+	---@type beat.SettingsService
 	local settings = { values = settingsModel.load(dir), changed = function() end }
+	---@type treble.Equalizer.Band[][]
 	local applied = {}
+	local player = Player.new()
+	function player.setEqualizer(_, bands) applied[#applied + 1] = bands end
+	---@type beat.PlaybackService
 	local playback = {
-		player = {
-			setEqualizer = function(_, bands) applied[#applied + 1] = bands end,
-		},
+		player = player,
+		spectrum = Spectrum.new(),
+		settings = settings,
+		toasts = { list = {}, show = function() end },
+		emit = function() end,
+		library = {},
+		collections = {},
+		sessionKey = "",
 	}
+	---@class EqualizerToastsStub: beat.ToastsService
+	---@field shown { text: string, tone: string? }[]
+	---@type EqualizerToastsStub
 	local toasts = {
+		list = {},
 		shown = {},
 	}
 	function toasts:show(text, tone) self.shown[#self.shown + 1] = { text = text, tone = tone } end
@@ -41,7 +65,7 @@ local function finish(dir)
 end
 
 test.it("cleans up the equalizer settings it is started with", function()
-	local equalizer, settings, _, _, applied, dir = start({
+	local _, settings, _, _, applied, dir = start({
 		equalizerPreset = "Missing",
 		equalizerGains = { 99, -99, 0},
 		equalizerCustomPresets = {
@@ -53,17 +77,19 @@ test.it("cleans up the equalizer settings it is started with", function()
 		},
 	})
 	local values = settings.values
+	local gains = assert(values.equalizerGains)
+	local presets = assert(values.equalizerCustomPresets)
 
 	test.equal(values.equalizerPreset, "custom", "a preset that is gone keeps the gains that were stored")
-	test.equal(values.equalizerGains[1], 12, "and every gain is held to the range")
-	test.equal(values.equalizerGains[2], -12)
-	test.equal(values.equalizerGains[5], 0, "a missing gain is flat")
+	test.equal(gains[1], 12, "and every gain is held to the range")
+	test.equal(gains[2], -12)
+	test.equal(gains[5], 0, "a missing gain is flat")
 
-	test.equal(#values.equalizerCustomPresets, 2, "a built-in name and a duplicate are dropped")
-	test.equal(values.equalizerCustomPresets[1].name, "Mine", "the first of a repeated name is the one kept")
-	test.equal(values.equalizerCustomPresets[1].gains[1], 12, "a saved preset's gains are held too")
-	test.equal(values.equalizerCustomPresets[2].gains[1], 0, "a gain that is not a number is flat")
-	test.equal(values.equalizerCustomPresets[2].gains[4], 2)
+	test.equal(#presets, 2, "a built-in name and a duplicate are dropped")
+	test.equal(presets[1].name, "Mine", "the first of a repeated name is the one kept")
+	test.equal(presets[1].gains[1], 12, "a saved preset's gains are held too")
+	test.equal(presets[2].gains[1], 0, "a gain that is not a number is flat")
+	test.equal(presets[2].gains[4], 2)
 
 	test.equal(applied[1][1].gain, 12, "the player is told the bands when the service starts")
 	test.equal(#applied[1], 5)
@@ -77,15 +103,18 @@ test.it("falls back to the saved custom preset's gains, then to Flat", function(
 		equalizerCustomPresets = { { name = "Mine", gains = { 3, 2, 1, 0, -1}}},
 	})
 
+	local mineGains = assert(settings.values.equalizerGains)
 	test.equal(settings.values.equalizerPreset, "Mine")
-	test.equal(settings.values.equalizerGains[1], 3, "a custom preset without stored gains holds its own")
+	test.equal(mineGains[1], 3, "a custom preset without stored gains holds its own")
 	test.equal(applied[1][5].gain, -1)
 	finish(dir)
 
 	local _, flat, _, _, flatApplied, flatDir = start({ equalizerPreset = "Gone"})
+	local flatGains = assert(flat.values.equalizerGains)
+	local flatPresets = assert(flat.values.equalizerCustomPresets)
 	test.equal(flat.values.equalizerPreset, "flat", "nothing to fall back to is Flat")
-	test.equal(flat.values.equalizerGains[1], 0)
-	test.equal(#flat.values.equalizerCustomPresets, 0)
+	test.equal(flatGains[1], 0)
+	test.equal(#flatPresets, 0)
 	test.equal(#flatApplied[1], 5)
 	finish(flatDir)
 end)
