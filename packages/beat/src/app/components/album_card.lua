@@ -51,7 +51,7 @@ function albumCard.view(app, props)
 	end)
 	:children({
 	div():style(sty():size(width, width)):children({
-	cover.view(app, { album = album, size = width, radius = theme:radius("md") }),
+	cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
 	div()
 	:style(sty():size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
 	:offset(width - theme:px(44), width - theme:px(44))
