@@ -22,7 +22,10 @@ function spectrumBackground.view(app, props)
 	local levels = app.services.playback.spectrum ? (app.services.playback.spectrum:values()) : {}
 	local active = false
 	for at = 1, #levels do
-		if levels[at] > 0.01 then active = true; break end
+		if levels[at] > 0.01 then
+			active = true
+			break
+		end
 	end
 
 	return div():style(sty():fill():offset(0, 0)):canvas(function(canvas)
@@ -44,10 +47,8 @@ function spectrumBackground.view(app, props)
 
 			-- A wider, nearly transparent pass and a narrower core: at this opacity it reads as a
 			-- blurred wash behind the bar rather than a row of hard rectangles.
-			canvas:rect(x - 2, canvas.height - barHeight - 1, barWidth + 4, barHeight + 1,
-			theme:color("accent", alpha * 0.35), 3)
-			canvas:rect(x, canvas.height - barHeight, barWidth, barHeight,
-			theme:color("accent", alpha), math.max(1, barWidth / 3))
+			canvas:rect(x - 2, canvas.height - barHeight - 1, barWidth + 4, barHeight + 1, theme:color("accent", alpha * 0.35), 3)
+			canvas:rect(x, canvas.height - barHeight, barWidth, barHeight, theme:color("accent", alpha), math.max(1, barWidth / 3))
 		end
 	end)
 end

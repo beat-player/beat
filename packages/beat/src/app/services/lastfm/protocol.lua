@@ -21,7 +21,7 @@ end
 ---@param value any
 ---@return string
 function lastfm.escape(value)
-	return (tostring(value):gsub("[^%w%-%._~]",|char| -> string.format("%%%02X", string.byte(char))))
+	return (tostring(value):gsub("[^%w%-%._~]", |char| -> string.format("%%%02X", string.byte(char))))
 end
 
 --- The api_sig for a set of parameters: names sorted by ASCII, concatenated as name..value with
@@ -54,7 +54,7 @@ end
 ---@return table<string, any>
 function lastfm.params(method, apiKey, secret, extra)
 	---@type table<string, any>
-	local params = { method = method, api_key = apiKey}
+	local params = { method = method, api_key = apiKey }
 
 	if extra ~= nil then
 		for key, value in pairs(extra) do
@@ -100,8 +100,7 @@ end
 ---@param page string?
 ---@return string
 function lastfm.authUrl(apiKey, token, page)
-	return (page or AUTH_PAGE) .. "?api_key=" .. lastfm.escape(apiKey) .. "&token="
-	.. lastfm.escape(token)
+	return (page or AUTH_PAGE) .. "?api_key=" .. lastfm.escape(apiKey) .. "&token=" .. lastfm.escape(token)
 end
 
 --- Step 3 of desktop authentication: turn an authorized token into a session key.
@@ -110,7 +109,7 @@ end
 ---@param token string
 ---@return table<string, any>
 function lastfm.sessionParams(apiKey, secret, token)
-	return lastfm.params("auth.getSession", apiKey, secret, { token = token})
+	return lastfm.params("auth.getSession", apiKey, secret, { token = token })
 end
 
 ---@param track beat.Track
@@ -135,7 +134,7 @@ end
 ---@return table<string, any>
 function lastfm.nowPlayingParams(apiKey, secret, sessionKey, track)
 	---@type table<string, any>
-	local extra = { sk = sessionKey}
+	local extra = { sk = sessionKey }
 	trackFields(track, extra)
 
 	return lastfm.params("track.updateNowPlaying", apiKey, secret, extra)
@@ -150,7 +149,7 @@ end
 ---@return table<string, any>
 function lastfm.scrobbleParams(apiKey, secret, sessionKey, scrobbles)
 	---@type table<string, any>
-	local extra = { sk = sessionKey}
+	local extra = { sk = sessionKey }
 
 	for index, scrobble in ipairs(scrobbles) do
 		local at = index - 1
@@ -189,8 +188,7 @@ function lastfm.response(body)
 	end
 
 	if value.error ~= nil then
-		return nil, tostring(value.message or ("Last.fm error " .. tostring(value.error))),
-		tonumber(value.error)
+		return nil, tostring(value.message or ("Last.fm error " .. tostring(value.error))), tonumber(value.error)
 	end
 
 	return value

@@ -9,5 +9,5 @@ return {
 	---@param handle beat.PluginHandle
 	setup = function(handle)
 		handle.page("plugins", pluginsPage)
-	end,
+	end
 }

@@ -46,7 +46,7 @@ local GLYPHS = {
 	playlists = 0xE017,
 	hand = 0xE018,
 	edit = 0xE019,
-	add = 0xE01A,
+	add = 0xE01A
 }
 
 local UTF8_GLYPHS = {}
@@ -59,8 +59,7 @@ function icon.view(app, props)
 	local glyph = UTF8_GLYPHS[props.name] or UTF8_GLYPHS.github
 	local textElement = wonderland.text(glyph):style(sty():font(ICON_FONT):text(props.size):fg(props.colour))
 
-	return div():style(sty():size(props.size, props.size):row():align("center"):justify("center"))
-	:children(textElement)
+	return div():style(sty():size(props.size, props.size):row():align("center"):justify("center")):children(textElement)
 end
 
 return icon

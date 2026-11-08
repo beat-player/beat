@@ -14,20 +14,16 @@ local settingsPage = require("beat.app.pages.settings")
 local accentPicker = require("beat.app.overlays.accent_picker")
 local menu = require("beat.app.overlays.menu")
 
-return beat.plugin({
-	name = "core",
-	version = "1.0.0",
-	setup = function(handle)
-		handle.service("settings", settings)
-		handle.service("motion", motion)
-		handle.service("appearance", appearance)
-		handle.service("toasts", toasts)
-		handle.service("scroll", scroll)
-		handle.service("system", system)
-		handle.service("http", http)
+return beat.plugin({ name = "core", version = "1.0.0", setup = function(handle)
+	handle.service("settings", settings)
+	handle.service("motion", motion)
+	handle.service("appearance", appearance)
+	handle.service("toasts", toasts)
+	handle.service("scroll", scroll)
+	handle.service("system", system)
+	handle.service("http", http)
 
-		handle.page("settings", settingsPage)
-		handle.overlay("accent_picker", accentPicker)
-		handle.overlay("menu", menu)
-	end,
-})
+	handle.page("settings", settingsPage)
+	handle.overlay("accent_picker", accentPicker)
+	handle.overlay("menu", menu)
+end })

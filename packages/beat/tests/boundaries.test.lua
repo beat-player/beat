@@ -116,12 +116,7 @@ test.it("loads every worker without the app or wonderland", function()
 	fs.mkdirAll(root)
 	assert(fs.write(manifest, ""))
 
-	local previous = {
-		BEAT_SCAN_ROOT = env.var("BEAT_SCAN_ROOT"),
-		BEAT_SCAN_MANIFEST = env.var("BEAT_SCAN_MANIFEST"),
-		BEAT_SCAN_OUTPUT = env.var("BEAT_SCAN_OUTPUT"),
-		BEAT_SCAN_CANCEL = env.var("BEAT_SCAN_CANCEL"),
-	}
+	local previous = { BEAT_SCAN_ROOT = env.var("BEAT_SCAN_ROOT"), BEAT_SCAN_MANIFEST = env.var("BEAT_SCAN_MANIFEST"), BEAT_SCAN_OUTPUT = env.var("BEAT_SCAN_OUTPUT"), BEAT_SCAN_CANCEL = env.var("BEAT_SCAN_CANCEL") }
 
 	-- A worker reads its paths from the environment as it loads, so an empty root and manifest is
 	-- what lets this test load one rather than start a scan.

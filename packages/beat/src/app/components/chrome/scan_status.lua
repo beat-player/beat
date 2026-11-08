@@ -24,7 +24,7 @@ local BOTTOM_STRIP_SEGMENTS = 8
 local function bottomStrip(width, height, radius)
 	local r = math.min(radius, width / 2)
 	if r <= 0 or height <= 0 then
-		return { 0, 0, width, 0, width, height, 0, height}
+		return { 0, 0, width, 0, width, height, 0, height }
 	end
 
 	local points = {}
@@ -155,8 +155,7 @@ function scanStatus.island(app, props)
 	local width = props.width
 	local library = app.services.library
 	local scan = app.services.scan
-	if scan.job == nil or not scan.islandOpen or library.current == nil
-	or #library.current.tracks == 0 then
+	if scan.job == nil or not scan.islandOpen or library.current == nil or #library.current.tracks == 0 then
 		return nil
 	end
 
@@ -173,52 +172,9 @@ function scanStatus.island(app, props)
 	if type(progress.current) == "string" then current = path.basename(progress.current) end
 	local label = progress.phase == "enumerate" ? "Finding music" : "Reading metadata"
 
-	return div()
-	:style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin,
-	metrics.topbarHeight(app, width) + theme:space(8))
-	:z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8))
-	:radius(radius):bg(theme:color("elevated"))
-	:shadow(0, theme:px(12), theme:px(32), "#00000070"))
-	:canvas(function(canvas)
-		bottomBar(canvas, {
-			x = -pad,
-			y = islandHeight - pad - barHeight,
-			width = islandWidth,
-			height = barHeight,
-			radius = radius,
-			fraction = fraction,
-			trackColour = theme:color("text", 0.1),
-			fillColour = theme:color("accent"),
-		})
-	end)
-	:children({
-		div():style(sty():row():wrel(1.0):h(theme:px(22)):align("center"):justify("space-between")):children({
-			div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({
-				playingBars.view(app, { playing = true }),
-				text("Scanning music"):style(theme:s():text(theme:type("sm")):weight("semibold")
-				:fg(theme:color("text"))),
-			}),
-			iconButton.view(app, {
-				name = "chevronUp",
-				size = theme:px(22),
-				onClick = { type = "hideScanIsland"},
-			}),
-		}),
-		div():style(sty():row():wrel(1.0):h(theme:px(16)):align("center")
-		:justify("space-between")):children({
-			text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(
-			theme:s():text(theme:type("xs")):fg(theme:color("muted"))
-			),
-			button.view(app, {
-				label = "Cancel",
-				onClick = { type = "cancelScan"},
-				height = theme:px(26),
-				width = theme:px(66),
-			}),
-		}),
-		current ~= nil and text(tostring(current)):style(theme:s():wrel(1.0):text(theme:type("xs"))
-		:fg(theme:color("faint")):ellipsis()) or text(""):style(sty():h(theme:px(0))),
-	})
+	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):canvas(function(canvas)
+		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = fraction, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
+	end):children({ div():style(sty():row():wrel(1.0):h(theme:px(22)):align("center"):justify("space-between")):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ playingBars.view(app, { playing = true }), text("Scanning music"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), iconButton.view(app, { name = "chevronUp", size = theme:px(22), onClick = { type = "hideScanIsland" } }) }), div():style(sty():row():wrel(1.0):h(theme:px(16)):align("center"):justify("space-between")):children({ text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))), button.view(app, { label = "Cancel", onClick = { type = "cancelScan" }, height = theme:px(26), width = theme:px(66) }) }), current ~= nil and text(tostring(current)):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()) or text(""):style(sty():h(theme:px(0))) })
 end
 
 --- The card that replaces the scanning island once the scan is done: same place, size and
@@ -239,41 +195,12 @@ function scanStatus.summary(app, props)
 	local radius = theme:radius("md")
 	local margin = metrics.mobile(app, width) ? metrics.pad(app, width) : (theme:space(24))
 
-	local detail = summary.skipped > 0
-	and format.count(summary.skipped, "file") .. " skipped"
-	or "Saved to your library"
+	local detail = summary.skipped > 0 and format.count(summary.skipped, "file") .. " skipped" or "Saved to your library"
 	local detailColour = summary.skipped > 0 ? (theme:color("danger")) : (theme:color("muted"))
 
-	return div()
-	:style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin,
-	metrics.topbarHeight(app, width) + theme:space(8))
-	:z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8))
-	:radius(radius):bg(theme:color("elevated"))
-	:shadow(0, theme:px(12), theme:px(32), "#00000070"))
-	:onClick({ type = "dismissScanSummary"})
-	:canvas(function(canvas)
-		bottomBar(canvas, {
-			x = -pad,
-			y = islandHeight - pad - barHeight,
-			width = islandWidth,
-			height = barHeight,
-			radius = radius,
-			fraction = 1,
-			trackColour = theme:color("text", 0.1),
-			fillColour = theme:color("accent"),
-		})
-	end)
-	:children({
-		div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({
-			icon.view(app, { name = "check", size = theme:px(18), colour = theme:color("accent") }),
-			text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold")
-			:fg(theme:color("text"))),
-		}),
-		text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(
-		theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))
-		),
-		text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)),
-	})
+	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):onClick({ type = "dismissScanSummary" }):canvas(function(canvas)
+		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = 1, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
+	end):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ icon.view(app, { name = "check", size = theme:px(18), colour = theme:color("accent") }), text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))), text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)) })
 end
 
 return scanStatus

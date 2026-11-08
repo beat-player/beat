@@ -27,12 +27,15 @@ Appearance.handles = { "theme", "accent", "uiScale" }
 ---@return beat.AppearanceService
 function Appearance.new(deps)
 	local values = deps.settings.values
-	return setmetatable({
-		settings = deps.settings,
-		motion = deps.motion,
-		theme = theme.new(values.theme, values.accent, values.uiScale),
-		fade = nil,
-	}, Appearance)
+	return setmetatable(
+		{
+			settings = deps.settings,
+			motion = deps.motion,
+			theme = theme.new(values.theme, values.accent, values.uiScale),
+			fade = nil
+		},
+		Appearance
+	)
 end
 
 -- The theme names the settings screen offers, in the order it shows them.

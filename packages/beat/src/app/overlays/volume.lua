@@ -16,7 +16,7 @@ local div, sty = wonderland.div, wonderland.sty
 ---@field anchor beat.VolumeAnchor?
 
 ---@class beat.VolumeOverlay: beat.OverlaySurface
-local volume = { light = true, anchored = true}
+local volume = { light = true, anchored = true }
 
 function volume.new()
 	---@type beat.VolumeState
@@ -59,25 +59,30 @@ function volume.view(app, overlay, _window)
 	local sliderWidth = opts.width - padding * 2 - muteSize - gap
 
 	return div()
-	:style(sty():w(opts.width):h(opts.height):offset(opts.x, opts.y)
-	:row():align("center"):gap(gap):pad(0, padding, 0, padding)
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border")))
-	:onClick({ type = "keep"})
-	:children({
-		iconButton.view(app, { name = muted ? "mute" : "volume", size = muteSize, onClick = { type = "mute"} }),
-		slider.view(app, {
-			width = sliderWidth,
-			value = muted ? 0 : app.services.settings.values.volume,
-			min = 0,
-			max = 1,
-			onchange = |value| -> { type = "volume", value = value},
-			trackColour = theme:color("text", 0.12),
-			fillColour = theme:color("muted"),
-			thumbColour = theme:color("text"),
-			thumbSize = theme:px(12),
-		}),
-	})
+		:style(
+			sty()
+				:w(opts.width):h(opts.height):offset(opts.x, opts.y):row():align("center"):gap(gap):pad(0, padding, 0, padding)
+				:radius(theme:radius("md")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+		):onClick({ type = "keep" })
+		:children(
+			{
+				iconButton.view(app, { name = muted ? "mute" : "volume", size = muteSize, onClick = { type = "mute" } }),
+				slider.view(
+					app,
+					{
+						width = sliderWidth,
+						value = muted ? 0 : app.services.settings.values.volume,
+						min = 0,
+						max = 1,
+						onchange = |value| -> { type = "volume", value = value },
+						trackColour = theme:color("text", 0.12),
+						fillColour = theme:color("muted"),
+						thumbColour = theme:color("text"),
+						thumbSize = theme:px(12)
+					}
+				)
+			}
+		)
 end
 
 return volume

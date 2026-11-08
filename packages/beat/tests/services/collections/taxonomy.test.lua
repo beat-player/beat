@@ -7,24 +7,18 @@ local Taxonomy = require("beat.app.services.collections.taxonomy")
 local function library()
 	local lib = Library.new("/music")
 	for _, name in ipairs({ "a", "b", "c" }) do
-		lib:add({
-			format = "FLAC",
-			sampleRate = 44100,
-			channels = 2,
-			duration = 180,
-			hasPicture = false,
-			tags = {
-				title = name:upper(),
-				artist = "artist",
-				album = "album",
-				albumArtist = "artist",
+		lib:add(
+			{
+				format = "FLAC",
+				sampleRate = 44100,
+				channels = 2,
+				duration = 180,
+				hasPicture = false,
+				tags = { title = name:upper(), artist = "artist", album = "album", albumArtist = "artist" }
 			},
-		}, {
-			path = "/music/" .. name .. ".flac",
-			dir = "/music",
-			name = name .. ".flac",
-			ext = "flac",
-		}, nil)
+			{ path = "/music/" .. name .. ".flac", dir = "/music", name = name .. ".flac", ext = "flac" },
+			nil
+		)
 	end
 	lib:finish()
 	return lib
@@ -58,8 +52,8 @@ test.it("filters a smart playlist by all or any of its tags", function()
 	taxonomy:setTag("/music/a.flac", late.id, true)
 	taxonomy:setTag("/music/b.flac", high.id, true)
 
-	local all = assert(taxonomy:addPlaylist("Both", true, { high.id, late.id}, "all"))
-	local any = assert(taxonomy:addPlaylist("Either", true, { high.id, late.id}, "any"))
+	local all = assert(taxonomy:addPlaylist("Both", true, { high.id, late.id }, "all"))
+	local any = assert(taxonomy:addPlaylist("Either", true, { high.id, late.id }, "any"))
 	local allTracks = taxonomy:playlistTracks(all, lib)
 	local anyTracks = taxonomy:playlistTracks(any, lib)
 
@@ -87,7 +81,7 @@ end)
 test.it("round-trips tags and playlists through its packed form", function()
 	local taxonomy = Taxonomy.new()
 	local high = assert(taxonomy:addTag("High Energy"))
-	local smart = assert(taxonomy:addPlaylist("High", true, { high.id}, "all"))
+	local smart = assert(taxonomy:addPlaylist("High", true, { high.id }, "all"))
 	local manual = assert(taxonomy:addPlaylist("Manual", false))
 	taxonomy:setTag("/music/a.flac", high.id, true)
 	taxonomy:setPlaylistTrack(manual, "/music/b.flac", true)

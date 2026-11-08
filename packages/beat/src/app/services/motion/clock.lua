@@ -29,7 +29,7 @@ motion.ease = {
 	outBack = function(t)
 		local c1, c3 = 1.70158, 2.70158
 		return 1 + c3 * (t - 1) ^ 3 + c1 * (t - 1) ^ 2
-	end,
+	end
 }
 
 ---@class beat.MotionValue
@@ -63,7 +63,7 @@ function Motion:set(key, value)
 		start = self.now,
 		duration = 0,
 		easing = motion.ease.linear,
-		value = value,
+		value = value
 	}
 end
 
@@ -85,7 +85,7 @@ function Motion:animate(key, target, duration, easing)
 		start = self.now,
 		duration = duration,
 		easing = easing or motion.ease.outCubic,
-		value = from,
+		value = from
 	}
 	self.active = true
 end

@@ -22,7 +22,7 @@ function equalizerRename.new(app, params)
 	local preset = app.services.equalizer:find(params.name)
 	if preset == nil or not preset.custom then return nil end
 	---@type beat.EqualizerRenameState
-	local state = { name = preset.name, draft = preset.name}
+	local state = { name = preset.name, draft = preset.name }
 	app:focusField("equalizerPresetName", #preset.name)
 	return state
 end
@@ -63,50 +63,67 @@ function equalizerRename.view(app, overlay, window)
 	local padding = theme:px(16)
 	local height = theme:px(220)
 	local panel = div()
-	:style(sty():w(width):h(height):column():pad(padding):gap(theme:px(10))
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(14), theme:px(36), "#00000099"))
-	:onClick({ type = "keep"})
-	:children({
-		text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold")
-		:fg(theme:color("text"))),
-		field.view(app, {
-			name = "equalizerPresetName",
-			value = state.draft,
-			placeholder = "Preset name",
-			oninput = |value| -> { type = "equalizerEditDraft", value = value},
-			onsubmit = || -> { type = "saveEqualizerPresetRename", name = name, value = state.draft},
-		}),
-		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
-		:justify("end")):children({
-			button.view(app, {
-				label = "Cancel",
-				onClick = { type = "cancelEqualizerPresetRename"},
-				height = theme:px(30),
-				width = theme:px(80),
-			}),
-			button.view(app, {
-				label = "Save",
-				onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft},
-				primary = true,
-				height = theme:px(30),
-				width = theme:px(74),
-			}),
-		}),
-		button.view(app, {
-			label = "Delete preset",
-			onClick = { type = "deleteEqualizerPreset", name = name},
-			height = theme:px(30),
-			width = width - padding * 2,
-		}),
-	})
+		:style(
+			sty()
+				:w(width):h(height):column():pad(padding):gap(theme:px(10)):radius(theme:radius("md")):bg(theme:color("elevated"))
+				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099")
+		):onClick({ type = "keep" })
+		:children(
+			{
+				text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+				field.view(
+					app,
+					{
+						name = "equalizerPresetName",
+						value = state.draft,
+						placeholder = "Preset name",
+						oninput = |value| -> { type = "equalizerEditDraft", value = value },
+						onsubmit = || -> { type = "saveEqualizerPresetRename", name = name, value = state.draft }
+					}
+				),
+				div()
+					:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
+					:children(
+						{
+							button.view(
+								app,
+								{
+									label = "Cancel",
+									onClick = { type = "cancelEqualizerPresetRename" },
+									height = theme:px(30),
+									width = theme:px(80)
+								}
+							),
+							button.view(
+								app,
+								{
+									label = "Save",
+									onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft },
+									primary = true,
+									height = theme:px(30),
+									width = theme:px(74)
+								}
+							)
+						}
+					),
+				button.view(
+					app,
+					{
+						label = "Delete preset",
+						onClick = { type = "deleteEqualizerPreset", name = name },
+						height = theme:px(30),
+						width = width - padding * 2
+					}
+				)
+			}
+		)
 
 	return div()
-	:style(sty():size(window.width, window.height):offset(0, 0):z(132)
-	:column():align("center"):justify("center")
-	:bg(theme:color("overlay"))):onClick({ type = "dismiss"})
-	:children({ panel})
+		:style(
+			sty()
+				:size(window.width, window.height):offset(0, 0):z(132):column():align("center"):justify("center")
+				:bg(theme:color("overlay"))
+		):onClick({ type = "dismiss" }):children({ panel })
 end
 
 return equalizerRename

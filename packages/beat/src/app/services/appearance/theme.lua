@@ -32,7 +32,7 @@ local THEMES = {
 		sheen = "#ffffff",
 		danger = "#ff6b6b",
 		success = "#7ee787",
-		warning = "#ffc857",
+		warning = "#ffc857"
 	},
 	day = {
 		bg = "#f6f7f9",
@@ -51,7 +51,7 @@ local THEMES = {
 		sheen = "#ffffff",
 		danger = "#c92a2a",
 		success = "#2b8a3e",
-		warning = "#b26a00",
+		warning = "#b26a00"
 	},
 	amoled = {
 		bg = "#000000",
@@ -70,17 +70,17 @@ local THEMES = {
 		sheen = "#ffffff",
 		danger = "#ff6b6b",
 		success = "#7ee787",
-		warning = "#ffc857",
-	},
+		warning = "#ffc857"
+	}
 }
 
 local ACCENTS = {
-	lime = { colour = "#c9f45b", ink = "#0a0c08"},
-	mint = { colour = "#5eead4", ink = "#05201c"},
-	violet = { colour = "#b69cff", ink = "#150b2e"},
-	coral = { colour = "#ff7a66", ink = "#2a0a06"},
-	blue = { colour = "#6ea8ff", ink = "#06162e"},
-	amber = { colour = "#ffc857", ink = "#2a1c00"},
+	lime = { colour = "#c9f45b", ink = "#0a0c08" },
+	mint = { colour = "#5eead4", ink = "#05201c" },
+	violet = { colour = "#b69cff", ink = "#150b2e" },
+	coral = { colour = "#ff7a66", ink = "#2a0a06" },
+	blue = { colour = "#6ea8ff", ink = "#06162e" },
+	amber = { colour = "#ffc857", ink = "#2a1c00" }
 }
 
 --- The colour and ink an accent name or `#rrggbb` value means. A custom colour gets ink that
@@ -97,10 +97,7 @@ local function accentDefinition(value)
 		local g = tonumber(custom:sub(3, 4), 16) or 0
 		local b = tonumber(custom:sub(5, 6), 16) or 0
 		local luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-		return {
-			colour = "#" .. custom:lower(),
-			ink = luminance > 0.62 ? "#0a0c08" : "#f7f7fa",
-		}, true
+		return { colour = "#" .. custom:lower(), ink = luminance > 0.62 ? "#0a0c08" : "#f7f7fa" }, true
 	end
 
 	---@type { colour: string, ink: string }?
@@ -109,29 +106,13 @@ local function accentDefinition(value)
 	return nil, false
 end
 
-local TYPE = {
-	xs = 12,
-	sm = 13,
-	base = 14,
-	md = 15,
-	lg = 19,
-	xl = 24,
-	xxl = 30,
-	hero = 46,
-}
+local TYPE = { xs = 12, sm = 13, base = 14, md = 15, lg = 19, xl = 24, xxl = 30, hero = 46 }
 
 -- Below this, hinted grayscale text loses its counters and even spacing: a 90% UI scale would
 -- otherwise bake an 11 px token at 10 px, which is where the small copy stopped reading cleanly.
 local MIN_PIXEL_HEIGHT = 15
 
-local RADII = {
-	sm = 6,
-	md = 8,
-	lg = 10,
-	xl = 14,
-	hero = 20,
-	full = 999,
-}
+local RADII = { sm = 6, md = 8, lg = 10, xl = 14, hero = 20, full = 999 }
 
 ---@param value string
 local function parse(value)
@@ -147,8 +128,13 @@ local function parse(value)
 end
 
 local function hex(r, g, b, a)
-	return string.format("#%02x%02x%02x%02x", math.floor(r + 0.5), math.floor(g + 0.5),
-	math.floor(b + 0.5), math.floor(a + 0.5))
+	return string.format(
+		"#%02x%02x%02x%02x",
+		math.floor(r + 0.5),
+		math.floor(g + 0.5),
+		math.floor(b + 0.5),
+		math.floor(a + 0.5)
+	)
 end
 
 ---@class beat.Theme
@@ -185,18 +171,21 @@ function theme.new(name, accent, scale, fontFamily)
 	colours.accent = chosen.colour
 	colours.accentInk = chosen.ink
 
-	return setmetatable({
-		name = THEMES[name] ~= nil and name or "night",
-		accent = custom and chosen.colour or (ACCENTS[accent] ~= nil and accent or "lime"),
-		isDark = (THEMES[name] or THEMES.night) == THEMES.night or name == "amoled",
-		colors = colours,
-		fromColors = nil,
-		mix = 1,
-		accentColour = chosen.colour,
-		accentInk = chosen.ink,
-		fontFamily = fontFamily or "Inter",
-		scale = scale or 1,
-	}, Theme)
+	return setmetatable(
+		{
+			name = THEMES[name] ~= nil and name or "night",
+			accent = custom and chosen.colour or (ACCENTS[accent] ~= nil and accent or "lime"),
+			isDark = (THEMES[name] or THEMES.night) == THEMES.night or name == "amoled",
+			colors = colours,
+			fromColors = nil,
+			mix = 1,
+			accentColour = chosen.colour,
+			accentInk = chosen.ink,
+			fontFamily = fontFamily or "Inter",
+			scale = scale or 1
+		},
+		Theme
+	)
 end
 
 ---@param token string

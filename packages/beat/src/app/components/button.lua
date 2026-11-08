@@ -28,14 +28,8 @@ function button.view(app, props)
 
 	local function base(fill)
 		local style = sty()
-		:h(height)
-		:pad(0, theme:px(16), 0, theme:px(16))
-		:row()
-		:align("center")
-		:justify("center")
-		:gap(gap)
-		:radius(theme:radius("sm"))
-		:bg(fill)
+			:h(height):pad(0, theme:px(16), 0, theme:px(16)):row():align("center"):justify("center"):gap(gap)
+			:radius(theme:radius("sm")):bg(fill)
 		if props.width ~= nil then style:w(props.width) end
 		return style
 	end
@@ -44,14 +38,9 @@ function button.view(app, props)
 	if props.icon ~= nil then
 		children[#children + 1] = icon.view(app, { name = props.icon, size = theme:px(16), colour = colour })
 	end
-	children[#children + 1] = text(props.label):style(theme:s():text(theme:type("sm"))
-	:weight("semibold"):fg(colour))
+	children[#children + 1] = text(props.label):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(colour))
 
-	return div()
-	:style(base(background))
-	:hover(base(hover))
-	:onClick(props.onClick)
-	:children(children)
+	return div():style(base(background)):hover(base(hover)):onClick(props.onClick):children(children)
 end
 
 return button

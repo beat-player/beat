@@ -38,24 +38,23 @@ local function start(data)
 		emit = function() end,
 		library = {},
 		collections = {},
-		sessionKey = "",
+		sessionKey = ""
 	}
 	---@class EqualizerToastsStub: beat.ToastsService
 	---@field shown { text: string, tone: string? }[]
 	---@type EqualizerToastsStub
-	local toasts = {
-		list = {},
-		shown = {},
-	}
+	local toasts = { list = {}, shown = {} }
 	function toasts:show(text, tone) self.shown[#self.shown + 1] = { text = text, tone = tone } end
 	local emitted = {}
 
-	local equalizer = Equalizer.new({
-		settings = settings,
-		playback = playback,
-		toasts = toasts,
-		emit = function(message) emitted[#emitted + 1] = message end,
-	})
+	local equalizer = Equalizer.new(
+		{
+			settings = settings,
+			playback = playback,
+			toasts = toasts,
+			emit = function(message) emitted[#emitted + 1] = message end
+		}
+	)
 	return equalizer, settings, toasts, emitted, applied, dir
 end
 
@@ -65,17 +64,7 @@ local function finish(dir)
 end
 
 test.it("cleans up the equalizer settings it is started with", function()
-	local _, settings, _, _, applied, dir = start({
-		equalizerPreset = "Missing",
-		equalizerGains = { 99, -99, 0},
-		equalizerCustomPresets = {
-			{ name = "Low Bass", gains = { 1, 1, 1, 1, 1}},
-			{ name = "Mine", gains = { 40, 0, 0, 0, 0}},
-			{ name = "Mine", gains = { 0}},
-			{ name = "", gains = { 0}},
-			{ name = "Two", gains = { "quiet", 1, nil, 2}},
-		},
-	})
+	local _, settings, _, _, applied, dir = start({ equalizerPreset = "Missing", equalizerGains = { 99, -99, 0 }, equalizerCustomPresets = { { name = "Low Bass", gains = { 1, 1, 1, 1, 1 } }, { name = "Mine", gains = { 40, 0, 0, 0, 0 } }, { name = "Mine", gains = { 0 } }, { name = "", gains = { 0 } }, { name = "Two", gains = { "quiet", 1, nil, 2 } } } })
 	local values = settings.values
 	local gains = assert(values.equalizerGains)
 	local presets = assert(values.equalizerCustomPresets)
@@ -98,10 +87,7 @@ test.it("cleans up the equalizer settings it is started with", function()
 end)
 
 test.it("falls back to the saved custom preset's gains, then to Flat", function()
-	local _, settings, _, _, applied, dir = start({
-		equalizerPreset = "Mine",
-		equalizerCustomPresets = { { name = "Mine", gains = { 3, 2, 1, 0, -1}}},
-	})
+	local _, settings, _, _, applied, dir = start({ equalizerPreset = "Mine", equalizerCustomPresets = { { name = "Mine", gains = { 3, 2, 1, 0, -1 } } } })
 
 	local mineGains = assert(settings.values.equalizerGains)
 	test.equal(settings.values.equalizerPreset, "Mine")
@@ -109,7 +95,7 @@ test.it("falls back to the saved custom preset's gains, then to Flat", function(
 	test.equal(applied[1][5].gain, -1)
 	finish(dir)
 
-	local _, flat, _, _, flatApplied, flatDir = start({ equalizerPreset = "Gone"})
+	local _, flat, _, _, flatApplied, flatDir = start({ equalizerPreset = "Gone" })
 	local flatGains = assert(flat.values.equalizerGains)
 	local flatPresets = assert(flat.values.equalizerCustomPresets)
 	test.equal(flat.values.equalizerPreset, "flat", "nothing to fall back to is Flat")

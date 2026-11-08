@@ -30,8 +30,9 @@ function cover.view(app, props)
 	-- its own because a hover belongs to the box the pointer is in.
 	local sheen = nil
 	if props.sheen then
-		sheen = div():style(sty():size(size, size):radius(radius):offset(0, 0))
-		:hover(sty():size(size, size):radius(radius):offset(0, 0):bg(theme:color("sheen", 0.14)))
+		sheen = div()
+			:style(sty():size(size, size):radius(radius):offset(0, 0))
+			:hover(sty():size(size, size):radius(radius):offset(0, 0):bg(theme:color("sheen", 0.14)))
 	end
 
 	if props.glow then
@@ -40,25 +41,36 @@ function cover.view(app, props)
 		local colour = app.services.covers:colourOf(album)
 		if colour ~= nil then
 			local alpha = 0x66
-			style:shadow(0, 0, math.max(12, math.floor(size * 0.24)), string.format("#%02x%02x%02x%02x",
-			math.floor(colour.r * 255 + 0.5), math.floor(colour.g * 255 + 0.5),
-			math.floor(colour.b * 255 + 0.5), alpha))
+			style:shadow(
+				0,
+				0,
+				math.max(12, math.floor(size * 0.24)),
+				string.format(
+					"#%02x%02x%02x%02x",
+					math.floor(colour.r * 255 + 0.5),
+					math.floor(colour.g * 255 + 0.5),
+					math.floor(colour.b * 255 + 0.5),
+					alpha
+				)
+			)
 		end
 	end
 
 	if asset ~= nil then
-		return div():style(style:image(asset.texture, asset.uv)):children({ sheen})
+		return div():style(style:image(asset.texture, asset.uv)):children({ sheen })
 	end
 
 	local initial = album.title:sub(1, 1):upper()
 
 	return div()
-	:style(style:align("center"):justify("center"):bg(theme:color("elevated")))
-	:children({
-		text(initial):style(theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold")
-		:fg(theme:color("muted", 0.8))),
-		sheen,
-	})
+		:style(style:align("center"):justify("center"):bg(theme:color("elevated")))
+		:children(
+			{
+				text(initial)
+					:style(theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold"):fg(theme:color("muted", 0.8))),
+				sheen
+			}
+		)
 end
 
 return cover

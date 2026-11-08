@@ -46,10 +46,13 @@ function Sidebar:update(message)
 	local x = tonumber(message.x)
 	local height = tonumber(message.height)
 	local old = self.hover
-	if old == nil or old.id ~= id or old.y ~= y or old.top ~= top
-	or old.x ~= x or old.height ~= height then
+	if old == nil or old.id ~= id or old.y ~= y or old.top ~= top or old.x ~= x or old.height ~= height then
 		self.hover = {
-			id = id --[[@as number]], y = y, top = top, x = x, height = height,
+			id = id, --[[@as number]]
+			y = y,
+			top = top,
+			x = x,
+			height = height
 		}
 	end
 end

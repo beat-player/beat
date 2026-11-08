@@ -22,26 +22,38 @@ function volume.view(app, props)
 	local iconSlot = trackWidth ~= nil ? (theme:px(34)) : (theme:px(22))
 	local sliderWidth = trackWidth or (width - theme:px(30))
 
-	return div():style(sty():w(width):h(theme:px(22)):row():align("center"):gap(theme:px(8))):children({
-		div():style(sty():w(iconSlot):h(theme:px(22)):row():align("center"):justify("center")):children(
-		iconButton.view(app, {
-			name = app.services.settings.values.isMuted ? "mute" : "volume",
-			size = theme:px(22),
-			onClick = { type = "mute"},
-		})
-		),
-		slider.view(app, {
-			width = sliderWidth,
-			value = value,
-			min = 0,
-			max = 1,
-			onchange = |value_| -> { type = "volume", value = value_},
-			trackColour = theme:color("text", 0.12),
-			fillColour = theme:color("muted"),
-			thumbColour = theme:color("text"),
-			thumbSize = theme:px(12),
-		}),
-	})
+	return div()
+		:style(sty():w(width):h(theme:px(22)):row():align("center"):gap(theme:px(8)))
+		:children(
+			{
+				div()
+					:style(sty():w(iconSlot):h(theme:px(22)):row():align("center"):justify("center"))
+					:children(
+						iconButton.view(
+							app,
+							{
+								name = app.services.settings.values.isMuted ? "mute" : "volume",
+								size = theme:px(22),
+								onClick = { type = "mute" }
+							}
+						)
+					),
+				slider.view(
+					app,
+					{
+						width = sliderWidth,
+						value = value,
+						min = 0,
+						max = 1,
+						onchange = |value_| -> { type = "volume", value = value_ },
+						trackColour = theme:color("text", 0.12),
+						fillColour = theme:color("muted"),
+						thumbColour = theme:color("text"),
+						thumbSize = theme:px(12)
+					}
+				)
+			}
+		)
 end
 
 return volume

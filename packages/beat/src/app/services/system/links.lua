@@ -25,8 +25,9 @@ function links.open(url)
 		return os.execute("open " .. target .. " >/dev/null 2>&1 &") == 0
 	end
 
-	return os.execute("(xdg-open " .. target .. " >/dev/null 2>&1 || gio open " .. target
-	.. " >/dev/null 2>&1 || sensible-browser " .. target .. " >/dev/null 2>&1) &") == 0
+	return os.execute(
+		"(xdg-open " .. target .. " >/dev/null 2>&1 || gio open " .. target .. " >/dev/null 2>&1 || sensible-browser " .. target .. " >/dev/null 2>&1) &"
+	) == 0
 end
 
 --- Opens a directory in the desktop's file manager. Only a path is accepted, never an arbitrary
@@ -45,8 +46,7 @@ function links.openFolder(dir)
 		return os.execute("open " .. target .. " >/dev/null 2>&1 &") == 0
 	end
 
-	return os.execute("(xdg-open " .. target .. " >/dev/null 2>&1 || gio open " .. target
-	.. " >/dev/null 2>&1) &") == 0
+	return os.execute("(xdg-open " .. target .. " >/dev/null 2>&1 || gio open " .. target .. " >/dev/null 2>&1) &") == 0
 end
 
 return links

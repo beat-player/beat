@@ -41,39 +41,51 @@ local function searchTagFilter(app, width)
 	local theme = app.services.appearance.theme
 	local search = app.services.search
 	local columns = width >= 900 ? 6 : width >= 600 and 4 or 3
-	local pills = tagPills.view(app, {
-		tags = tags,
-		selected = search.tagFilter,
-		action = |tag| -> { type = "toggleTagFilter", id = tag.id},
-		width = width,
-		columns = columns,
-	})
+	local pills = tagPills.view(
+		app,
+		{
+			tags = tags,
+			selected = search.tagFilter,
+			action = |tag| -> { type = "toggleTagFilter", id = tag.id },
+			width = width,
+			columns = columns
+		}
+	)
 	if pills == nil then return nil, 0 end
 
 	local headerActions = {}
 	if next(search.tagFilter) ~= nil then
-		headerActions[#headerActions + 1] = text("All"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(search.match == "all" ? (theme:color("accent")) : (theme:color("muted")))):onClick({ type = "tagFilterMatch", value = "all"})
-		headerActions[#headerActions + 1] = text("Any"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(search.match == "any" ? (theme:color("accent")) : (theme:color("muted")))):onClick({ type = "tagFilterMatch", value = "any"})
-		headerActions[#headerActions + 1] = text("Clear"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(theme:color("accent"))):onClick({ type = "clearTagFilter"})
+		headerActions[#headerActions + 1] = text("All")
+			:style(
+				theme:s()
+					:text(theme:type("xs")):weight("semibold")
+					:fg(search.match == "all" ? (theme:color("accent")) : (theme:color("muted")))
+			):onClick({ type = "tagFilterMatch", value = "all" })
+		headerActions[#headerActions + 1] = text("Any")
+			:style(
+				theme:s()
+					:text(theme:type("xs")):weight("semibold")
+					:fg(search.match == "any" ? (theme:color("accent")) : (theme:color("muted")))
+			):onClick({ type = "tagFilterMatch", value = "any" })
+		headerActions[#headerActions + 1] = text("Clear")
+			:style(theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("accent")))
+			:onClick({ type = "clearTagFilter" })
 	end
 	local headerChildren = {
-		text("Filter by tag"):style(theme:s():wrel(1.0):text(theme:type("xs")):weight("bold")
-		:fg(theme:color("muted"))),
-		div():style(sty():row():w(theme:px(120)):gap(theme:px(8)):align("center")
-		:justify("end")):children(headerActions),
+		text("Filter by tag"):style(theme:s():wrel(1.0):text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
+		div():style(sty():row():w(theme:px(120)):gap(theme:px(8)):align("center"):justify("end")):children(headerActions)
 	}
 
 	local rows = math.ceil(#tags / columns)
-	local height = theme:px(18) + theme:px(8) + rows * theme:px(28)
-	+math.max(0, rows - 1) * theme:px(8) + theme:px(4)
-	return div():style(sty():column():wrel(1.0):h(height):gap(theme:px(8))):children({
-		div():style(sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")):children(
-		headerChildren),
-		pills,
-	}), height
+	local height = theme:px(18) + theme:px(8) + rows * theme:px(28) + math.max(0, rows - 1) * theme:px(8) + theme:px(4)
+	return div()
+		:style(sty():column():wrel(1.0):h(height):gap(theme:px(8)))
+		:children(
+			{
+				div():style(sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")):children(headerChildren),
+				pills
+			}
+		), height
 end
 
 ---@param app beat.App
@@ -84,12 +96,15 @@ function searchPage.view(app, page, window)
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
-		return emptyState.view(app, {
-			title = "Search your library",
-			copy = "Choose a folder first.",
-			actionLabel = "Choose a folder",
-			action = { type = "chooseFolder"},
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Search your library",
+				copy = "Choose a folder first.",
+				actionLabel = "Choose a folder",
+				action = { type = "chooseFolder" }
+			}
+		)
 	end
 
 	local content = metrics.contentWidth(app, window.width)
@@ -108,7 +123,10 @@ function searchPage.view(app, page, window)
 			for _, album in ipairs(recent) do
 				local keep = false
 				for _, track in ipairs(album.tracks) do
-					if taxonomy:matches(track.path, filterIds, search.match) then keep = true; break end
+					if taxonomy:matches(track.path, filterIds, search.match) then
+						keep = true
+						break
+					end
 				end
 				if keep then matching[#matching + 1] = album end
 			end
@@ -117,22 +135,27 @@ function searchPage.view(app, page, window)
 		local cards = {}
 		for _, album in ipairs(recent) do
 			---@cast album beat.Album
-			cards[#cards + 1] = albumCard.view(app, {
-				album = album,
-				width = cardWidth,
-				onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
-				onPlay = { type = "playAlbum", id = album.id},
-			})
+			cards[#cards + 1] = albumCard.view(
+				app,
+				{
+					album = album,
+					width = cardWidth,
+					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
+					onPlay = { type = "playAlbum", id = album.id }
+				}
+			)
 		end
-		return div():style(sty():column():wrel(1.0):h(cardHeight + theme:px(150)):gap(gap)):children({
-			text("Search your library"):style(theme:s():text(theme:type("xxl")):weight("bold")
-			:fg(theme:color("text"))),
-			text("Artists, albums and tracks are all one field."):style(
-			theme:s():text(theme:type("sm")):fg(theme:color("muted"))
-			),
-			section.view(app, { title = "Recently added" }),
-			div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards),
-		})
+		return div()
+			:style(sty():column():wrel(1.0):h(cardHeight + theme:px(150)):gap(gap))
+			:children(
+				{
+					text("Search your library"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
+					text("Artists, albums and tracks are all one field.")
+						:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+					section.view(app, { title = "Recently added" }),
+					div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
+				}
+			)
 	end
 
 	local albums, artists, tracks = search:results()
@@ -145,8 +168,7 @@ function searchPage.view(app, page, window)
 	local sectionHeight = theme:px(24)
 	local height = theme:px(40) + filterHeight
 	if albumLimit > 0 then
-		height = height + sectionGap + sectionHeight + sectionGap + albumRows * cardHeight
-		+math.max(0, albumRows - 1) * rowGap
+		height = height + sectionGap + sectionHeight + sectionGap + albumRows * cardHeight + math.max(0, albumRows - 1) * rowGap
 	end
 	if artistLimit > 0 then
 		height = height + sectionGap + sectionHeight + sectionGap + artistLimit * theme:px(56)
@@ -156,29 +178,34 @@ function searchPage.view(app, page, window)
 	end
 
 	local children = {
-		text("Results for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("xxl"))
-		:weight("bold"):fg(theme:color("text")):ellipsis()),
+		text("Results for \"" .. search.query .. "\"")
+			:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
 	}
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then
-		children[#children + 1] = section.view(app, {
-			title = "Albums",
-			action = #albums > albumLimit ? { type = "navigate",
-				page = { kind = "searchAll", category = "albums"}} : nil,
-		})
+		children[#children + 1] = section.view(
+			app,
+			{
+				title = "Albums",
+				action = #albums > albumLimit ? { type = "navigate", page = { kind = "searchAll", category = "albums" } } : nil
+			}
+		)
 		for rowAt = 1, albumRows do
 			local row = {}
 			for columnAt = 1, columns do
 				local at = (rowAt - 1) * columns + columnAt
 				local album = albums[at]
 				if album ~= nil and at <= albumLimit then
-					row[#row + 1] = albumCard.view(app, {
-						album = album,
-						width = cardWidth,
-						onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
-						onPlay = { type = "playAlbum", id = album.id},
-					})
+					row[#row + 1] = albumCard.view(
+						app,
+						{
+							album = album,
+							width = cardWidth,
+							onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
+							onPlay = { type = "playAlbum", id = album.id }
+						}
+					)
 				end
 			end
 			children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(row)
@@ -186,58 +213,74 @@ function searchPage.view(app, page, window)
 	end
 
 	if artistLimit > 0 then
-		children[#children + 1] = section.view(app, {
-			title = "Artists",
-			action = #artists > artistLimit ? { type = "navigate",
-				page = { kind = "searchAll", category = "artists"}} : nil,
-		})
+		children[#children + 1] = section.view(
+			app,
+			{
+				title = "Artists",
+				action = #artists > artistLimit ? { type = "navigate", page = { kind = "searchAll", category = "artists" } } : nil
+			}
+		)
 		for at, artist in ipairs(artists) do
 			if at > artistLimit then break end
 			children[#children + 1] = div()
-			:style(sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")))
-			:hover(sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm"))
-			:bg(theme:color("hover")))
-			:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
-			:children({
-				artist.albums[1] ~= nil and cover.view(app, { album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") })
-				or div():style(sty():size(theme:px(44), theme:px(44))
-				:radius(theme:radius("full")):bg(theme:color("elevated"))),
-				text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold")
-				:fg(theme:color("text"))),
-			})
+				:style(sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")))
+				:hover(
+					sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover"))
+				):onClick({ type = "navigate", page = { kind = "artist", id = artist.id } })
+				:children(
+					{
+						artist.albums[1] ~= nil and cover.view(
+							app,
+							{ album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") }
+						) or div():style(sty():size(theme:px(44), theme:px(44)):radius(theme:radius("full")):bg(theme:color("elevated"))),
+						text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text")))
+					}
+				)
 		end
 	end
 
 	if trackLimit > 0 then
-		children[#children + 1] = section.view(app, {
-			title = "Tracks",
-			action = #tracks > trackLimit ? { type = "navigate",
-				page = { kind = "searchAll", category = "tracks"}} : nil,
-		})
+		children[#children + 1] = section.view(
+			app,
+			{
+				title = "Tracks",
+				action = #tracks > trackLimit ? { type = "navigate", page = { kind = "searchAll", category = "tracks" } } : nil
+			}
+		)
 		for at, track in ipairs(tracks) do
 			if at > trackLimit then break end
-			children[#children + 1] = trackRow.view(app, {
-				track = track,
-				index = at,
-				current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
-				playing = app.services.playback.player:isPlaying(),
-				onClick = { type = "playTrack", trackId = track.id},
-				width = content,
-				showAlbum = true,
-			})
+			children[#children + 1] = trackRow.view(
+				app,
+				{
+					track = track,
+					index = at,
+					current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+					playing = app.services.playback.player:isPlaying(),
+					onClick = { type = "playTrack", trackId = track.id },
+					width = content,
+					showAlbum = true
+				}
+			)
 		end
 	end
 
 	if #albums + #artists + #tracks == 0 then
 		height = height + theme:px(300) + sectionGap
-		children[#children + 1] = div():style(sty():wrel(1.0):h(theme:px(300))):children({
-			emptyState.view(app, {
-				title = "No results",
-				copy = "Try a different artist, album or title.",
-				actionLabel = "Clear search",
-				action = { type = "clearSearch"},
-			}),
-		})
+		children[#children + 1] = div()
+			:style(sty():wrel(1.0):h(theme:px(300)))
+			:children(
+				{
+					emptyState.view(
+						app,
+						{
+							title = "No results",
+							copy = "Try a different artist, album or title.",
+							actionLabel = "Clear search",
+							action = { type = "clearSearch" }
+						}
+					)
+				}
+			)
 	end
 
 	return div():style(sty():column():wrel(1.0):h(height + theme:space(24)):gap(theme:space(16))):children(children)

@@ -20,23 +20,23 @@
 local Search = {}
 Search.__index = Search
 Search.needs = { "library", "collections", "emit" }
-Search.handles = {
-	"search", "clearSearch", "openSearch",
-	"toggleTagFilter", "tagFilterMatch", "clearTagFilter",
-}
+Search.handles = { "search", "clearSearch", "openSearch", "toggleTagFilter", "tagFilterMatch", "clearTagFilter" }
 
 ---@param deps { library: beat.LibraryService, collections: beat.CollectionsService, emit: fun(message: table) }
 ---@return beat.SearchService
 function Search.new(deps)
-	local self = setmetatable({
-		query = "",
-		tagFilter = {},
-		match = "all",
-		cache = nil,
-		library = deps.library,
-		collections = deps.collections,
-		emit = deps.emit,
-	}, Search)
+	local self = setmetatable(
+		{
+			query = "",
+			tagFilter = {},
+			match = "all",
+			cache = nil,
+			library = deps.library,
+			collections = deps.collections,
+			emit = deps.emit
+		},
+		Search
+	)
 
 	-- A scan replaces the library with a different set of songs: what was typed and selected for
 	-- the old one would keep showing nothing, so the field starts empty again.
@@ -71,7 +71,7 @@ function Search:results()
 	local query = self.query
 	if self.cache == nil or self.cache.query ~= query then
 		local albums, artists, tracks = library:search(query)
-		self.cache = { query = query, albums = albums, artists = artists, tracks = tracks}
+		self.cache = { query = query, albums = albums, artists = artists, tracks = tracks }
 	end
 
 	local albums, artists, tracks = self.cache.albums, self.cache.artists, self.cache.tracks
@@ -90,7 +90,10 @@ function Search:results()
 	for _, album in ipairs(albums) do
 		local keep = false
 		for _, track in ipairs(album.tracks) do
-			if taxonomy:matches(track.path, ids, self.match) then keep = true; break end
+			if taxonomy:matches(track.path, ids, self.match) then
+				keep = true
+				break
+			end
 		end
 		if keep then matchedAlbums[#matchedAlbums + 1] = album end
 	end
@@ -99,7 +102,10 @@ function Search:results()
 	for _, artist in ipairs(artists) do
 		local keep = false
 		for _, track in ipairs(artist.tracks) do
-			if taxonomy:matches(track.path, ids, self.match) then keep = true; break end
+			if taxonomy:matches(track.path, ids, self.match) then
+				keep = true
+				break
+			end
 		end
 		if keep then matchedArtists[#matchedArtists + 1] = artist end
 	end
@@ -129,15 +135,18 @@ function Search:update(message)
 		-- The field started this navigation. It keeps the keyboard and its caret, so the next
 		-- character is typed after the first rather than put in front of it; navigating to the
 		-- page already showing does nothing.
-		self.emit({ type = "navigate", page = { kind = "search"}, keepFocus = true})
+		self.emit({ type = "navigate", page = { kind = "search" }, keepFocus = true })
 	elseif message.type == "clearSearch" then
 		self:clear()
 	elseif message.type == "openSearch" then
-		self.emit({ type = "navigate", page = { kind = "search"}})
-		self.emit({ type = "focus", field = "search", at = #self.query})
+		self.emit({ type = "navigate", page = { kind = "search" } })
+		self.emit({ type = "focus", field = "search", at = #self.query })
 	elseif message.type == "toggleTagFilter" then
-		if self.tagFilter[message.id] then self.tagFilter[message.id] = nil
-		else self.tagFilter[message.id] = true end
+		if self.tagFilter[message.id] then
+			self.tagFilter[message.id] = nil
+		else
+			self.tagFilter[message.id] = true
+		end
 	elseif message.type == "tagFilterMatch" then
 		self.match = message.value == "any" ? "any" : "all"
 	elseif message.type == "clearTagFilter" then

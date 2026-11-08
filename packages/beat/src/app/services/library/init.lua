@@ -25,15 +25,18 @@ LibraryService.needs = { "settings", "options", "emit" }
 ---@param deps { settings: beat.SettingsService, options: { scan: boolean? }?, emit: fun(message: table) }
 ---@return beat.LibraryService
 function LibraryService.new(deps)
-	local self = setmetatable({
-		current = nil,
-		sortedAlbums = nil,
-		sortedFor = nil,
-		settings = deps.settings,
-		emit = deps.emit,
-		replaced = Signal.new(),
-		changed = Signal.new(),
-	}, LibraryService)
+	local self = setmetatable(
+		{
+			current = nil,
+			sortedAlbums = nil,
+			sortedFor = nil,
+			settings = deps.settings,
+			emit = deps.emit,
+			replaced = Signal.new(),
+			changed = Signal.new()
+		},
+		LibraryService
+	)
 
 	local options = deps.options or {}
 	local root = deps.settings.values.root
@@ -55,7 +58,7 @@ function LibraryService:replace(root)
 	self.current = Library.new(root)
 	dropSorted(self)
 	self.replaced:fire(self.current)
-	self.emit({ type = "libraryReplaced"})
+	self.emit({ type = "libraryReplaced" })
 end
 
 --- Drops the tracks a folder add is about to replace. The folder is scanned again from the

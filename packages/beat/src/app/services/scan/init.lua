@@ -34,8 +34,15 @@ local Scan = {}
 Scan.__index = Scan
 Scan.needs = { "settings", "library", "covers", "playback", "toasts", "emit", "window", "options" }
 Scan.handles = {
-	"startScan", "rescan", "chooseFolder", "pickFolder", "libraryAddFolder", "cancelScan",
-	"hideScanIsland", "showScanIsland", "dismissScanSummary",
+	"startScan",
+	"rescan",
+	"chooseFolder",
+	"pickFolder",
+	"libraryAddFolder",
+	"cancelScan",
+	"hideScanIsland",
+	"showScanIsland",
+	"dismissScanSummary"
 }
 
 ---@param deps {
@@ -50,26 +57,29 @@ Scan.handles = {
 --- }
 ---@return beat.ScanService
 function Scan.new(deps)
-	return setmetatable({
-		job = nil,
-		addJob = nil,
-		addFolder = nil,
-		pick = nil,
-		pickRequest = nil,
-		pickQueue = {},
-		islandOpen = true,
-		summary = nil,
-		skipped = 0,
-		errors = {},
-		settings = deps.settings,
-		library = deps.library,
-		covers = deps.covers,
-		playback = deps.playback,
-		toasts = deps.toasts,
-		emit = deps.emit,
-		window = deps.window,
-		options = deps.options or {},
-	}, Scan)
+	return setmetatable(
+		{
+			job = nil,
+			addJob = nil,
+			addFolder = nil,
+			pick = nil,
+			pickRequest = nil,
+			pickQueue = {},
+			islandOpen = true,
+			summary = nil,
+			skipped = 0,
+			errors = {},
+			settings = deps.settings,
+			library = deps.library,
+			covers = deps.covers,
+			playback = deps.playback,
+			toasts = deps.toasts,
+			emit = deps.emit,
+			window = deps.window,
+			options = deps.options or {}
+		},
+		Scan
+	)
 end
 
 --- A root that was never chosen is the first launch: the folder browser asks for one.
@@ -119,7 +129,7 @@ function Scan:start(root)
 	self.settings.values.root = root
 	self.settings:save()
 
-	self.emit({ type = "reset", page = { kind = "home"}})
+	self.emit({ type = "reset", page = { kind = "home" } })
 end
 
 --- Adds one folder to the library that is already there. The tracks under it are dropped first,
@@ -189,7 +199,7 @@ function Scan:addTrack(event, errors)
 	if not ok then
 		self.toasts:show("Could not read a scanned track", "error")
 		if errors ~= nil then
-			errors[#errors + 1] = { path = event.entry.path, message = tostring(err)}
+			errors[#errors + 1] = { path = event.entry.path, message = tostring(err) }
 		end
 	elseif track ~= nil and (track.hasPicture or gainedCover) then
 		self.covers:forget(track.albumId)
@@ -244,7 +254,7 @@ function Scan:step(now)
 			self.pick = nil
 			self.pickRequest = nil
 			if request ~= nil and request.reply ~= nil then
-				self.emit({ type = request.reply, path = chosen})
+				self.emit({ type = request.reply, path = chosen })
 			else
 				self:start(chosen)
 			end
@@ -258,7 +268,7 @@ function Scan:step(now)
 				self.toasts:show("No system folder dialog is available on this machine", "error")
 			end
 			if request ~= nil and request.reply ~= nil then
-				self.emit({ type = request.reply, path = nil})
+				self.emit({ type = request.reply, path = nil })
 			end
 			self:nextPick()
 			changed = true
@@ -290,7 +300,7 @@ function Scan:step(now)
 					tracks = #library.current.tracks,
 					albums = #library.current.albums,
 					skipped = progress.skipped,
-					at = now,
+					at = now
 				}
 			elseif job.error ~= nil then
 				self.toasts:show(job.error or "Scan failed", "error")
@@ -324,10 +334,9 @@ function Scan:step(now)
 				library:finish()
 				local saved, saveErr = library:save()
 				if not saved then self.toasts:show(saveErr or "Could not save the library", "error") end
-				self.emit({ type = "libraryChanged"})
+				self.emit({ type = "libraryChanged" })
 				local tracks = tonumber(progress.tracks) or 0
-				self.toasts:show("Added " .. tracks .. " track" .. (tracks == 1 and "" or "s")
-					.. " to the library")
+				self.toasts:show("Added " .. tracks .. " track" .. (tracks == 1 and "" or "s") .. " to the library")
 				if (progress.skipped or 0) > 0 then
 					self.toasts:show(progress.skipped .. " files could not be read", "error")
 				end

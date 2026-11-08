@@ -20,21 +20,20 @@ local field = {}
 ---@return wonderland.Element
 function field.view(app, props)
 	local theme = app.services.appearance.theme
-	local focused = app.layoutPlugin ~= nil and app.window ~= nil
-	and app.layoutPlugin:getFocusedId(app.window) == props.name
+	local focused = app.layoutPlugin ~= nil and app.window ~= nil and app.layoutPlugin:getFocusedId(app.window) == props.name
 	local shown = props.value ~= "" and props.value or (focused and " " or props.placeholder)
 	local colour = props.value ~= "" ? (theme:color("text")) : focused and (theme:color("text")) or (theme:color("faint"))
-	local fieldStyle = sty():h(theme:px(34)):row():align("center")
-	:pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("sm")):bg(theme:color("surface"))
-	:text(theme:type("sm")):fg(theme:color("text"))
-	if props.width ~= nil then fieldStyle:w(props.width) else fieldStyle:wrel(1.0) end
-	local input = div():style(fieldStyle)
-	:input({
-		name = props.name,
-		value = props.value,
-		oninput = props.oninput,
-		onsubmit = props.onsubmit,
-	})
+	local fieldStyle = sty()
+		:h(theme:px(34)):row():align("center"):pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("sm"))
+		:bg(theme:color("surface")):text(theme:type("sm")):fg(theme:color("text"))
+	if props.width ~= nil then
+		fieldStyle:w(props.width)
+	else
+		fieldStyle:wrel(1.0)
+	end
+	local input = div()
+		:style(fieldStyle)
+		:input({ name = props.name, value = props.value, oninput = props.oninput, onsubmit = props.onsubmit })
 	input:children(text(shown):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(colour):ellipsis()))
 	return input
 end

@@ -21,7 +21,7 @@ test.it("prunes covers the completed scan did not use", function()
 	test.truthy(fs.write(usedFile, "used"))
 	test.truthy(fs.write(unusedFile, "unused"))
 
-	local removed = artworkCache.prune(root, { [usedFile] = true})
+	local removed = artworkCache.prune(root, { [usedFile] = true })
 	test.equal(removed, 1)
 	test.truthy(fs.isfile(usedFile))
 	test.falsy(fs.isfile(unusedFile))

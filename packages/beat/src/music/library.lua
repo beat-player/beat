@@ -90,7 +90,7 @@ function Library.new(root)
 		-- a folder leaves gaps, and a later add must not reuse an id something still refers to.
 		nextTrackId = 1,
 		nextAlbumId = 1,
-		nextArtistId = 1,
+		nextArtistId = 1
 	}, Library)
 end
 
@@ -167,7 +167,7 @@ function Library:add(info, entry, cover, coverCache)
 		coverPath = intern(self, cover),
 		coverCache = intern(self, coverCache),
 		modified = entry.modifyTime or 0,
-		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
+		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle)
 	}
 
 	-- The album key is the album artist when the files agree on one, and the album's directory
@@ -195,7 +195,7 @@ function Library:add(info, entry, cover, coverCache)
 			coverCache = intern(self, coverCache),
 			coverTrack = info.hasPicture and track or nil,
 			modified = track.modified,
-			hash = names.fold(albumTitle .. "\0" .. albumArtist),
+			hash = names.fold(albumTitle .. "\0" .. albumArtist)
 		}
 
 		self.albums[#self.albums + 1] = album
@@ -224,13 +224,7 @@ function Library:add(info, entry, cover, coverCache)
 	if profile == nil then
 		local artistId = self.nextArtistId
 		self.nextArtistId = artistId + 1
-		profile = {
-			id = artistId,
-			name = artistKey,
-			albums = {},
-			tracks = {},
-			hash = names.fold(artistKey),
-		}
+		profile = { id = artistId, name = artistKey, albums = {}, tracks = {}, hash = names.fold(artistKey) }
 
 		self.artists[#self.artists + 1] = profile
 		self.artistById[artistId] = profile
@@ -389,7 +383,7 @@ function Library:finish()
 		table.sort(artist.tracks, trackOrder)
 		orderedArtists[#orderedArtists + 1] = artist
 	end
-	table.sort(orderedArtists,|a, b| -> a.hash < b.hash)
+	table.sort(orderedArtists, |a, b| -> a.hash < b.hash)
 	self.artists = orderedArtists
 
 	self.ready = true

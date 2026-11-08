@@ -44,7 +44,7 @@ function Toasts:show(text, tone)
 		text = text,
 		tone = tone,
 		at = now,
-		expires = now + (tone == "error" and ERROR_LIFE or LIFE),
+		expires = now + (tone == "error" and ERROR_LIFE or LIFE)
 	}
 	if #self.list > MAX_VISIBLE then table.remove(self.list, 1) end
 
@@ -74,8 +74,7 @@ function Toasts:step(now)
 		local expires = toast.expires or (toast.at + life)
 		local box = toast.rect
 
-		if pointer ~= nil and box ~= nil and pointer.x >= box.x and pointer.x <= box.x + box.width
-		and pointer.y >= box.y and pointer.y <= box.y + box.height then
+		if pointer ~= nil and box ~= nil and pointer.x >= box.x and pointer.x <= box.x + box.width and pointer.y >= box.y and pointer.y <= box.y + box.height then
 			expires = now + life
 		end
 

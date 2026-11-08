@@ -33,12 +33,16 @@ function tagPills.view(app, props)
 		local active = selected ~= nil and selected[tag.id] == true
 		local fg = active and theme.accentInk or theme:color("text")
 		local pill = div()
-		:style(sty():w(pillWidth):h(theme:px(28)):pad(0, theme:px(10), 0, theme:px(10))
-		:radius(theme:radius("full")):align("center"):justify("center")
-		:bg(active ? (theme:color("accent")) : (theme:color("elevated")))
-		:border((theme:px(1)), active ? (theme:color("accent")) : (theme:color("border"))))
-		:children(text(tag.name):style(theme:s():w(pillWidth - theme:px(20)):text(theme:type("xs"))
-		:weight("semibold"):fg(fg):ellipsis()))
+			:style(
+				sty()
+					:w(pillWidth):h(theme:px(28)):pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("full")):align("center")
+					:justify("center"):bg(active ? (theme:color("accent")) : (theme:color("elevated")))
+					:border(((theme:px(1))), active ? (theme:color("accent")) : (theme:color("border")))
+			)
+			:children(
+				text(tag.name)
+					:style(theme:s():w(pillWidth - theme:px(20)):text(theme:type("xs")):weight("semibold"):fg(fg):ellipsis())
+			)
 		if action ~= nil then pill:onClick(action(tag)) end
 		row[#row + 1] = pill
 		shown += 1
@@ -50,9 +54,8 @@ function tagPills.view(app, props)
 
 	if #row > 0 then rows[#rows + 1] = div():style(sty():row():h(theme:px(28)):gap(gap)):children(row) end
 	if limit ~= nil and #tags > limit then
-		rows[#rows + 1] = text("+" .. tostring(#tags - limit) .. " more tags"):style(
-		theme:s():text(theme:type("xs")):fg(theme:color("faint"))
-		)
+		rows[#rows + 1] = text("+" .. tostring(#tags - limit) .. " more tags")
+			:style(theme:s():text(theme:type("xs")):fg(theme:color("faint")))
 	end
 	if #rows == 0 then return nil end
 	local height = #rows * theme:px(28) + math.max(0, #rows - 1) * theme:px(8)

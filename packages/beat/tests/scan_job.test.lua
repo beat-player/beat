@@ -15,28 +15,13 @@ end
 ---@param code number
 ---@return process.Child
 local function exited(code)
-	return {
-		pid = 1,
-		poll = function() return code end,
-		wait = function() return code, "", "" end,
-		kill = function() end,
-	}
+	return { pid = 1, poll = function() return code end, wait = function() return code, "", "" end, kill = function() end }
 end
 
 test.it("reads tracks, progress and completion in order", function()
 	local output = os.tmpname() .. "-beat-scan-test.jsonl"
 	local cancel = os.tmpname() .. "-beat-scan-test.cancel"
-	writeLines(output, {
-		{ type = "progress", phase = "inspect", files = 2, inspected = 0, tracks = 0, skipped = 0,
-			errors = {}, current = "/music/a.flac" },
-		{ type = "track", info = { format = "FLAC", duration = 10 }, entry = { path = "/music/a.flac",
-				dir = "/music", name = "a.flac", ext = "flac" }, cover = nil },
-		{ type = "track", info = { format = "FLAC", duration = 11 }, entry = { path = "/music/b.flac",
-				dir = "/music", name = "b.flac", ext = "flac" }, cover = "/music/cover.jpg" },
-		{ type = "progress", phase = "done", files = 2, inspected = 2, tracks = 2, skipped = 0,
-			errors = {}, current = nil },
-		{ type = "done", skipped = 0, errors = {} },
-	})
+	writeLines(output, { { type = "progress", phase = "inspect", files = 2, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = "/music/a.flac" }, { type = "track", info = { format = "FLAC", duration = 10 }, entry = { path = "/music/a.flac", dir = "/music", name = "a.flac", ext = "flac" }, cover = nil }, { type = "track", info = { format = "FLAC", duration = 11 }, entry = { path = "/music/b.flac", dir = "/music", name = "b.flac", ext = "flac" }, cover = "/music/cover.jpg" }, { type = "progress", phase = "done", files = 2, inspected = 2, tracks = 2, skipped = 0, errors = {}, current = nil }, { type = "done", skipped = 0, errors = {} } })
 
 	local job = ScanJob.new("/music", output, cancel)
 	local events = job:poll(1)
@@ -76,9 +61,7 @@ end)
 test.it("fails a scan whose worker exits without finishing, once its output is read", function()
 	local output = os.tmpname() .. "-beat-scan-exit.jsonl"
 	local cancel = os.tmpname() .. "-beat-scan-exit.cancel"
-	writeLines(output, {
-		{ type = "track", info = { duration = 1 }, entry = { path = "/a", dir = "/", name = "a", ext = "wav" } },
-	})
+	writeLines(output, { { type = "track", info = { duration = 1 }, entry = { path = "/a", dir = "/", name = "a", ext = "wav" } } })
 
 	local job = ScanJob.new("/", output, cancel)
 	job.child = exited(1)

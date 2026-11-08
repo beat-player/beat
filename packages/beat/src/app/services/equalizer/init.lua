@@ -18,8 +18,12 @@ local Equalizer = {}
 Equalizer.__index = Equalizer
 Equalizer.needs = { "settings", "playback", "toasts", "emit" }
 Equalizer.handles = {
-	"equalizerPreset", "newEqualizerPreset", "editEqualizerPreset", "equalizerGain",
-	"saveEqualizerPresetRename", "deleteEqualizerPreset",
+	"equalizerPreset",
+	"newEqualizerPreset",
+	"editEqualizerPreset",
+	"equalizerGain",
+	"saveEqualizerPresetRename",
+	"deleteEqualizerPreset"
 }
 
 -- How many presets the panel's add button will make. A file that already holds more is left alone
@@ -47,7 +51,7 @@ function Equalizer.new(deps)
 		settings = deps.settings,
 		playback = deps.playback,
 		toasts = deps.toasts,
-		emit = deps.emit,
+		emit = deps.emit
 	}, Equalizer)
 
 	self:load()
@@ -73,9 +77,8 @@ function Equalizer:load()
 	end
 	if type(values.equalizerCustomPresets) == "table" then
 		for _, item in ipairs(values.equalizerCustomPresets) do
-			if type(item) == "table" and type(item.name) == "string" and item.name ~= ""
-			and not used[item.name] and #customs < LOAD_LIMIT then
-				customs[#customs + 1] = { name = item.name, gains = bands.sanitize(item.gains)}
+			if type(item) == "table" and type(item.name) == "string" and item.name ~= "" and not used[item.name] and #customs < LOAD_LIMIT then
+				customs[#customs + 1] = { name = item.name, gains = bands.sanitize(item.gains) }
 				used[item.name] = true
 			end
 		end
@@ -84,8 +87,9 @@ function Equalizer:load()
 	for _, entry in ipairs(customs) do
 		if preset == entry.name then custom = entry end
 	end
-	local gains = values.equalizerGains ~= nil and bands.sanitize(values.equalizerGains)
-	or (custom ~= nil and bands.copyGains(custom.gains)) or bands.presetGains(preset)
+	local gains = values.equalizerGains ~= nil and bands.sanitize(values.equalizerGains) or (custom ~= nil and bands.copyGains(
+		custom.gains
+	)) or bands.presetGains(preset)
 	if bands.preset(preset) == nil and custom == nil then
 		preset = type(values.equalizerGains) == "table" ? "custom" : "flat"
 	end
@@ -111,12 +115,7 @@ function Equalizer:presets()
 	local list = {}
 	for _, preset in ipairs(bands.presets) do list[#list + 1] = preset end
 	for _, preset in ipairs(self.settings.values.equalizerCustomPresets or {}) do
-		list[#list + 1] = {
-			id = preset.name,
-			name = preset.name,
-			gains = preset.gains,
-			custom = true,
-		}
+		list[#list + 1] = { id = preset.name, name = preset.name, gains = preset.gains, custom = true }
 	end
 	return list
 end
@@ -199,10 +198,7 @@ function Equalizer:create()
 	local name = self:nextName()
 	local gains = bands.copyGains(values.equalizerGains or {})
 	values.equalizerCustomPresets = customs
-	customs[#customs + 1] = {
-		name = name,
-		gains = gains,
-	}
+	customs[#customs + 1] = { name = name, gains = gains }
 	values.equalizerPreset = name
 	self:apply()
 	self.settings:changed()
@@ -268,7 +264,10 @@ function Equalizer:delete(name)
 	local at
 	local customs = values.equalizerCustomPresets or {}
 	for index, preset in ipairs(customs) do
-		if preset.name == name then at = index; break end
+		if preset.name == name then
+			at = index
+			break
+		end
 	end
 	if at == nil then return false end
 	table.remove(customs, at)

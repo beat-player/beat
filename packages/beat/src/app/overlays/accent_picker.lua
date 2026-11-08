@@ -17,14 +17,20 @@ local function hsvColour(hue, saturation, value)
 	local q = value * (1 - fraction * saturation)
 	local t = value * (1 - (1 - fraction) * saturation)
 	local r, g, b
-	if index == 0 then r, g, b = value, t, p
-	elseif index == 1 then r, g, b = q, value, p
-	elseif index == 2 then r, g, b = p, value, t
-	elseif index == 3 then r, g, b = p, q, value
-	elseif index == 4 then r, g, b = t, p, value
-	else r, g, b = value, p, q end
-	return string.format("#%02x%02x%02x", math.floor(r * 255 + 0.5),
-	math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
+	if index == 0 then
+		r, g, b = value, t, p
+	elseif index == 1 then
+		r, g, b = q, value, p
+	elseif index == 2 then
+		r, g, b = p, value, t
+	elseif index == 3 then
+		r, g, b = p, q, value
+	elseif index == 4 then
+		r, g, b = t, p, value
+	else
+		r, g, b = value, p, q
+	end
+	return string.format("#%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
 local ACCENT_GRID = {}
@@ -46,10 +52,11 @@ local accentPicker = {}
 --- name otherwise -- so the grid starts where the app already is.
 ---@param app beat.App
 function accentPicker.new(app)
-	local draft = app.services.settings.values.accent:match("#") and app.services.settings.values.accent
-	or app.services.appearance:accentColour(app.services.settings.values.accent)
+	local draft = app.services.settings.values.accent:match("#") and app.services.settings.values.accent or app.services.appearance:accentColour(
+		app.services.settings.values.accent
+	)
 	---@type beat.AccentPickerState
-	return { draft = draft}
+	return { draft = draft }
 end
 
 ---@param app beat.App
@@ -104,57 +111,75 @@ function accentPicker.view(app, overlay, window)
 			if colour ~= nil then
 				local selected = draft:lower() == colour
 				row[#row + 1] = div()
-				:style(sty():size(swatch, swatch):radius(theme:radius("sm"))
-				:bg(colour):align("center"):justify("center")
-				:border((theme:px(selected ? 2 : 1)),
-				selected ? (theme:color("text")) : (theme:color("border"))))
-				:onClick({ type = "pickAccent", value = colour})
-				:children(selected ? icon.view(app, { name = "check", size = (theme:px(14)),
-					colour = app.services.appearance:accentInk(colour) }) : div())
+					:style(
+						sty()
+							:size(swatch, swatch):radius(theme:radius("sm")):bg(colour):align("center"):justify("center")
+							:border(((theme:px(selected ? 2 : 1))), selected ? (theme:color("text")) : (theme:color("border")))
+					):onClick({ type = "pickAccent", value = colour })
+					:children(
+						selected ? icon.view(
+							app,
+							{ name = "check", size = (theme:px(14)), colour = app.services.appearance:accentInk(colour) }
+						) : div()
+					)
 			end
 		end
 		cells[#cells + 1] = div():style(sty():row():h(swatch):gap(gap)):children(row)
 	end
 
-	local name = text("Custom accent"):style(theme:s():text(theme:type("lg")):weight("bold")
-	:fg(theme:color("text")))
+	local name = text("Custom accent"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text")))
 	local hex = text(draft:upper()):style(theme:s():text(theme:type("xs")):fg(theme:color("muted")))
-	local header = div():style(sty():row():h(headerHeight):gap(theme:px(10)):align("center")):children({
-		div():style(sty():size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
-		:bg(draft):border(theme:px(1), theme:color("border"))),
-		div():style(sty():column():wrel(1.0):gap(theme:px(1))):children({ name, hex}),
-	})
+	local header = div()
+		:style(sty():row():h(headerHeight):gap(theme:px(10)):align("center"))
+		:children(
+			{
+				div()
+					:style(
+						sty()
+							:size(theme:px(36), theme:px(36)):radius(theme:radius("full")):bg(draft)
+							:border(theme:px(1), theme:color("border"))
+					),
+				div():style(sty():column():wrel(1.0):gap(theme:px(1))):children({ name, hex })
+			}
+		)
 
 	local panel = div()
-	:style(sty():w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12))
-	:radius(theme:radius("lg")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(16), theme:px(42), "#00000080"))
-	:onClick({ type = "keep"})
-	:children({
-		header,
-		div():style(sty():column():h(gridHeight):gap(gap)):children(cells),
-		div():style(sty():row():h(footerHeight):gap(theme:px(8)):align("center")
-		:justify("end")):children({
-			button.view(app, {
-				label = "Cancel",
-				onClick = { type = "dismiss"},
-				height = theme:px(32),
-				width = theme:px(82),
-			}),
-			div():style(sty():row():w(theme:px(112)):h(theme:px(32))
-			:radius(theme:radius("full")):bg(draft):align("center"):justify("center"))
-			:onClick({ type = "confirmAccent"})
-			:children(text("Use colour"):style(theme:s():text(theme:type("sm"))
-			:weight("semibold"):fg(app.services.appearance:accentInk(draft)))),
-		}),
-	})
+		:style(
+			sty()
+				:w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12)):radius(theme:radius("lg"))
+				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+				:shadow(0, theme:px(16), theme:px(42), "#00000080")
+		):onClick({ type = "keep" })
+		:children(
+			{
+				header,
+				div():style(sty():column():h(gridHeight):gap(gap)):children(cells),
+				div()
+					:style(sty():row():h(footerHeight):gap(theme:px(8)):align("center"):justify("end"))
+					:children(
+						{
+							button.view(
+								app,
+								{ label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(32), width = theme:px(82) }
+							),
+							div()
+								:style(
+									sty()
+										:row():w(theme:px(112)):h(theme:px(32)):radius(theme:radius("full")):bg(draft):align("center")
+										:justify("center")
+								):onClick({ type = "confirmAccent" })
+								:children(
+									text("Use colour")
+										:style(theme:s():text(theme:type("sm")):weight("semibold"):fg(app.services.appearance:accentInk(draft)))
+								)
+						}
+					)
+			}
+		)
 
 	return div()
-	:style(sty():fill():offset(0, 0):z(110):column():align("center"):justify("center")
-	:bg(theme:color("overlay")))
-	:onClick({ type = "dismiss"})
-	:children({ panel})
+		:style(sty():fill():offset(0, 0):z(110):column():align("center"):justify("center"):bg(theme:color("overlay")))
+		:onClick({ type = "dismiss" }):children({ panel })
 end
 
 return accentPicker

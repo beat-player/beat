@@ -15,30 +15,19 @@ local tagPicker = require("beat.app.overlays.tag_picker")
 local tagDialog = require("beat.app.overlays.tag_dialog")
 local tagDelete = require("beat.app.overlays.tag_delete")
 
-return beat.plugin({
-	name = "collections",
-	version = "1.0.0",
-	requires = { core = "^1.0.0", library = "^1.0.0" },
-	setup = function(handle)
-		handle.service("collections", collections)
-		handle.service("sidebar", sidebar)
+return beat.plugin({ name = "collections", version = "1.0.0", requires = { core = "^1.0.0", library = "^1.0.0" }, setup = function(handle)
+	handle.service("collections", collections)
+	handle.service("sidebar", sidebar)
 
-		handle.page("playlists", playlistsPage)
-		handle.page("playlist", playlistPage)
+	handle.page("playlists", playlistsPage)
+	handle.page("playlist", playlistPage)
 
-		handle.overlay("playlist_adder", playlistAdder)
-		handle.overlay("playlist_dialog", playlistDialog)
-		handle.overlay("playlist_picker", playlistPicker)
-		handle.overlay("tag_picker", tagPicker)
-		handle.overlay("tag_dialog", tagDialog)
-		handle.overlay("tag_delete", tagDelete)
+	handle.overlay("playlist_adder", playlistAdder)
+	handle.overlay("playlist_dialog", playlistDialog)
+	handle.overlay("playlist_picker", playlistPicker)
+	handle.overlay("tag_picker", tagPicker)
+	handle.overlay("tag_dialog", tagDialog)
+	handle.overlay("tag_delete", tagDelete)
 
-		handle.action({
-			menu = "playlist",
-			title = "Delete playlist",
-			order = 10,
-			tone = "danger",
-			message = |ctx| -> ctx.message.deletePlaylist(assert(ctx.playlist).id),
-		})
-	end,
-})
+	handle.action({ menu = "playlist", title = "Delete playlist", order = 10, tone = "danger", message = |ctx| -> ctx.message.deletePlaylist(assert(ctx.playlist).id) })
+end })

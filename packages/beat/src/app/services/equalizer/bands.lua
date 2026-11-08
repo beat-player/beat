@@ -6,8 +6,8 @@
 -- broad shape rather than a caricature, and the two bass presets move different parts of the low end.
 local equalizer = {}
 
-equalizer.frequencies = { 60, 230, 910, 3600, 14000}
-equalizer.labels = { "60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz"}
+equalizer.frequencies = { 60, 230, 910, 3600, 14000 }
+equalizer.labels = { "60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz" }
 equalizer.minimum = -12
 equalizer.maximum = 12
 
@@ -23,13 +23,13 @@ equalizer.maximum = 12
 
 ---@type beat.EqualizerPreset[]
 equalizer.presets = {
-	{ id = "flat", name = "Flat", gains = { 0, 0, 0, 0, 0}},
-	{ id = "speaker", name = "Speaker", gains = { 4, 1, -1, 2, 3}},
-	{ id = "lowBass", name = "Low Bass", gains = { 8, 2, 0, 0, 0}},
-	{ id = "highBass", name = "High Bass", gains = { 2, 7, 2, 0, 0}},
-	{ id = "club", name = "DJ Club", gains = { 5, 3, 0, 2, 4}},
-	{ id = "vocal", name = "Vocal", gains = { -2, 0, 4, 3, 0}},
-	{ id = "treble", name = "Treble", gains = { -1, 0, 1, 4, 6}},
+	{ id = "flat", name = "Flat", gains = { 0, 0, 0, 0, 0 } },
+	{ id = "speaker", name = "Speaker", gains = { 4, 1, -1, 2, 3 } },
+	{ id = "lowBass", name = "Low Bass", gains = { 8, 2, 0, 0, 0 } },
+	{ id = "highBass", name = "High Bass", gains = { 2, 7, 2, 0, 0 } },
+	{ id = "club", name = "DJ Club", gains = { 5, 3, 0, 2, 4 } },
+	{ id = "vocal", name = "Vocal", gains = { -2, 0, 4, 3, 0 } },
+	{ id = "treble", name = "Treble", gains = { -1, 0, 1, 4, 6 } }
 }
 
 ---@type table<string, beat.EqualizerPreset>
@@ -62,11 +62,7 @@ end
 function equalizer.bands(gains)
 	local bands = {}
 	for at, frequency in ipairs(equalizer.frequencies) do
-		bands[at] = {
-			frequency = frequency,
-			gain = equalizer.clamp(number(gains and gains[at], 0)),
-			q = 1.0,
-		}
+		bands[at] = { frequency = frequency, gain = equalizer.clamp(number(gains and gains[at], 0)), q = 1.0 }
 	end
 	return bands
 end

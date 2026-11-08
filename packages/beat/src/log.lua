@@ -37,8 +37,7 @@ function log.write(level, message)
 
 		rotate()
 
-		local line = string.format("%s [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"),
-		level, tostring(message))
+		local line = string.format("%s [%s] %s\n", os.date("%Y-%m-%d %H:%M:%S"), level, tostring(message))
 
 		local handle = assert(io.open(file(), "a"))
 		handle:write(line)

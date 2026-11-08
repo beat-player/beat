@@ -37,7 +37,7 @@ local function transitionStyles(theme)
 		back[at] = sty():fill():column():offset(-distance, 0):bright(dim)
 	end
 
-	cached = { forward = forward, back = back}
+	cached = { forward = forward, back = back }
 	transitionCache[theme.scale] = cached
 	return cached
 end
@@ -90,8 +90,8 @@ function shell.view(app, window)
 		if surface.fullscreen and surface.view ~= nil then
 			-- The screen itself may be padded, but overlays are placed in window coordinates. A
 			-- bare wrapper keeps their fill and offsets measured from the window.
-			local frame = div():style(sty():fill()):children({ surface.view(app, overlay, window)})
-			for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element}) end
+			local frame = div():style(sty():fill()):children({ surface.view(app, overlay, window) })
+			for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element }) end
 			app.services.covers:sweep()
 			return frame
 		end
@@ -101,25 +101,40 @@ function shell.view(app, window)
 		-- The first launch is the folder browser and nothing else; it is the page, too, so its
 		-- messages reach it.
 		if page.kind ~= "folders" then
-			app.page = app:pageFor({ kind = "folders"})
+			app.page = app:pageFor({ kind = "folders" })
 			page = app.page
 		end
 		return div()
-		:style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text"))
-		:font(theme.fontFamily))
-		:children({
-			div():style(sty():fill():column():align("center"):justify("center")):children({
-				div():style(sty():w(math.min(theme:px(620), width - metrics.pad(app, width) * 2))
-				:h(theme:px(600)):column():gap(theme:space(18))):children({
-					div():style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center")):children({
-						logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
-						text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold")
-						:fg(theme:color("text"))),
-					}),
-					app.registry:page("folders").view(app, page, window),
-				}),
-			}),
-		})
+			:style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text")):font(theme.fontFamily))
+			:children(
+				{
+					div()
+						:style(sty():fill():column():align("center"):justify("center"))
+						:children(
+							{
+								div()
+									:style(
+										sty()
+											:w(math.min(theme:px(620), width - metrics.pad(app, width) * 2)):h(theme:px(600)):column()
+											:gap(theme:space(18))
+									)
+									:children(
+										{
+											div()
+												:style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center"))
+												:children(
+													{
+														logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
+														text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text")))
+													}
+												),
+											app.registry:page("folders").view(app, page, window)
+										}
+									)
+							}
+						)
+				}
+			)
 	end
 
 	local content = app.registry:page(page.kind).view(app, page, window)
@@ -141,43 +156,42 @@ function shell.view(app, window)
 	end
 
 	local pageBody = div()
-	:style(sty():column():wrel(1.0):h(bodyHeight):pad(theme:space(20), metrics.pad(app, width), 0,
-	metrics.pad(app, width)):gap(theme:space(18)):bar(theme:px(8), theme:px(40), theme:color("faint")))
-	:scroll(scroll)
-	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
-	:children({ content})
+		:style(
+			sty()
+				:column():wrel(1.0):h(bodyHeight):pad(theme:space(20), metrics.pad(app, width), 0, metrics.pad(app, width))
+				:gap(theme:space(18)):bar(theme:px(8), theme:px(40), theme:color("faint"))
+		):scroll(scroll):onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to })
+		:children({ content })
 
 	-- The page is moved by a wrapper whose styles are made once per scale, not by a style that
 	-- names the frame's exact position: a style is interned by its values, and interning a new
 	-- one every frame is what made repeated transitions slower and slower.
-	local moving = transitionStyle == nil and pageBody
-	or div():style(transitionStyle):children({ pageBody})
+	local moving = transitionStyle == nil and pageBody or div():style(transitionStyle):children({ pageBody })
 
 	-- Clipped so a page arriving from the side cannot draw over the sidebar during its travel.
-	local pageClip = div():style(sty():column():wrel(1.0):h(bodyHeight)):scroll(0)
-	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
-	:children({ moving})
+	local pageClip = div()
+		:style(sty():column():wrel(1.0):h(bodyHeight)):scroll(0)
+		:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to }):children({ moving })
 
 	local rightWidth = width - metrics.sidebarWidth(app, width)
 	local main = div():style(sty():column():w(rightWidth):h(pageHeight))
 	if not mobile then
 		main:onMouseMove(function()
-			if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil} end
+			if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil } end
 			return nil
 		end)
 	end
-	main:children({
-		topbar.view(app, { width = width}),
-		div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip}),
-	})
+	main:children(
+		{ topbar.view(app, { width = width }), div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip }) }
+	)
 
-	local shellChildren = { main}
+	local shellChildren = { main }
 	if not mobile then
 		table.insert(shellChildren, 1, sidebar.view(app, { width = width, height = pageHeight }))
 	end
 	local frame = div():style(sty():row():wrel(1.0):h(pageHeight)):children(shellChildren)
 
-	local rootChildren = { frame}
+	local rootChildren = { frame }
 	if mobile then
 		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, { width = width }) end
 		rootChildren[#rootChildren + 1] = mobileNav.view(app, { width = width })
@@ -194,14 +208,13 @@ function shell.view(app, window)
 	end
 
 	local root = div()
-	:style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text"))
-	:font(theme.fontFamily))
-	:children(rootChildren)
+		:style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text")):font(theme.fontFamily))
+		:children(rootChildren)
 
 	local toastLayer = toasts.view(app, { window = window })
 	if toastLayer ~= nil then root:children(toastLayer) end
 
-	for _, overlay in ipairs(overlays(app, window, 1)) do root:children({ overlay}) end
+	for _, overlay in ipairs(overlays(app, window, 1)) do root:children({ overlay }) end
 
 	-- Everything this view asked for is kept; covers a changing page no longer asks for are
 	-- given back before the next frame, so a scan cannot accumulate one texture per album.

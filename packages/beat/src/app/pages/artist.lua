@@ -31,12 +31,15 @@ function artistPage.view(app, page, window)
 	local library = app.services.library.current
 	local artist = library ~= nil ? (library:artist(id)) : nil
 	if artist == nil then
-		return emptyState.view(app, {
-			title = "Artist not found",
-			copy = "The scan no longer has them.",
-			actionLabel = "Library",
-			action = { type = "navigate", page = { kind = "library"}},
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Artist not found",
+				copy = "The scan no longer has them.",
+				actionLabel = "Library",
+				action = { type = "navigate", page = { kind = "library" } }
+			}
+		)
 	end
 	local theme = app.services.appearance.theme
 	local content = metrics.contentWidth(app, window.width)
@@ -55,47 +58,67 @@ function artistPage.view(app, page, window)
 	local albumStart = heroHeight + topHeight + theme:space(144)
 	local contentHeight = albumStart + albumsHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(),
-	math.max(0, contentHeight - viewport))
+	app.services.scroll:setLimit(app:pageKey(), math.max(0, contentHeight - viewport))
 	local scroll = app.services.scroll:offset(app:pageKey())
-	local first, last, sliceTop = app.services.scroll.slices(#artist.albums, columns, rowHeight,
-	math.max(0, scroll - albumStart), viewport)
+	local first, last, sliceTop = app.services.scroll.slices(
+		#artist.albums,
+		columns,
+		rowHeight,
+		math.max(0, scroll - albumStart),
+		viewport
+	)
 
-	local hero = div():style(sty():row():wrel(1.0):h(heroHeight):pad(0, 0, 0, 0):gap(theme:space(24))
-	:align("center")):children({
-		album ~= nil and cover.view(app, { album = album, size = heroSize, radius = theme:radius("lg"), glow = true })
-		or div():style(sty():size(heroSize, heroSize):radius(theme:radius("lg")):bg(theme:color("elevated"))),
-		div():style(sty():column():h(heroHeight):justify("center"):gap(theme:px(8))):children({
-			text("ARTIST"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
-			text(artist.name):style(theme:s():text(theme:type("hero")):weight("bold")
-			:fg(theme:color("text"))),
-			text(format.count(#artist.albums, "album") .. " · " .. format.count(#artist.tracks, "track")):style(
-			theme:s():text(theme:type("sm")):fg(theme:color("muted"))
-			),
-			div():style(sty():row():h(theme:px(38)):gap(theme:px(10)):align("center")):children({
-				div():style(sty():size(theme:px(38), theme:px(38)):radius(theme:radius("full"))
-				:bg(theme:color("accent")):align("center"):justify("center"))
-				:onClick({ type = "playArtist", id = artist.id})
-				:children(icon.view(app, { name = "play", size = theme:px(18), colour = theme.accentInk })),
-				text("Play all"):style(theme:s():text(theme:type("sm")):weight("semibold")
-				:fg(theme:color("text"))):onClick({ type = "playArtist", id = artist.id}),
-			}),
-		}),
-	})
+	local hero = div()
+		:style(sty():row():wrel(1.0):h(heroHeight):pad(0, 0, 0, 0):gap(theme:space(24)):align("center"))
+		:children(
+			{
+				album ~= nil and cover.view(app, { album = album, size = heroSize, radius = theme:radius("lg"), glow = true }) or div()
+					:style(sty():size(heroSize, heroSize):radius(theme:radius("lg")):bg(theme:color("elevated"))),
+				div()
+					:style(sty():column():h(heroHeight):justify("center"):gap(theme:px(8)))
+					:children(
+						{
+							text("ARTIST"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
+							text(artist.name):style(theme:s():text(theme:type("hero")):weight("bold"):fg(theme:color("text"))),
+							text(format.count(#artist.albums, "album") .. " · " .. format.count(#artist.tracks, "track"))
+								:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+							div()
+								:style(sty():row():h(theme:px(38)):gap(theme:px(10)):align("center"))
+								:children(
+									{
+										div()
+											:style(
+												sty()
+													:size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
+													:justify("center")
+											):onClick({ type = "playArtist", id = artist.id })
+											:children(icon.view(app, { name = "play", size = theme:px(18), colour = theme.accentInk })),
+										text("Play all")
+											:style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text")))
+											:onClick({ type = "playArtist", id = artist.id })
+									}
+								)
+						}
+					)
+			}
+		)
 
 	local current = app.services.playback:current()
 	local top = {}
 	for index, track in ipairs(artist.tracks) do
 		if index > 6 then break end
-		top[#top + 1] = trackRow.view(app, {
-			track = track,
-			index = index,
-			current = current?.id == track.id,
-			playing = app.services.playback.player:isPlaying(),
-			onClick = { type = "playTrack", trackId = track.id, artistId = artist.id},
-			width = content,
-			showAlbum = true,
-		})
+		top[#top + 1] = trackRow.view(
+			app,
+			{
+				track = track,
+				index = index,
+				current = current?.id == track.id,
+				playing = app.services.playback.player:isPlaying(),
+				onClick = { type = "playTrack", trackId = track.id, artistId = artist.id },
+				width = content,
+				showAlbum = true
+			}
+		)
 	end
 
 	local rows = {}
@@ -104,12 +127,15 @@ function artistPage.view(app, page, window)
 	for at = first, last do
 		local release = artist.albums[at]
 		if release ~= nil then
-			row[#row + 1] = albumCard.view(app, {
-				album = release,
-				width = cardWidth,
-				onOpen = { type = "navigate", page = { kind = "album", id = release.id}},
-				onPlay = { type = "playAlbum", id = release.id},
-			})
+			row[#row + 1] = albumCard.view(
+				app,
+				{
+					album = release,
+					width = cardWidth,
+					onOpen = { type = "navigate", page = { kind = "album", id = release.id } },
+					onPlay = { type = "playAlbum", id = release.id }
+				}
+			)
 		end
 		if #row == columns or at == last then
 			rows[#rows + 1] = div():style(sty():row():wrel(1.0):h("auto"):gap(gap)):children(row)
@@ -117,13 +143,17 @@ function artistPage.view(app, page, window)
 		end
 	end
 
-	return div():style(sty():column():wrel(1.0):h(contentHeight):gap(theme:space(24))):children({
-		hero,
-		section.view(app, { title = "Top tracks" }),
-		div():style(sty():column():wrel(1.0):h(topHeight):gap(2)):children(top),
-		section.view(app, { title = "Albums" }),
-		div():style(sty():column():wrel(1.0):h(albumsHeight):gap(gap)):children(rows),
-	})
+	return div()
+		:style(sty():column():wrel(1.0):h(contentHeight):gap(theme:space(24)))
+		:children(
+			{
+				hero,
+				section.view(app, { title = "Top tracks" }),
+				div():style(sty():column():wrel(1.0):h(topHeight):gap(2)):children(top),
+				section.view(app, { title = "Albums" }),
+				div():style(sty():column():wrel(1.0):h(albumsHeight):gap(gap)):children(rows)
+			}
+		)
 end
 
 return artistPage

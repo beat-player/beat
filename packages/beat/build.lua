@@ -5,13 +5,7 @@
 -- executable alike.
 local build = require("lde-build")
 
-local escapes = {
-	[34] = '\\"',
-	[92] = "\\\\",
-	[9] = "\\t",
-	[10] = "\\n",
-	[13] = "\\r",
-}
+local escapes = { [34] = '\\"', [92] = "\\\\", [9] = "\\t", [10] = "\\n", [13] = "\\r" }
 
 --- Escapes the bytes of a binary so they survive as a Lua string literal.
 ---@param data string

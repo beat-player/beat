@@ -36,26 +36,29 @@ Player.__index = Player
 ---@return beat.Player
 function Player.new()
 	---@type beat.Player
-	return setmetatable({
-		queue = nil,
-		player = nil,
-		volume = 1,
-		lastVolume = 1,
-		isMuted = false,
-		error = nil,
-		pending = nil,
-		pendingNextAt = nil,
-		loaded = false,
-		lastPosition = 0,
-		orderDirty = false,
-		loadedRepeatMode = "off",
-		fadeGain = 1,
-		fadeStart = nil,
-		fadeActive = false,
-		fadeDuration = 0.12,
-		equalizerBands = nil,
-		playingTrack = nil,
-	}, Player)
+	return setmetatable(
+		{
+			queue = nil,
+			player = nil,
+			volume = 1,
+			lastVolume = 1,
+			isMuted = false,
+			error = nil,
+			pending = nil,
+			pendingNextAt = nil,
+			loaded = false,
+			lastPosition = 0,
+			orderDirty = false,
+			loadedRepeatMode = "off",
+			fadeGain = 1,
+			fadeStart = nil,
+			fadeActive = false,
+			fadeDuration = 0.12,
+			equalizerBands = nil,
+			playingTrack = nil
+		},
+		Player
+	)
 end
 
 ---@param value number
@@ -105,7 +108,7 @@ end
 ---@param self beat.Player
 local function ensurePlayer(self)
 	if self.player == nil then
-		self.player = treble.Player.new({ stagingSeconds = 0.2})
+		self.player = treble.Player.new({ stagingSeconds = 0.2 })
 		self.player.onTrackEnd = function()
 			self.pending = "ended"
 		end
@@ -197,7 +200,7 @@ end
 function Player:playNext(tracks)
 	if #tracks == 0 then return end
 	if self.queue == nil or self.queue:current() == nil then
-		self:playTracks(tracks, 1, { source = "queue"})
+		self:playTracks(tracks, 1, { source = "queue" })
 		return
 	end
 
@@ -212,7 +215,7 @@ end
 function Player:addToQueue(tracks)
 	if #tracks == 0 then return end
 	if self.queue == nil or self.queue:current() == nil then
-		self:load(Queue.new(tracks, 1, { source = "queue"}), false)
+		self:load(Queue.new(tracks, 1, { source = "queue" }), false)
 		return
 	end
 
@@ -238,7 +241,7 @@ function Player:playAlbum(album, trackId)
 		end
 	end
 
-	self:playTracks(album.tracks, index, { source = "album"})
+	self:playTracks(album.tracks, index, { source = "album" })
 end
 
 ---@param artist beat.Artist
@@ -255,14 +258,14 @@ function Player:playArtist(artist, trackId)
 		end
 	end
 
-	self:playTracks(tracks, index, { source = "artist"})
+	self:playTracks(tracks, index, { source = "artist" })
 end
 
 ---@param track beat.Track
 ---@param tracks beat.Track[]?
 ---@param index number?
 function Player:playTrack(track, tracks, index)
-	if tracks == nil then tracks = { track} end
+	if tracks == nil then tracks = { track } end
 	if index == nil then
 		for at, candidate in ipairs(tracks) do
 			if candidate.id == track.id then
@@ -272,7 +275,7 @@ function Player:playTrack(track, tracks, index)
 		end
 	end
 
-	self:playTracks(tracks, index or 1, { source = "track"})
+	self:playTracks(tracks, index or 1, { source = "track" })
 end
 
 function Player:play()
@@ -316,7 +319,11 @@ function Player:pause()
 end
 
 function Player:toggle()
-	if self:isPlaying() then self:pause() else self:play() end
+	if self:isPlaying() then
+		self:pause()
+	else
+		self:play()
+	end
 end
 
 ---@param direction "next"|"previous"
@@ -385,11 +392,7 @@ function Player:setEqualizer(bands)
 	else
 		local copy = {}
 		for at = 1, #bands do
-			copy[at] = {
-				frequency = bands[at].frequency,
-				gain = bands[at].gain,
-				q = bands[at].q,
-			}
+			copy[at] = { frequency = bands[at].frequency, gain = bands[at].gain, q = bands[at].q }
 		end
 		self.equalizerBands = copy
 	end
@@ -509,8 +512,7 @@ function Player:update(now)
 		-- Shuffle and repeat-one cannot be applied to treble's already staged queue without
 		-- cutting the current track. The setting was allowed to change at once; the reload that
 		-- makes the staged queue agree with it happens here, at the boundary.
-		local stale = self.orderDirty
-		or (self.loadedRepeatMode == "one") ~= (queue.repeatMode == "one")
+		local stale = self.orderDirty or (self.loadedRepeatMode == "one") ~= (queue.repeatMode == "one")
 		-- The track played to its end, whichever comes next: the same one for repeat-one, the
 		-- staged one treble already started, or nothing at all at the end of the queue.
 		endTrack(self, true)
@@ -530,7 +532,7 @@ function Player:update(now)
 			self.fadeGain = 1
 			self.fadeActive = false
 			applyVolume(self)
-			beginTrack(self, queue:current() --[[@as beat.Track]], 0)
+			beginTrack(self,  queue:current() --[[@as beat.Track]],  0 )
 		else
 			self.loaded = false
 			self.fadeGain = 1

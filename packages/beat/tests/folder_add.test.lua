@@ -46,16 +46,10 @@ local function trackEvent(root, dir, name, title)
 				artist = "Artist",
 				album = "Album",
 				albumArtist = "Artist",
-				track = tonumber(name:match("^(%d+)")) or 1,
-			},
+				track = tonumber(name:match("^(%d+)")) or 1
+			}
 		},
-		entry = {
-			path = dir .. "/" .. name,
-			dir = dir,
-			name = name,
-			ext = "mp3",
-			key = root,
-		},
+		entry = { path = dir .. "/" .. name, dir = dir, name = name, ext = "mp3", key = root }
 	}
 end
 
@@ -65,9 +59,8 @@ local function fakeJob(events, phase)
 	local job = {
 		events = events,
 		done = true,
-		latest = { phase = phase or "done", files = #events, inspected = #events,
-			tracks = #events, skipped = 0, errors = {}},
-		closed = false,
+		latest = { phase = phase or "done", files = #events, inspected = #events, tracks = #events, skipped = 0, errors = {} },
+		closed = false
 	}
 	function job:poll()
 		local queued = self.events
@@ -83,35 +76,26 @@ local function fakeJob(events, phase)
 end
 
 test.it("adds a folder without duplicating it and leaves the queue alone", function()
-	App:init({ scan = false})
+	App:init({ scan = false })
 	local library = Library.new("/library")
-	library:add({
-		format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false,
-		tags = { title = "Old One", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 },
-	}, { path = "/downloads/Album/01.mp3", dir = "/downloads/Album", name = "01.mp3", ext = "mp3" }, nil)
-	library:add({
-		format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false,
-		tags = { title = "Elsewhere", artist = "Artist", album = "Other", albumArtist = "Artist", track = 1 },
-	}, { path = "/library/Other/01.mp3", dir = "/library/Other", name = "01.mp3", ext = "mp3" }, nil)
+	library:add({ format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false, tags = { title = "Old One", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 } }, { path = "/downloads/Album/01.mp3", dir = "/downloads/Album", name = "01.mp3", ext = "mp3" }, nil)
+	library:add({ format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false, tags = { title = "Elsewhere", artist = "Artist", album = "Other", albumArtist = "Artist", track = 1 } }, { path = "/library/Other/01.mp3", dir = "/library/Other", name = "01.mp3", ext = "mp3" }, nil)
 	library:finish()
 	App.services.library.current = library
 
-	local queue = Queue.new({ library.tracks[1]}, 1)
+	local queue = Queue.new({ library.tracks[1] }, 1)
 	App.services.playback.player.queue = queue
 
-	local job = fakeJob({
-		trackEvent("/downloads/Album", "/downloads/Album", "01.mp3", "New One"),
-		trackEvent("/downloads/Album", "/downloads/Album", "02.mp3", "New Two"),
-	})
+	local job = fakeJob({ trackEvent("/downloads/Album", "/downloads/Album", "01.mp3", "New One"), trackEvent("/downloads/Album", "/downloads/Album", "02.mp3", "New Two") })
 	local realStart = ScanJob.start
 	ScanJob.start = function(folder)
 		test.equal(folder, "/downloads/Album")
 		return job
 	end
 
-	local window = { width = 1200, height = 720, shouldRedraw = false}
+	local window = { width = 1200, height = 720, shouldRedraw = false }
 	local ok, err = pcall(function()
-		App:act({ type = "libraryAddFolder", path = "/downloads/Album"})
+		App:act({ type = "libraryAddFolder", path = "/downloads/Album" })
 		test.equal(#library.tracks, 1, "the old track under the folder is dropped before the scan")
 		App:tick(10, window)
 	end)
@@ -136,12 +120,9 @@ test.it("adds a folder without duplicating it and leaves the queue alone", funct
 end)
 
 test.it("keeps the library when the folder scan fails", function()
-	App:init({ scan = false})
+	App:init({ scan = false })
 	local library = Library.new("/library")
-	library:add({
-		format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false,
-		tags = { title = "Kept", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 },
-	}, { path = "/library/Kept/01.mp3", dir = "/library/Kept", name = "01.mp3", ext = "mp3" }, nil)
+	library:add({ format = "MP3", sampleRate = 44100, channels = 2, duration = 100, hasPicture = false, tags = { title = "Kept", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 } }, { path = "/library/Kept/01.mp3", dir = "/library/Kept", name = "01.mp3", ext = "mp3" }, nil)
 	library:finish()
 	App.services.library.current = library
 
@@ -150,8 +131,8 @@ test.it("keeps the library when the folder scan fails", function()
 	local realStart = ScanJob.start
 	ScanJob.start = function() return job end
 
-	local window = { width = 1200, height = 720, shouldRedraw = false}
-	local ok, err = pcall(function() App:act({ type = "libraryAddFolder", path = "/elsewhere"}) end)
+	local window = { width = 1200, height = 720, shouldRedraw = false }
+	local ok, err = pcall(function() App:act({ type = "libraryAddFolder", path = "/elsewhere" }) end)
 	if ok then ok, err = pcall(function() App:tick(10, window) end) end
 	ScanJob.start = realStart
 	if not ok then error(err, 0) end

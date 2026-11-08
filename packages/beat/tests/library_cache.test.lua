@@ -33,9 +33,14 @@ local function file(name, artist)
 		sampleRate = 44100,
 		channels = 2,
 		hasPicture = false,
-		tags = { title = name, artist = artist, album = "Late Registration" },
-	}, { path = ROOT .. "/Late Registration/" .. name .. ".flac", dir = ROOT .. "/Late Registration",
-		name = name .. ".flac", ext = "flac", modifyTime = 0 }
+		tags = { title = name, artist = artist, album = "Late Registration" }
+	}, {
+		path = ROOT .. "/Late Registration/" .. name .. ".flac",
+		dir = ROOT .. "/Late Registration",
+		name = name .. ".flac",
+		ext = "flac",
+		modifyTime = 0
+	}
 end
 
 test.it("loads a scan's albums back as the scan made them", function()
@@ -68,13 +73,8 @@ end)
 test.it("keeps an album an album-artist tag names, across folders", function()
 	local library = Library.new(ROOT)
 	for _, disc in ipairs({ "CD1", "CD2" }) do
-		local info = {
-			format = "FLAC", duration = 100, sampleRate = 44100, channels = 2, hasPicture = false,
-			tags = { title = disc .. " one", artist = "Kanye West", album = "Late Registration",
-				albumArtist = "Kanye West" },
-		}
-		library:add(info, { path = ROOT .. "/" .. disc .. "/one.flac", dir = ROOT .. "/" .. disc,
-			name = "one.flac", ext = "flac", modifyTime = 0 })
+		local info = { format = "FLAC", duration = 100, sampleRate = 44100, channels = 2, hasPicture = false, tags = { title = disc .. " one", artist = "Kanye West", album = "Late Registration", albumArtist = "Kanye West" } }
+		library:add(info, { path = ROOT .. "/" .. disc .. "/one.flac", dir = ROOT .. "/" .. disc, name = "one.flac", ext = "flac", modifyTime = 0 })
 	end
 	library:finish()
 

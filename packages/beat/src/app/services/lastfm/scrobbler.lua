@@ -27,13 +27,7 @@ local SEEK_SLOP = 2
 ---@field startedAt number
 
 local function new()
-	return setmetatable({
-		trackId = nil,
-		played = 0,
-		lastPosition = 0,
-		queued = false,
-		queue = {},
-	}, Scrobbler)
+	return setmetatable({ trackId = nil, played = 0, lastPosition = 0, queued = false, queue = {} }, Scrobbler)
 end
 
 local function threshold(duration)
@@ -80,8 +74,7 @@ function Scrobbler:update(track, position, playing, now)
 	end
 	self.lastPosition = position
 
-	if not self.queued and track.duration >= MIN_DURATION
-	and self.played >= threshold(track.duration) then
+	if not self.queued and track.duration >= MIN_DURATION and self.played >= threshold(track.duration) then
 		self.queued = true
 		if #self.queue >= 512 then table.remove(self.queue, 1) end
 		self.queue[#self.queue + 1] = {
@@ -92,7 +85,7 @@ function Scrobbler:update(track, position, playing, now)
 			albumArtist = track.albumArtist,
 			number = track.number,
 			duration = track.duration,
-			startedAt = self.startedAt or now,
+			startedAt = self.startedAt or now
 		}
 	end
 end
@@ -105,5 +98,5 @@ function Scrobbler:take()
 	return queue
 end
 
-local scrobbler = { new = new}
+local scrobbler = { new = new }
 return scrobbler

@@ -34,7 +34,7 @@ function Session.load(dir)
 	if type(decoded) ~= "table" or decoded.version ~= VERSION then return nil end
 	return {
 		queue = type(decoded.queue) == "table" and decoded.queue or nil,
-		seconds = type(decoded.seconds) == "number" ? math.max(0, decoded.seconds) : 0,
+		seconds = type(decoded.seconds) == "number" ? math.max(0, decoded.seconds) : 0
 	}
 end
 
@@ -52,7 +52,7 @@ function Session.save(session, dir)
 		end
 	end
 
-	local ok, encoded = pcall(json.encode, { version = VERSION, queue = session.queue, seconds = session.seconds})
+	local ok, encoded = pcall(json.encode, { version = VERSION, queue = session.queue, seconds = session.seconds })
 	if not ok then
 		Log.write("error", "the session could not be encoded: " .. tostring(encoded))
 		return false

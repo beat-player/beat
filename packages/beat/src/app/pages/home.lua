@@ -53,40 +53,36 @@ function home.view(app, page, window)
 			if type(current) == "string" then currentName = path.basename(current) end
 			local scanning = {
 				playingBars.view(app, { playing = true }),
-				text(progress.phase == "enumerate" ? "Finding your music" : "Reading your music"):style(
-				theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))
-				),
-				text(format.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / "
-				.. progress.files):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-				meter(theme:px(420), theme:px(4), scan:fraction(),
-				theme:color("text", 0.1), theme:color("accent")),
+				text(progress.phase == "enumerate" ? "Finding your music" : "Reading your music")
+					:style(theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))),
+				text(format.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / " .. progress.files)
+					:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+				meter(theme:px(420), theme:px(4), scan:fraction(), theme:color("text", 0.1), theme:color("accent"))
 			}
 			if currentName ~= nil then
-				scanning[#scanning + 1] = text(tostring(currentName)):style(
-				theme:s():w(theme:px(520)):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()
-				)
+				scanning[#scanning + 1] = text(tostring(currentName))
+					:style(theme:s():w(theme:px(520)):text(theme:type("xs")):fg(theme:color("faint")):ellipsis())
 			end
 			if progress.skipped > 0 then
-				scanning[#scanning + 1] = text(format.count(progress.skipped, "file") .. " skipped"):style(
-				theme:s():text(theme:type("xs")):fg(theme:color("danger"))
-				)
+				scanning[#scanning + 1] = text(format.count(progress.skipped, "file") .. " skipped")
+					:style(theme:s():text(theme:type("xs")):fg(theme:color("danger")))
 			end
-			scanning[#scanning + 1] = button.view(app, {
-				label = "Cancel scan",
-				onClick = { type = "cancelScan"},
-				height = theme:px(30),
-				width = theme:px(110),
-			})
-			return div():style(sty():fill():column():align("center"):justify("center")
-			:gap(theme:px(14))):children(scanning)
+			scanning[#scanning + 1] = button.view(
+				app,
+				{ label = "Cancel scan", onClick = { type = "cancelScan" }, height = theme:px(30), width = theme:px(110) }
+			)
+			return div():style(sty():fill():column():align("center"):justify("center"):gap(theme:px(14))):children(scanning)
 		end
 
-		return emptyState.view(app, {
-			title = "Your library is empty",
-			copy = "Choose a folder and every track in it appears here.",
-			actionLabel = "Choose a folder",
-			action = { type = "chooseFolder"},
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Your library is empty",
+				copy = "Choose a folder and every track in it appears here.",
+				actionLabel = "Choose a folder",
+				action = { type = "chooseFolder" }
+			}
+		)
 	end
 
 	local content = metrics.contentWidth(app, window.width)
@@ -102,12 +98,15 @@ function home.view(app, page, window)
 		local children = {}
 		for at, album in ipairs(albums) do
 			if limit ~= nil and at > limit then break end
-			children[#children + 1] = albumCard.view(app, {
-				album = album,
-				width = cardWidth,
-				onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
-				onPlay = { type = "playAlbum", id = album.id},
-			})
+			children[#children + 1] = albumCard.view(
+				app,
+				{
+					album = album,
+					width = cardWidth,
+					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
+					onPlay = { type = "playAlbum", id = album.id }
+				}
+			)
 		end
 		return div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(children)
 	end
@@ -133,17 +132,18 @@ function home.view(app, page, window)
 		for _, artist in ipairs(artists) do
 			local album = artist.albums[1]
 			cards[#cards + 1] = div()
-			:style(sty():w(cardWidth):h(cardHeight):column():gap(theme:px(6)))
-			:hover(sty():w(cardWidth):h(cardHeight):column():gap(theme:px(6)):bright(1.08))
-			:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
-			:children({
-				album ~= nil and cover.view(app, { album = album, size = cardWidth, radius = theme:radius("full") })
-				or div():style(sty():size(cardWidth, cardWidth):radius(theme:radius("full"))
-				:bg(theme:color("elevated"))),
-				text(artist.name):style(theme:s():w(cardWidth):text(theme:type("base")):weight("semibold")
-				:fg(theme:color("text")):ellipsis()),
-				text("Artist"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-			})
+				:style(sty():w(cardWidth):h(cardHeight):column():gap(theme:px(6)))
+				:hover(sty():w(cardWidth):h(cardHeight):column():gap(theme:px(6)):bright(1.08))
+				:onClick({ type = "navigate", page = { kind = "artist", id = artist.id } })
+				:children(
+					{
+						album ~= nil and cover.view(app, { album = album, size = cardWidth, radius = theme:radius("full") }) or div()
+							:style(sty():size(cardWidth, cardWidth):radius(theme:radius("full")):bg(theme:color("elevated"))),
+						text(artist.name)
+							:style(theme:s():w(cardWidth):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
+						text("Artist"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted")))
+					}
+				)
 		end
 		children[#children + 1] = section.view(app, { title = "Artists" })
 		children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)

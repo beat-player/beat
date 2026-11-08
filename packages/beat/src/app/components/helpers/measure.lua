@@ -26,26 +26,16 @@ function measure.estimate(value, size, latin)
 
 		if codepoint == 0x200D then
 			joined = true
-		elseif (codepoint >= 0x0300 and codepoint <= 0x036F)
-		or (codepoint >= 0xFE00 and codepoint <= 0xFE0F)
-		or (codepoint >= 0x1F3FB and codepoint <= 0x1F3FF) then
+		elseif (codepoint >= 0x0300 and codepoint <= 0x036F) or (codepoint >= 0xFE00 and codepoint <= 0xFE0F) or (codepoint >= 0x1F3FB and codepoint <= 0x1F3FF) then
 			-- A mark, a variation selector or a skin tone change is part of the picture before it.
-		elseif (codepoint >= 0x1F000 and codepoint <= 0x1FAFF)
-		or (codepoint >= 0x2600 and codepoint <= 0x27BF) then
-			if joined or (codepoint >= 0x1F1E6 and codepoint <= 0x1F1FF
-			and previous >= 0x1F1E6 and previous <= 0x1F1FF) then
+		elseif (codepoint >= 0x1F000 and codepoint <= 0x1FAFF) or (codepoint >= 0x2600 and codepoint <= 0x27BF) then
+			if joined or (codepoint >= 0x1F1E6 and codepoint <= 0x1F1FF and previous >= 0x1F1E6 and previous <= 0x1F1FF) then
 				-- A joined emoji or the second half of a flag is the same picture.
 			else
 				width += size
 			end
 			joined = false
-		elseif (codepoint >= 0x1100 and codepoint <= 0x115F)
-		or (codepoint >= 0x2E80 and codepoint <= 0xA4CF)
-		or (codepoint >= 0xAC00 and codepoint <= 0xD7A3)
-		or (codepoint >= 0xF900 and codepoint <= 0xFAFF)
-		or (codepoint >= 0xFE30 and codepoint <= 0xFE4F)
-		or (codepoint >= 0xFF00 and codepoint <= 0xFF60)
-		or (codepoint >= 0xFFE0 and codepoint <= 0xFFE6) then
+		elseif (codepoint >= 0x1100 and codepoint <= 0x115F) or (codepoint >= 0x2E80 and codepoint <= 0xA4CF) or (codepoint >= 0xAC00 and codepoint <= 0xD7A3) or (codepoint >= 0xF900 and codepoint <= 0xFAFF) or (codepoint >= 0xFE30 and codepoint <= 0xFE4F) or (codepoint >= 0xFF00 and codepoint <= 0xFF60) or (codepoint >= 0xFFE0 and codepoint <= 0xFFE6) then
 			width += size
 			joined = false
 		else

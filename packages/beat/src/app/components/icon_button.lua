@@ -28,11 +28,9 @@ function iconButton.surface(app, props)
 	local size = props.size
 
 	return div()
-	:style(sty():size(size, size):radius(theme:radius("full")):align("center"):justify("center"))
-	:hover(sty():size(size, size):radius(theme:radius("full")):bg(theme:color("hover"))
-	:align("center"):justify("center"))
-	:onClick(props.onClick)
-	:children({ props.content})
+		:style(sty():size(size, size):radius(theme:radius("full")):align("center"):justify("center"))
+		:hover(sty():size(size, size):radius(theme:radius("full")):bg(theme:color("hover")):align("center"):justify("center"))
+		:onClick(props.onClick):children({ props.content })
 end
 
 ---@param app beat.App
@@ -43,11 +41,14 @@ function iconButton.view(app, props)
 	local colour = props.active ? (theme:color("text")) : (theme:color("muted"))
 
 	local glyphSize = math.max(18, math.floor(props.size * 0.8 + 0.5))
-	return iconButton.surface(app, {
-		size = props.size,
-		onClick = props.onClick,
-		content = icon.view(app, { name = props.name, size = glyphSize, colour = colour }),
-	})
+	return iconButton.surface(
+		app,
+		{
+			size = props.size,
+			onClick = props.onClick,
+			content = icon.view(app, { name = props.name, size = glyphSize, colour = colour })
+		}
+	)
 end
 
 return iconButton

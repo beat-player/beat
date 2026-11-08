@@ -37,17 +37,11 @@ function slider.view(app, props)
 	local radius = trackHeight / 2
 	local thumbColour = props.thumbColour or props.fillColour
 
-	local sliderElement = div():style(sty():w(width):h(height):row():align("center"))
-	:slider({
-		value = props.value,
-		min = min,
-		max = max,
-		onchange = props.onchange,
-	})
-	-- The nub is a styled box, not a canvas polygon: the renderer antialiases rounded
-	-- corners, while a small fan of triangles reads as a pixelated circle.
-	:children(div():style(sty():size(thumbSize, thumbSize):radius(thumbSize / 2)
-	:bg(thumbColour)):thumb())
+	local sliderElement = div()
+		:style(sty():w(width):h(height):row():align("center"))
+		:slider({ value = props.value, min = min, max = max, onchange = props.onchange }):children( -- The nub is a styled box, not a canvas polygon: the renderer antialiases rounded
+		 -- corners, while a small fan of triangles reads as a pixelated circle.
+		div():style(sty():size(thumbSize, thumbSize):radius(thumbSize / 2):bg(thumbColour)):thumb() )
 
 	sliderElement:canvas(function(canvas)
 		local y = (canvas.height - trackHeight) / 2

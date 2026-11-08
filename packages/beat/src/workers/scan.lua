@@ -27,7 +27,7 @@ WORKERS = math.max(1, math.min(16, WORKERS))
 ---@type fun(milliseconds: number)
 local sleep
 if jit.os == "Windows" then
-	ffi.cdef [[void Sleep(unsigned int);]]
+	ffi.cdef[[void Sleep(unsigned int);]]
 	local kernel32 = ffi.load("kernel32")
 	---@param milliseconds number
 	local function windowsSleep(milliseconds)
@@ -35,7 +35,7 @@ if jit.os == "Windows" then
 	end
 	sleep = windowsSleep
 else
-	ffi.cdef [[int usleep(unsigned int);]]
+	ffi.cdef[[int usleep(unsigned int);]]
 	---@param milliseconds number
 	local function posixSleep(milliseconds)
 		ffi.C.usleep(math.floor(milliseconds * 1000))
@@ -74,7 +74,7 @@ end
 local function printableFailures(failures)
 	local out = {}
 	for at, failure in ipairs(failures) do
-		out[at] = { path = printable(failure.path), message = printable(failure.message)}
+		out[at] = { path = printable(failure.path), message = printable(failure.message) }
 	end
 	return out
 end
@@ -138,7 +138,7 @@ local function shard(entries, count)
 		end
 	end
 
-	table.sort(units,|a, b| -> #a > #b)
+	table.sort(units, |a, b| -> #a > #b)
 
 	---@type beat.ScanEntry[][]
 	local shards = {}
@@ -192,7 +192,7 @@ local function newWorker(child, outputPath)
 		inspected = 0,
 		skipped = 0,
 		current = nil,
-		errors = {},
+		errors = {}
 	}
 end
 
@@ -264,8 +264,7 @@ local function totals(workers)
 end
 
 local ok, err = pcall(function()
-	emit({ type = "progress", phase = "enumerate", files = 0, inspected = 0, tracks = 0, skipped = 0,
-		errors = {}, current = printable(root)})
+	emit({ type = "progress", phase = "enumerate", files = 0, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = printable(root) })
 
 	local scanner = Scanner.new(root, { library = false })
 	local lastProgress = time.now()
@@ -279,8 +278,7 @@ local ok, err = pcall(function()
 		local now = time.now()
 		if now - lastProgress >= 0.1 then
 			local progress = scanner:progress()
-			emit({ type = "progress", phase = "enumerate", files = progress.files, inspected = 0,
-				tracks = 0, skipped = 0, errors = {}, current = printable(progress.current)})
+			emit({ type = "progress", phase = "enumerate", files = progress.files, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = printable(progress.current) })
 			lastProgress = now
 		end
 	end
@@ -293,14 +291,13 @@ local ok, err = pcall(function()
 			entries[#entries + 1] = entry
 		else
 			enumSkipped += 1
-			enumErrors[#enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8}
+			enumErrors[#enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8 }
 		end
 	end
-	emit({ type = "progress", phase = "inspect", files = #entries, inspected = 0, tracks = 0,
-		skipped = enumSkipped, errors = {}, current = nil})
+	emit({ type = "progress", phase = "inspect", files = #entries, inspected = 0, tracks = 0, skipped = enumSkipped, errors = {}, current = nil })
 
 	if #entries == 0 then
-		emit({ type = "done", skipped = enumSkipped, errors = enumErrors})
+		emit({ type = "done", skipped = enumSkipped, errors = enumErrors })
 		return
 	end
 
@@ -314,13 +311,7 @@ local ok, err = pcall(function()
 			for _, entry in ipairs(shardEntries) do listing:write(json.encode(entry), "\n") end
 			listing:close()
 
-			local child, spawnErr = workerProcess.spawn({
-				BEAT_WORKER = "inspect",
-				BEAT_SCAN_MANIFEST = manifest,
-				BEAT_SCAN_OUTPUT = shardOutput,
-				BEAT_SCAN_CANCEL = cancelFile,
-				BEAT_SCAN_ROOT = root,
-			})
+			local child, spawnErr = workerProcess.spawn({ BEAT_WORKER = "inspect", BEAT_SCAN_MANIFEST = manifest, BEAT_SCAN_OUTPUT = shardOutput, BEAT_SCAN_CANCEL = cancelFile, BEAT_SCAN_ROOT = root })
 			if child == nil then
 				error("could not start scan inspector " .. at .. ": " .. tostring(spawnErr))
 			end
@@ -362,8 +353,7 @@ local ok, err = pcall(function()
 		local now = time.now()
 		if now - lastReport >= 0.1 then
 			local inspected, skipped, current = totals(workers)
-			emit({ type = "progress", phase = "inspect", files = #entries, inspected = inspected,
-				tracks = forwarded, skipped = skipped, errors = {}, current = current})
+			emit({ type = "progress", phase = "inspect", files = #entries, inspected = inspected, tracks = forwarded, skipped = skipped, errors = {}, current = current })
 			lastReport = now
 		end
 
@@ -392,14 +382,13 @@ local ok, err = pcall(function()
 
 	if fatal ~= nil then error(fatal) end
 
-	emit({ type = "progress", phase = "inspect", files = #entries, inspected = inspected,
-		tracks = forwarded, skipped = skipped, errors = {}, current = nil})
-	emit({ type = "done", skipped = skipped, errors = errors})
+	emit({ type = "progress", phase = "inspect", files = #entries, inspected = inspected, tracks = forwarded, skipped = skipped, errors = {}, current = nil })
+	emit({ type = "done", skipped = skipped, errors = errors })
 	artworkCache.prune(root, usedCovers)
 end)
 
 if not ok then
-	emit({ type = "error", message = printable(tostring(err))})
+	emit({ type = "error", message = printable(tostring(err)) })
 end
 
 cleanup()

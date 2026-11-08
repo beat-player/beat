@@ -25,7 +25,7 @@ local function track(at)
 		coverPath = nil,
 		coverCache = nil,
 		modified = 0,
-		hash = "hash" .. at,
+		hash = "hash" .. at
 	}
 	return fixture
 end
@@ -51,7 +51,7 @@ test.it("walks a queue and stops at its end", function()
 end)
 
 test.it("repeats one track, or the whole queue", function()
-	local queue = Queue.new(tracks(2), 1, { repeatMode = "one"})
+	local queue = Queue.new(tracks(2), 1, { repeatMode = "one" })
 	test.equal(queue:onEnded(), "again")
 	test.equal(assert(queue:current()).id, 1)
 
@@ -63,7 +63,7 @@ test.it("repeats one track, or the whole queue", function()
 end)
 
 test.it("shuffles every track once, keeping the current one first", function()
-	local queue = Queue.new(tracks(10), 4, { shuffle = true})
+	local queue = Queue.new(tracks(10), 4, { shuffle = true })
 	local seen = {}
 
 	test.equal(assert(queue:current()).id, 4, "the current track does not jump")
@@ -75,7 +75,7 @@ test.it("shuffles every track once, keeping the current one first", function()
 end)
 
 test.it("a manual next moves even when repeat-one is on", function()
-	local queue = Queue.new(tracks(2), 1, { repeatMode = "one"})
+	local queue = Queue.new(tracks(2), 1, { repeatMode = "one" })
 	test.equal(assert(queue:next()).id, 2)
 	test.equal(queue:onEnded(), "again")
 end)
@@ -104,14 +104,14 @@ test.it("adds tracks after the current one or at the end", function()
 	local first = track(1)
 	local second = track(2)
 	local extra = track(3)
-	local queue = Queue.new({ first, second}, 1, {})
+	local queue = Queue.new({ first, second }, 1, {})
 
-	queue:add({ extra}, true)
+	queue:add({ extra }, true)
 	test.equal(queue.order[1], 1)
 	test.equal(queue.order[2], 3, "the added track follows the current one")
 	test.equal(queue.order[3], 2)
 
-	queue:add({ second}, false)
+	queue:add({ second }, false)
 	test.equal(queue.order[#queue.order], 4, "an appended track is last")
 end)
 
@@ -127,7 +127,7 @@ end
 
 test.it("comes back from a saved session in the order it was in", function()
 	local list, find = library(6)
-	local queue = Queue.new(list, 1, { shuffle = true, repeatMode = "all", source = "playlist:4"})
+	local queue = Queue.new(list, 1, { shuffle = true, repeatMode = "all", source = "playlist:4" })
 	queue:next()
 	queue:next()
 

@@ -16,9 +16,7 @@ local LastfmClient = require("beat.app.services.lastfm.client")
 local Lastfm = {}
 Lastfm.__index = Lastfm
 Lastfm.needs = { "settings", "toasts", "playback", "system" }
-Lastfm.handles = {
-	"lastfmConnect", "lastfmCancel", "lastfmOpenAuth", "lastfmDisconnect", "lastfmEnabled",
-}
+Lastfm.handles = { "lastfmConnect", "lastfmCancel", "lastfmOpenAuth", "lastfmDisconnect", "lastfmEnabled" }
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -28,24 +26,26 @@ Lastfm.handles = {
 --- }
 ---@return beat.LastfmService
 function Lastfm.new(deps)
-	local self = setmetatable({
-		settings = deps.settings,
-		toasts = deps.toasts,
-		playback = deps.playback,
-		system = deps.system,
-		scrobbler = Scrobbler.new(),
-	}, Lastfm)
+	local self = setmetatable(
+		{
+			settings = deps.settings,
+			toasts = deps.toasts,
+			playback = deps.playback,
+			system = deps.system,
+			scrobbler = Scrobbler.new()
+		},
+		Lastfm
+	)
 
 	-- Last.fm keeps its own authorisation state, so the handlers are the only way it says anything
 	-- to the rest of the app: a toast, and a request to write what it just changed in settings.
 	-- Opening the authorization page is a link like any other, so it goes through the service that
 	-- owns that rather than a second copy of the platform's browser command.
-	self.client = LastfmClient.new(self.settings.values, {
-		onToast = |text, tone| -> self.toasts:show(text, tone),
-		onSave = || -> self.settings:save(),
-	}, {
-		openBrowser = |url| -> self.system:open(url),
-	})
+	self.client = LastfmClient.new(
+		self.settings.values,
+		{ onToast = |text, tone| -> self.toasts:show(text, tone), onSave = || -> self.settings:save() },
+		{ openBrowser = |url| -> self.system:open(url) }
+	)
 
 	return self
 end

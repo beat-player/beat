@@ -23,46 +23,36 @@ function emptyState.view(app, props)
 
 	local children = {}
 	if props.icon ~= nil then
-		children[#children + 1] = text(props.icon):style(theme:s():text(theme:px(40))
-		:fg(theme:color("text")))
+		children[#children + 1] = text(props.icon):style(theme:s():text(theme:px(40)):fg(theme:color("text")))
 	else
 		children[#children + 1] = div():style(sty():size(120, 120)):canvas(function(canvas)
-			canvas:circle(canvas.width / 2, canvas.height / 2, canvas.width * 0.38,
-			theme:color("elevated"))
-			canvas:circle(canvas.width / 2, canvas.height / 2, canvas.width * 0.09,
-			theme:color("accent", 0.55))
+			canvas:circle(canvas.width / 2, canvas.height / 2, canvas.width * 0.38, theme:color("elevated"))
+			canvas:circle(canvas.width / 2, canvas.height / 2, canvas.width * 0.09, theme:color("accent", 0.55))
 			for at = 0, 11 do
 				local angle = at / 12 * math.pi * 2
-				canvas:line(canvas.width / 2 + math.cos(angle) * canvas.width * 0.14,
-				canvas.height / 2 + math.sin(angle) * canvas.height * 0.14,
-				canvas.width / 2 + math.cos(angle) * canvas.width * 0.25,
-				canvas.height / 2 + math.sin(angle) * canvas.height * 0.25,
-				theme:px(2), theme:color("text", 0.08))
+				canvas:line(canvas.width / 2 + math.cos(angle) * canvas.width * 0.14, canvas.height / 2 + math.sin(angle) * canvas.height * 0.14, canvas.width / 2 + math.cos(angle) * canvas.width * 0.25, canvas.height / 2 + math.sin(angle) * canvas.height * 0.25, theme:px(2), theme:color("text", 0.08))
 			end
 		end)
 	end
-	children[#children + 1] = text(props.title):style(theme:s():text(theme:type("xl")):weight("bold")
-	:fg(theme:color("text")))
+	children[#children + 1] = text(props.title)
+		:style(theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text")))
 	if copy ~= nil then
 		local copyWidth = theme:px(420)
 		if app.window ~= nil then
 			copyWidth = math.min(copyWidth, app.window.width - theme:space(64))
 		end
-		children[#children + 1] = text(copy):style(theme:s():w(copyWidth):text(theme:type("sm"))
-		:fg(theme:color("muted")):align("center"))
+		children[#children + 1] = text(copy)
+			:style(theme:s():w(copyWidth):text(theme:type("sm")):fg(theme:color("muted")):align("center"))
 	end
 
 	if actionLabel ~= nil and action ~= nil then
-		children[#children + 1] = button.view(app, {
-			label = actionLabel,
-			onClick = action,
-			primary = true,
-			width = theme:px(160),
-		})
+		children[#children + 1] = button.view(
+			app,
+			{ label = actionLabel, onClick = action, primary = true, width = theme:px(160) }
+		)
 	end
 
-	return div():style(sty():fill():column():align("center"):justify("center"):gap(theme:px(14)))
-	:children(children)
+	return div():style(sty():fill():column():align("center"):justify("center"):gap(theme:px(14))):children(children)
 end
 
 return emptyState

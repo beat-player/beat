@@ -105,31 +105,28 @@ local function runIsolated(chunk, file)
 
 	local added = {}
 	local clashes = {}
-	local preload = setmetatable({}, {
-		__index = function(_, name) return real.preload[name] end,
-		__newindex = function(_, name, loader)
-			if type(name) ~= "string" or added[name] ~= nil then return end
-			-- A bundle's copy of something the app already has is dropped, not reported: every
-			-- bundle carries one, and an app built from source and a compiled one disagree about
-			-- where the copy came from.
-			if hostProvides(name) then return end
-			if before[name] or real.loaded[name] ~= nil then
-				-- Another plugin put its module here first. First one wins, and the person is
-				-- told rather than one plugin quietly changing the module another one uses.
-				clashes[#clashes + 1] = name
-				return
-			end
-			added[name] = loader
-			real.preload[name] = loader
-		end,
-	})
+	local preload = setmetatable({}, { __index = function(_, name) return real.preload[name] end, __newindex = function(_, name, loader)
+		if type(name) ~= "string" or added[name] ~= nil then return end
+		-- A bundle's copy of something the app already has is dropped, not reported: every
+		-- bundle carries one, and an app built from source and a compiled one disagree about
+		-- where the copy came from.
+		if hostProvides(name) then return end
+		if before[name] or real.loaded[name] ~= nil then
+			-- Another plugin put its module here first. First one wins, and the person is
+			-- told rather than one plugin quietly changing the module another one uses.
+			clashes[#clashes + 1] = name
+			return
+		end
+		added[name] = loader
+		real.preload[name] = loader
+	end })
 
 	-- Only `preload` is the stand-in; everything else, including the `cpath` write a bundle makes
 	-- while extracting its native libraries, reaches the real package.
-	local standIn = setmetatable({ preload = preload }, {
-		__index = real,
-		__newindex = function(_, key, value) real[key] = value end,
-	})
+	local standIn = setmetatable(
+		{ preload = preload },
+		{ __index = real, __newindex = function(_, key, value) real[key] = value end }
+	)
 
 	local previous = rawget(_G, "package")
 	_G.package = standIn
@@ -152,21 +149,13 @@ local function runFile(file)
 	if chunk == nil then
 		local reason = tostring(loadError)
 		if isBytecode(file) or reason:find("bytecode", 1, true) ~= nil then
-			reason = reason
-			.. " (the file is LuaJIT bytecode; build the bundle again under the same LuaJIT, or without --bytecode)"
+			reason = reason .. " (the file is LuaJIT bytecode; build the bundle again under the same LuaJIT, or without --bytecode)"
 		end
-		return { name = name, file = file, error = reason}
+		return { name = name, file = file, error = reason }
 	end
 
 	local module, runError, clashes, undo = runIsolated(chunk, file)
-	return {
-		name = name,
-		file = file,
-		module = module,
-		error = runError,
-		clashes = clashes,
-		release = undo,
-	}
+	return { name = name, file = file, module = module, error = runError, clashes = clashes, release = undo }
 end
 
 --- Every `*.lua` file directly in the plugins folder, in file-name order so that which plugin
@@ -190,8 +179,7 @@ function PluginFiles.found(dir, disabled)
 	for entry in fs.readdir(folder) do
 		if entry.name:sub(-4) == ".lua" then
 			local file = path.join(folder, entry.name)
-			local isFile = entry.type == "file"
-			or (entry.type ~= "dir" and fs.isfile(file))
+			local isFile = entry.type == "file" or (entry.type ~= "dir" and fs.isfile(file))
 			if isFile then names[#names + 1] = entry.name end
 		end
 	end

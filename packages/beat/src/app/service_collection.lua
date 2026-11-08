@@ -31,7 +31,7 @@ Collection.__index = Collection
 
 ---@return beat.ServiceCollection
 function Collection.new()
-	return setmetatable({ modules = {}, provided = {}}, Collection)
+	return setmetatable({ modules = {}, provided = {} }, Collection)
 end
 
 ---@param name string
@@ -59,11 +59,9 @@ end
 local function depsFor(name, needs, built)
 	local deps = {}
 	for _, dependency in ipairs(needs) do deps[dependency] = built[dependency] end
-	return setmetatable(deps, {
-		__index = function(_, key)
-			error(name .. " uses " .. tostring(key) .. " but does not list it in needs", 2)
-		end,
-	})
+	return setmetatable(deps, { __index = function(_, key)
+		error(name .. " uses " .. tostring(key) .. " but does not list it in needs", 2)
+	end })
 end
 
 ---@return beat.BuiltServices
@@ -114,7 +112,7 @@ function Collection:build()
 
 	local byName = {}
 	for _, name in ipairs(names) do byName[name] = built[name] end
-	return { byName = byName, order = order, owners = owners}
+	return { byName = byName, order = order, owners = owners }
 end
 
 return Collection

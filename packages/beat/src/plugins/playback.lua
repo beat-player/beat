@@ -11,19 +11,14 @@ local queue = require("beat.app.overlays.queue")
 local equalizerPanel = require("beat.app.overlays.equalizer")
 local equalizerRename = require("beat.app.overlays.equalizer_rename")
 
-return beat.plugin({
-	name = "playback",
-	version = "1.0.0",
-	requires = { core = "^1.0.0", library = "^1.0.0", collections = "^1.0.0" },
-	setup = function(handle)
-		handle.service("playback", playback)
-		handle.service("equalizer", equalizer)
+return beat.plugin({ name = "playback", version = "1.0.0", requires = { core = "^1.0.0", library = "^1.0.0", collections = "^1.0.0" }, setup = function(handle)
+	handle.service("playback", playback)
+	handle.service("equalizer", equalizer)
 
-		handle.overlay("now_playing", nowPlaying)
-		handle.overlay("more", more)
-		handle.overlay("volume", volume)
-		handle.overlay("queue", queue)
-		handle.overlay("equalizer", equalizerPanel)
-		handle.overlay("equalizer_rename", equalizerRename)
-	end,
-})
+	handle.overlay("now_playing", nowPlaying)
+	handle.overlay("more", more)
+	handle.overlay("volume", volume)
+	handle.overlay("queue", queue)
+	handle.overlay("equalizer", equalizerPanel)
+	handle.overlay("equalizer_rename", equalizerRename)
+end })

@@ -40,17 +40,20 @@ Taxonomy.__index = Taxonomy
 
 ---@return beat.Taxonomy
 function Taxonomy.new()
-	return setmetatable({
-		tags = {},
-		tagById = {},
-		tagByName = {},
-		byPath = {},
-		playlists = {},
-		playlistById = {},
-		nextTagId = 1,
-		nextPlaylistId = 1,
-		metrics = { tracks = {}, albums = {}, tags = {}, playlists = {}},
-	}, Taxonomy)
+	return setmetatable(
+		{
+			tags = {},
+			tagById = {},
+			tagByName = {},
+			byPath = {},
+			playlists = {},
+			playlistById = {},
+			nextTagId = 1,
+			nextPlaylistId = 1,
+			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
+		},
+		Taxonomy
+	)
 end
 
 ---@param value string?
@@ -88,17 +91,14 @@ function Taxonomy:addTag(name)
 	local key = nameKey(display)
 	if display == "" or self.tagByName[key] ~= nil then return nil end
 
-	local tag = { id = self.nextTagId, name = display, hidden = false, count = 0}
+	local tag = { id = self.nextTagId, name = display, hidden = false, count = 0 }
 	self.nextTagId += 1
 	self.tags[#self.tags + 1] = tag
 	self.tagById[tag.id] = tag
 	self.tagByName[key] = tag
 
 	-- A tag is also a smart playlist: same name, one tag, and maintained by tag assignments.
-	local playlist = self:addPlaylist(tag.name, true, { tag.id}, "all", {
-		manual = false,
-		autoTagId = tag.id,
-	})
+	local playlist = self:addPlaylist(tag.name, true, { tag.id }, "all", { manual = false, autoTagId = tag.id })
 	if playlist ~= nil then tag.playlistId = playlist.id end
 	return tag
 end
@@ -111,7 +111,7 @@ function Taxonomy:addHiddenPlaylistTag(playlistId)
 		name = "__playlist_" .. tostring(playlistId),
 		hidden = true,
 		playlistId = playlistId,
-		count = 0,
+		count = 0
 	}
 	self.nextTagId += 1
 	self.tags[#self.tags + 1] = tag
@@ -167,7 +167,10 @@ function Taxonomy:setTag(path, tagId, on)
 		local tag = self.tagById[tagId]
 		if tag ~= nil then tag.count = math.max(0, tag.count - 1) end
 		local empty = true
-		for _ in pairs(set) do empty = false; break end
+		for _ in pairs(set) do
+			empty = false
+			break
+		end
 		if empty then self.byPath[path] = nil end
 	end
 end
@@ -220,7 +223,7 @@ function Taxonomy:addPlaylist(name, smart, tagIds, match, opts)
 		match = match == "any" ? "any" : "all",
 		manual = opts.manual ~= false,
 		autoTagId = opts.autoTagId,
-		updatedAt = opts.now or os.time(),
+		updatedAt = opts.now or os.time()
 	}
 	self.nextPlaylistId += 1
 
@@ -256,8 +259,10 @@ function Taxonomy:playlistTracks(playlist, library)
 	local tracks = {}
 	for _, track in ipairs(library.tracks) do
 		local smartMatch = playlist.smart and self:matches(track.path, playlist.tagIds, playlist.match)
-		local manualMatch = playlist.manual and playlist.hiddenTagId ~= nil
-		and self:isTagged(track.path, playlist.hiddenTagId)
+		local manualMatch = playlist.manual and playlist.hiddenTagId ~= nil and self:isTagged(
+			track.path,
+			playlist.hiddenTagId
+		)
 		if smartMatch or manualMatch then tracks[#tracks + 1] = track end
 	end
 	return tracks
@@ -301,7 +306,10 @@ function Taxonomy:removeTag(tagId)
 		if set[tagId] then
 			set[tagId] = nil
 			local empty = true
-			for _ in pairs(set) do empty = false; break end
+			for _ in pairs(set) do
+				empty = false
+				break
+			end
 			if empty then self.byPath[path] = nil end
 		end
 	end
@@ -352,13 +360,13 @@ function Taxonomy:ensureTagPlaylists()
 		if not tag.hidden then
 			local found = false
 			for _, playlist in ipairs(self.playlists) do
-				if playlist.autoTagId == tag.id then found = true; break end
+				if playlist.autoTagId == tag.id then
+					found = true
+					break
+				end
 			end
 			if not found then
-				local playlist = self:addPlaylist(tag.name, true, { tag.id}, "all", {
-					manual = false,
-					autoTagId = tag.id,
-				})
+				local playlist = self:addPlaylist(tag.name, true, { tag.id }, "all", { manual = false, autoTagId = tag.id })
 				if playlist ~= nil then tag.playlistId = playlist.id end
 			end
 		end
@@ -383,7 +391,7 @@ end
 local function bump(map, key, now)
 	local metric = map[key]
 	if metric == nil then
-		metric = { count = 0, last = 0}
+		metric = { count = 0, last = 0 }
 		map[key] = metric
 	end
 	metric.count += 1
@@ -431,7 +439,7 @@ function Taxonomy:recentAlbums(library, limit)
 	local entries = {}
 	for _, album in ipairs(library.albums) do
 		local metric = self.metrics.albums[album.key]
-		if metric ~= nil then entries[#entries + 1] = { album = album, last = metric.last} end
+		if metric ~= nil then entries[#entries + 1] = { album = album, last = metric.last } end
 	end
 	table.sort(entries, function(a, b)
 		if a.last ~= b.last then return a.last > b.last end
@@ -451,12 +459,7 @@ end
 function Taxonomy:pack()
 	local tags = {}
 	for _, tag in ipairs(self.tags) do
-		tags[#tags + 1] = {
-			id = tag.id,
-			name = tag.name,
-			hidden = tag.hidden == true,
-			playlistId = tag.playlistId,
-		}
+		tags[#tags + 1] = { id = tag.id, name = tag.name, hidden = tag.hidden == true, playlistId = tag.playlistId }
 	end
 
 	local assignments = {}
@@ -464,7 +467,7 @@ function Taxonomy:pack()
 		local ids = {}
 		for id in pairs(set) do ids[#ids + 1] = id end
 		table.sort(ids)
-		assignments[#assignments + 1] = { path = path, tags = ids}
+		assignments[#assignments + 1] = { path = path, tags = ids }
 	end
 
 	local playlists = {}
@@ -478,31 +481,25 @@ function Taxonomy:pack()
 			manual = playlist.manual ~= false,
 			hiddenTagId = playlist.hiddenTagId,
 			autoTagId = playlist.autoTagId,
-			updatedAt = playlist.updatedAt or 0,
+			updatedAt = playlist.updatedAt or 0
 		}
 	end
 
-	local metrics = { tracks = {}, albums = {}, tags = {}, playlists = {}}
+	local metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
 	for key, metric in pairs(self.metrics.tracks) do
-		metrics.tracks[#metrics.tracks + 1] = { key = key, count = metric.count, last = metric.last}
+		metrics.tracks[#metrics.tracks + 1] = { key = key, count = metric.count, last = metric.last }
 	end
 	for key, metric in pairs(self.metrics.albums) do
-		metrics.albums[#metrics.albums + 1] = { key = key, count = metric.count, last = metric.last}
+		metrics.albums[#metrics.albums + 1] = { key = key, count = metric.count, last = metric.last }
 	end
 	for id, metric in pairs(self.metrics.tags) do
-		metrics.tags[#metrics.tags + 1] = { id = id, count = metric.count, last = metric.last}
+		metrics.tags[#metrics.tags + 1] = { id = id, count = metric.count, last = metric.last }
 	end
 	for id, metric in pairs(self.metrics.playlists) do
-		metrics.playlists[#metrics.playlists + 1] = { id = id, count = metric.count, last = metric.last}
+		metrics.playlists[#metrics.playlists + 1] = { id = id, count = metric.count, last = metric.last }
 	end
 
-	return {
-		version = 1,
-		tags = tags,
-		assignments = assignments,
-		playlists = playlists,
-		metrics = metrics,
-	}
+	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics }
 end
 
 ---@param data table
@@ -516,7 +513,7 @@ function Taxonomy.unpack(data)
 				name = raw.name,
 				hidden = raw.hidden == true,
 				playlistId = type(raw.playlistId) == "number" and raw.playlistId or nil,
-				count = 0,
+				count = 0
 			}
 			self.tags[#self.tags + 1] = tag
 			self.tagById[tag.id] = tag
@@ -539,7 +536,7 @@ function Taxonomy.unpack(data)
 				manual = raw.manual ~= nil and raw.manual == true or (raw.smart ~= true),
 				hiddenTagId = type(raw.hiddenTagId) == "number" and raw.hiddenTagId or nil,
 				autoTagId = type(raw.autoTagId) == "number" and raw.autoTagId or nil,
-				updatedAt = type(raw.updatedAt) == "number" and raw.updatedAt or 0,
+				updatedAt = type(raw.updatedAt) == "number" and raw.updatedAt or 0
 			}
 			if playlist.hiddenTagId == nil or self.tagById[playlist.hiddenTagId] == nil then
 				playlist.hiddenTagId = self:addHiddenPlaylistTag(playlist.id).id
@@ -563,25 +560,25 @@ function Taxonomy.unpack(data)
 	for _, raw in ipairs(metrics.tracks or {}) do
 		---@cast raw { key: string?, id: number?, count: number?, last: number? }
 		if type(raw.key) == "string" then
-			self.metrics.tracks[raw.key] = { count = raw.count or 0, last = raw.last or 0}
+			self.metrics.tracks[raw.key] = { count = raw.count or 0, last = raw.last or 0 }
 		end
 	end
 	for _, raw in ipairs(metrics.albums or {}) do
 		---@cast raw { key: string?, id: number?, count: number?, last: number? }
 		if type(raw.key) == "string" then
-			self.metrics.albums[raw.key] = { count = raw.count or 0, last = raw.last or 0}
+			self.metrics.albums[raw.key] = { count = raw.count or 0, last = raw.last or 0 }
 		end
 	end
 	for _, raw in ipairs(metrics.tags or {}) do
 		---@cast raw { key: string?, id: number?, count: number?, last: number? }
 		if type(raw.id) == "number" then
-			self.metrics.tags[raw.id] = { count = raw.count or 0, last = raw.last or 0}
+			self.metrics.tags[raw.id] = { count = raw.count or 0, last = raw.last or 0 }
 		end
 	end
 	for _, raw in ipairs(metrics.playlists or {}) do
 		---@cast raw { key: string?, id: number?, count: number?, last: number? }
 		if type(raw.id) == "number" then
-			self.metrics.playlists[raw.id] = { count = raw.count or 0, last = raw.last or 0}
+			self.metrics.playlists[raw.id] = { count = raw.count or 0, last = raw.last or 0 }
 		end
 	end
 	useTags(self)

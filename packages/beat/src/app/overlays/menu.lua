@@ -24,25 +24,25 @@ local CONTEXT = {
 	album = function(app, id)
 		local library = app.services.library.current
 		local album = library ~= nil ? (library:album(id)) : nil
-		return album ~= nil ? { album = album} : nil
+		return album ~= nil ? { album = album } : nil
 	end,
 	---@param app beat.App
 	---@param id number
 	track = function(app, id)
 		local library = app.services.library.current
 		local track = library ~= nil ? (library:track(id)) : nil
-		return track ~= nil ? { track = track} : nil
+		return track ~= nil ? { track = track } : nil
 	end,
 	---@param app beat.App
 	---@param id number
 	playlist = function(app, id)
 		local playlist = app.services.collections.taxonomy:playlist(id)
-		return playlist ~= nil ? { playlist = playlist} : nil
-	end,
+		return playlist ~= nil ? { playlist = playlist } : nil
+	end
 }
 
 ---@class beat.MenuOverlay: beat.OverlaySurface
-local menu = { light = true}
+local menu = { light = true }
 
 ---@param params { menu: string, id: number, x: number?, y: number? }
 ---@param app beat.App
@@ -51,7 +51,7 @@ function menu.new(app, params)
 	if context == nil or params.id == nil then return nil end
 	if context(app, params.id) == nil then return nil end
 	---@type beat.MenuState
-	return { menu = params.menu, id = params.id, x = params.x or 0, y = params.y or 0}
+	return { menu = params.menu, id = params.id, x = params.x or 0, y = params.y or 0 }
 end
 
 ---@param app beat.App
@@ -77,28 +77,27 @@ function menu.view(app, overlay, window)
 		local label = theme:s():text(theme:type("sm")):fg(theme:color(entry.tone or "text")):ellipsis()
 		if entry.tone == "danger" then label = label:weight("semibold") end
 		rows[#rows + 1] = div()
-		:style(sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12))
-		:align("center"):radius(theme:radius("sm")))
-		:hover(sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12))
-		:align("center"):radius(theme:radius("sm")):bg(theme:color("hover")))
-		:onClick(entry.message)
-		:children(text(entry.title):style(label))
+			:style(
+				sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
+			)
+			:hover(
+				sty()
+					:row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
+					:bg(theme:color("hover"))
+			):onClick(entry.message):children(text(entry.title):style(label))
 	end
 
 	local panel = div()
-	:style(sty():w(width):h(height):column():pad(theme:px(8)):gap(theme:px(2))
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(12), theme:px(30), "#00000080"))
-	:onClick({ type = "keep"})
-	:children(rows)
+		:style(
+			sty()
+				:w(width):h(height):column():pad(theme:px(8)):gap(theme:px(2)):radius(theme:radius("md"))
+				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+				:shadow(0, theme:px(12), theme:px(30), "#00000080")
+		):onClick({ type = "keep" }):children(rows)
 
 	return div()
-	:style(sty():fill():offset(0, 0):z(120))
-	:onClick({ type = "dismiss"})
-	:children({
-		div():style(sty():w(width):h(height):offset(x, y)):children({ panel}),
-	})
+		:style(sty():fill():offset(0, 0):z(120)):onClick({ type = "dismiss" })
+		:children({ div():style(sty():w(width):h(height):offset(x, y)):children({ panel }) })
 end
 
 return menu

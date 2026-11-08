@@ -25,15 +25,18 @@ function Queue.new(tracks, index, opts)
 		naturalOrder[at] = at
 	end
 
-	local queue = setmetatable({
-		tracks = tracks,
-		order = order,
-		naturalOrder = naturalOrder,
-		position = math.max(1, math.min(index or 1, #tracks)),
-		repeatMode = opts.repeatMode or "off",
-		shuffle = opts.shuffle ?? false,
-		source = opts.source or "library",
-	}, Queue)
+	local queue = setmetatable(
+		{
+			tracks = tracks,
+			order = order,
+			naturalOrder = naturalOrder,
+			position = math.max(1, math.min(index or 1, #tracks)),
+			repeatMode = opts.repeatMode or "off",
+			shuffle = opts.shuffle ?? false,
+			source = opts.source or "library"
+		},
+		Queue
+	)
 
 	if queue.shuffle then queue:shuffleOrder() end
 
@@ -243,11 +246,11 @@ function Queue:pack()
 		position = self.position,
 		repeatMode = self.repeatMode,
 		shuffle = self.shuffle,
-		source = self.source,
+		source = self.source
 	}
 end
 
-local REPEAT_MODES = { off = true, all = true, one = true}
+local REPEAT_MODES = { off = true, all = true, one = true }
 
 --- A packed queue put back, in the order it was in rather than a new shuffle. A track whose path
 --- the library no longer has is left out; if that was the current one, the play head moves to the
@@ -257,8 +260,9 @@ local REPEAT_MODES = { off = true, all = true, one = true}
 ---@return beat.Queue?
 ---@return boolean # Whether the current track is the one that was current
 function Queue.unpack(packed, find)
-	if type(packed) ~= "table" or type(packed.tracks) ~= "table" or type(packed.order) ~= "table"
-	or type(packed.naturalOrder) ~= "table" or type(packed.position) ~= "number" then
+	if type(packed) ~= "table" or type(packed.tracks) ~= "table" or type(packed.order) ~= "table" or type(
+		packed.naturalOrder
+	) ~= "table" or type(packed.position) ~= "number" then
 		return nil, false
 	end
 
@@ -287,15 +291,18 @@ function Queue.unpack(packed, find)
 		if moved[packed.order[at]] ~= nil then before += 1 end
 	end
 
-	local queue = setmetatable({
-		tracks = tracks,
-		order = order,
-		naturalOrder = remap(packed.naturalOrder),
-		position = math.min(before + 1, #order),
-		repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
-		shuffle = packed.shuffle == true,
-		source = type(packed.source) == "string" and packed.source or "library",
-	}, Queue)
+	local queue = setmetatable(
+		{
+			tracks = tracks,
+			order = order,
+			naturalOrder = remap(packed.naturalOrder),
+			position = math.min(before + 1, #order),
+			repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
+			shuffle = packed.shuffle == true,
+			source = type(packed.source) == "string" and packed.source or "library"
+		},
+		Queue
+	)
 
 	return queue, moved[packed.order[packed.position]] ~= nil
 end

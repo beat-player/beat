@@ -535,7 +535,7 @@ local messages = {}
 ---@param keepFocus boolean?
 ---@return beat.NavigateMessage
 function messages.navigate(page, keepFocus)
-	return { type = "navigate", page = page, keepFocus = keepFocus}
+	return { type = "navigate", page = page, keepFocus = keepFocus }
 end
 
 ---@param overlay string
@@ -551,7 +551,7 @@ end
 ---@param overlay string
 ---@return beat.OpenMessage
 function messages.openOverlay(overlay)
-	return { type = "open", overlay = overlay}
+	return { type = "open", overlay = overlay }
 end
 
 ---@param menu string
@@ -560,64 +560,64 @@ end
 ---@param y number?
 ---@return beat.OpenMenuMessage
 function messages.openMenu(menu, id, x, y)
-	return { type = "open", overlay = "menu", menu = menu, id = id, x = x, y = y}
+	return { type = "open", overlay = "menu", menu = menu, id = id, x = x, y = y }
 end
 
 ---@param kind "album"|"track"
 ---@param id number
 ---@return beat.OpenPlaylistPickerMessage
 function messages.openPlaylistPicker(kind, id)
-	return { type = "open", overlay = "playlist_picker", kind = kind, id = id}
+	return { type = "open", overlay = "playlist_picker", kind = kind, id = id }
 end
 
 ---@param id number
 ---@return beat.NavigateMessage
-function messages.openAlbum(id) return { type = "navigate", page = { kind = "album", id = id}} end
+function messages.openAlbum(id) return { type = "navigate", page = { kind = "album", id = id } } end
 
 ---@param id number
 ---@return beat.NavigateMessage
-function messages.openArtist(id) return { type = "navigate", page = { kind = "artist", id = id}} end
+function messages.openArtist(id) return { type = "navigate", page = { kind = "artist", id = id } } end
 
 ---@param id number
 ---@return beat.NavigateMessage
-function messages.openPlaylist(id) return { type = "navigate", page = { kind = "playlist", id = id}} end
+function messages.openPlaylist(id) return { type = "navigate", page = { kind = "playlist", id = id } } end
 
 ---@return beat.NavigateMessage
-function messages.openLibrary() return { type = "navigate", page = { kind = "library"}} end
+function messages.openLibrary() return { type = "navigate", page = { kind = "library" } } end
 
 ---@return beat.NavigateMessage
-function messages.openHome() return { type = "navigate", page = { kind = "home"}} end
+function messages.openHome() return { type = "navigate", page = { kind = "home" } } end
 
 ---@return beat.DismissMessage
-function messages.dismiss() return { type = "dismiss"} end
+function messages.dismiss() return { type = "dismiss" } end
 
 ---@return beat.KeepMessage
-function messages.keep() return { type = "keep"} end
+function messages.keep() return { type = "keep" } end
 
 ---@return beat.BackMessage
-function messages.back() return { type = "back"} end
+function messages.back() return { type = "back" } end
 
 ---@return beat.ForwardMessage
-function messages.forward() return { type = "forward"} end
+function messages.forward() return { type = "forward" } end
 
 ---@return beat.EscapeMessage
-function messages.escape() return { type = "escape"} end
+function messages.escape() return { type = "escape" } end
 
 ---@param page beat.Route
 ---@return beat.ResetMessage
-function messages.reset(page) return { type = "reset", page = page} end
+function messages.reset(page) return { type = "reset", page = page } end
 
 ---@param field string
 ---@param at number?
 ---@return beat.FocusMessage
-function messages.focus(field, at) return { type = "focus", field = field, at = at} end
+function messages.focus(field, at) return { type = "focus", field = field, at = at } end
 
 ---@param id number
 ---@param restart boolean?
 ---@param shuffle boolean?
 ---@return beat.PlayAlbumMessage
 function messages.playAlbum(id, restart, shuffle)
-	return { type = "playAlbum", id = id, restart = restart, shuffle = shuffle}
+	return { type = "playAlbum", id = id, restart = restart, shuffle = shuffle }
 end
 
 ---@param trackId number
@@ -626,106 +626,105 @@ end
 ---@param restart boolean?
 ---@return beat.PlayTrackMessage
 function messages.playTrack(trackId, albumId, artistId, restart)
-	return { type = "playTrack", trackId = trackId, albumId = albumId, artistId = artistId,
-		restart = restart}
+	return { type = "playTrack", trackId = trackId, albumId = albumId, artistId = artistId, restart = restart }
 end
 
 ---@param id number
 ---@return beat.PlayArtistMessage
-function messages.playArtist(id) return { type = "playArtist", id = id} end
+function messages.playArtist(id) return { type = "playArtist", id = id } end
 
 ---@param id number
 ---@param shuffle boolean?
 ---@return beat.PlayPlaylistMessage
-function messages.playPlaylist(id, shuffle) return { type = "playPlaylist", id = id, shuffle = shuffle} end
+function messages.playPlaylist(id, shuffle) return { type = "playPlaylist", id = id, shuffle = shuffle } end
 
 ---@param playlistId number
 ---@param trackId number
 ---@return beat.PlayPlaylistTrackMessage
 function messages.playPlaylistTrack(playlistId, trackId)
-	return { type = "playPlaylistTrack", playlistId = playlistId, trackId = trackId}
+	return { type = "playPlaylistTrack", playlistId = playlistId, trackId = trackId }
 end
 
 ---@param trackId number
 ---@return beat.JumpTrackMessage
-function messages.jumpTrack(trackId) return { type = "jumpTrack", trackId = trackId} end
+function messages.jumpTrack(trackId) return { type = "jumpTrack", trackId = trackId } end
 
 ---@param id number
 ---@param next boolean?
 ---@return beat.QueueAlbumMessage
-function messages.queueAlbum(id, next) return { type = "queueAlbum", id = id, next = next} end
+function messages.queueAlbum(id, next) return { type = "queueAlbum", id = id, next = next } end
 
 ---@return beat.TogglePlayMessage
-function messages.togglePlay() return { type = "togglePlay"} end
+function messages.togglePlay() return { type = "togglePlay" } end
 
 ---@return beat.NextMessage
-function messages.next() return { type = "next"} end
+function messages.next() return { type = "next" } end
 
 ---@return beat.PreviousMessage
-function messages.previous() return { type = "previous"} end
+function messages.previous() return { type = "previous" } end
 
 ---@param seconds number
 ---@return beat.SeekMessage
-function messages.seek(seconds) return { type = "seek", seconds = seconds} end
+function messages.seek(seconds) return { type = "seek", seconds = seconds } end
 
 ---@param by number
 ---@return beat.SeekMessage
-function messages.seekBy(by) return { type = "seek", by = by} end
+function messages.seekBy(by) return { type = "seek", by = by } end
 
 ---@param value number
 ---@return beat.VolumeMessage
-function messages.volume(value) return { type = "volume", value = value} end
+function messages.volume(value) return { type = "volume", value = value } end
 
 ---@return beat.MuteMessage
-function messages.mute() return { type = "mute"} end
+function messages.mute() return { type = "mute" } end
 
 ---@return beat.ShuffleMessage
-function messages.shuffle() return { type = "shuffle"} end
+function messages.shuffle() return { type = "shuffle" } end
 
 ---@return beat.RepeatMessage
-function messages.repeatPlay() return { type = "repeat"} end
+function messages.repeatPlay() return { type = "repeat" } end
 
 ---@param value string
 ---@return beat.SearchMessage
-function messages.search(value) return { type = "search", value = value} end
+function messages.search(value) return { type = "search", value = value } end
 
 ---@return beat.ClearSearchMessage
-function messages.clearSearch() return { type = "clearSearch"} end
+function messages.clearSearch() return { type = "clearSearch" } end
 
 ---@return beat.OpenSearchMessage
-function messages.openSearch() return { type = "openSearch"} end
+function messages.openSearch() return { type = "openSearch" } end
 
 ---@param id number
 ---@return beat.ToggleTagFilterMessage
-function messages.toggleTagFilter(id) return { type = "toggleTagFilter", id = id} end
+function messages.toggleTagFilter(id) return { type = "toggleTagFilter", id = id } end
 
 ---@param value "all"|"any"
 ---@return beat.TagFilterMatchMessage
-function messages.tagFilterMatch(value) return { type = "tagFilterMatch", value = value} end
+function messages.tagFilterMatch(value) return { type = "tagFilterMatch", value = value } end
 
 ---@return beat.ClearTagFilterMessage
-function messages.clearTagFilter() return { type = "clearTagFilter"} end
+function messages.clearTagFilter() return { type = "clearTagFilter" } end
 
 ---@param id number
 ---@return beat.ToggleTrackTagMessage
-function messages.toggleTrackTag(id) return { type = "toggleTrackTag", id = id} end
+function messages.toggleTrackTag(id) return { type = "toggleTrackTag", id = id } end
 
 ---@param id number
 ---@return beat.DeletePlaylistMessage
-function messages.deletePlaylist(id) return { type = "deletePlaylist", id = id} end
+function messages.deletePlaylist(id) return { type = "deletePlaylist", id = id } end
 
 ---@param id number
 ---@return beat.DeleteTagMessage
-function messages.deleteTag(id) return { type = "deleteTag", id = id} end
+function messages.deleteTag(id) return { type = "deleteTag", id = id } end
 
 ---@param text string
 ---@param tone string?
 ---@return beat.ToastMessage
-function messages.toast(text, tone) return { type = "toast", text = text, tone = tone} end
+function messages.toast(text, tone) return { type = "toast", text = text, tone = tone } end
 
 ---@param url string
 ---@return beat.OpenURLMessage
-function messages.openURL(url) return { type = "openURL", url = url} end
+function messages.openURL(url) return { type = "openURL", url = url } end
 
 ---@param key string
 ---@param fields beat.ScrollFields?
@@ -740,11 +739,11 @@ end
 ---@param reply string
 ---@param start string?
 ---@return beat.PickFolderMessage
-function messages.pickFolder(reply, start) return { type = "pickFolder", reply = reply, start = start} end
+function messages.pickFolder(reply, start) return { type = "pickFolder", reply = reply, start = start } end
 
 ---@param path string
 ---@return beat.LibraryAddFolderMessage
-function messages.libraryAddFolder(path) return { type = "libraryAddFolder", path = path} end
+function messages.libraryAddFolder(path) return { type = "libraryAddFolder", path = path } end
 
 ---@param kind string
 ---@param fields beat.CustomFields?

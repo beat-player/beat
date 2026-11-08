@@ -23,14 +23,10 @@ Scroll.handles = { "scroll" }
 ---@param deps { appearance: beat.AppearanceService }
 ---@return beat.ScrollService
 function Scroll.new(deps)
-	return setmetatable({
-		appearance = deps.appearance,
-		offsets = {},
-		targets = {},
-		limits = {},
-		animating = false,
-		lastAt = time.now(),
-	}, Scroll)
+	return setmetatable(
+		{ appearance = deps.appearance, offsets = {}, targets = {}, limits = {}, animating = false, lastAt = time.now() },
+		Scroll
+	)
 end
 
 --- Where a box is scrolled to, 0 for one never moved.
@@ -87,7 +83,8 @@ function Scroll:update(message)
 	else
 		self.offsets[key] = offset
 		self.targets[key] = clampScroll(
-		(self.targets[key] or offset) + (tonumber(message.by) or 0) * self.appearance.theme:px(60))
+			(self.targets[key] or offset) + (tonumber(message.by) or 0) * self.appearance.theme:px(60)
+		)
 		self.animating = true
 		-- Start the easing clock now, then let the next frame ease away from here instead of the
 		-- frame after the next idle interval.

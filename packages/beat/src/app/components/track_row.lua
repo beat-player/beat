@@ -26,7 +26,7 @@ function trackRow.view(app, props)
 	local theme = app.services.appearance.theme
 	local track, index, current = props.track, props.index, props.current
 	local onClick = props.onClick
-	if current then onClick = { type = "togglePlay"} end
+	if current then onClick = { type = "togglePlay" } end
 	local titleColour = current ? (theme:color("accent")) : (theme:color("text"))
 	local muted = theme:color("muted")
 	local rowBg = current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))
@@ -43,39 +43,49 @@ function trackRow.view(app, props)
 	-- The album column is the first thing a phone cannot afford. Keeping the title and time
 	-- legible is more useful than three columns squeezed into a narrow list.
 	local albumColumn = props.showAlbum ~= false and width >= theme:px(520)
-	local infoWidth = math.max(theme:px(100),
-	width - (albumColumn and theme:px(324) or theme:px(122)))
+	local infoWidth = math.max(theme:px(100), width - (albumColumn and theme:px(324) or theme:px(122)))
 	local info = {
-		text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium")
-		:fg(titleColour):ellipsis()),
+		text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium"):fg(titleColour):ellipsis())
 	}
 	if not props.titleOnly then
-		info[#info + 1] = text(track.artist):style(theme:s():w(infoWidth):text(theme:type("sm"))
-		:fg(muted):ellipsis())
+		info[#info + 1] = text(track.artist):style(theme:s():w(infoWidth):text(theme:type("sm")):fg(muted):ellipsis())
 	end
 	local children = {
 		div():style(sty():w(24):align("center")):children(marker),
-		div():style(sty():w(infoWidth):h(48):column():justify("center"):gap(1)):children(info),
+		div():style(sty():w(infoWidth):h(48):column():justify("center"):gap(1)):children(info)
 	}
 
 	if albumColumn then
-		children[#children + 1] = div():style(sty():w(190):h(48):column():justify("center")):children(
-		text(track.album):style(theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis())
-		)
+		children[#children + 1] = div()
+			:style(sty():w(190):h(48):column():justify("center"))
+			:children(text(track.album):style(theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis()))
 	end
 
-	children[#children + 1] = div():style(sty():w(54):h(48):column():align("start"):justify("center")):children(
-	text(format.clock(track.duration)):style(theme:s():text(theme:type("sm")):fg(muted))
-	)
+	children[#children + 1] = div()
+		:style(sty():w(54):h(48):column():align("start"):justify("center"))
+		:children(text(format.clock(track.duration)):style(theme:s():text(theme:type("sm")):fg(muted)))
 
 	return div()
-	:style(sty():row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12))
-	:align("center"):radius(theme:radius("sm")):bg(rowBg))
-	:hover(sty():row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12))
-	:align("center"):radius(theme:radius("sm")):bg(hoverBg))
-	:onClick(onClick)
-	:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "track", id = track.id, x = windowX, y = windowY})
-	:children(children)
+		:style(
+			sty()
+				:row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
+				:radius(theme:radius("sm")):bg(rowBg)
+		)
+		:hover(
+			sty()
+				:row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
+				:radius(theme:radius("sm")):bg(hoverBg)
+		):onClick(onClick)
+		:onContextMenu(
+			|_, _, _, _, _, windowX, windowY| -> {
+				type = "open",
+				overlay = "menu",
+				menu = "track",
+				id = track.id,
+				x = windowX,
+				y = windowY
+			}
+		):children(children)
 end
 
 return trackRow

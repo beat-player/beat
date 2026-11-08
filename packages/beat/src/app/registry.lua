@@ -180,21 +180,24 @@ local KINDS = { service = "services", page = "pages", overlay = "overlays" }
 ---@param app beat.App
 ---@return beat.Registry
 function Registry.new(app)
-	return setmetatable({
-		app = app,
-		plugins = {},
-		services = {},
-		pages = {},
-		overlays = {},
-		mods = {},
-		handled = {},
-		actionsList = {},
-		navList = {},
-		listeners = {},
-		interceptors = {},
-		reports = {},
-		toasts = nil,
-	}, Registry)
+	return setmetatable(
+		{
+			app = app,
+			plugins = {},
+			services = {},
+			pages = {},
+			overlays = {},
+			mods = {},
+			handled = {},
+			actionsList = {},
+			navList = {},
+			listeners = {},
+			interceptors = {},
+			reports = {},
+			toasts = nil
+		},
+		Registry
+	)
 end
 
 ---@param text string
@@ -213,7 +216,11 @@ function Registry:attach(services)
 	local reports = self.reports
 	self.reports = {}
 	for _, text in ipairs(reports) do
-		if self.toasts ~= nil then self.toasts:show(text, "error") else Log.write("error", text) end
+		if self.toasts ~= nil then
+			self.toasts:show(text, "error")
+		else
+			Log.write("error", text)
+		end
 	end
 end
 
@@ -336,7 +343,7 @@ function Registry:addService(name, module, plugin)
 		if self.handled[kind] ~= nil then error("message type " .. kind .. " is already handled", 0) end
 	end
 
-	local registration = { value = guardService(self, module, plugin), plugin = plugin, handles = handles}
+	local registration = { value = guardService(self, module, plugin), plugin = plugin, handles = handles }
 	self.services[name] = registration
 	for _, kind in ipairs(handles) do self.handled[kind] = registration end
 
@@ -358,7 +365,7 @@ function Registry:addPage(kind, surface, plugin)
 	if not ok then error(err, 0) end
 	if self.pages[kind] ~= nil then error("page " .. kind .. " is registered twice", 0) end
 
-	local registration = { value = surface, plugin = plugin}
+	local registration = { value = surface, plugin = plugin }
 	self.pages[kind] = registration
 	return function()
 		if self.pages[kind] == registration then self.pages[kind] = nil end
@@ -375,7 +382,7 @@ function Registry:addOverlay(name, surface, plugin)
 	if not ok then error(err, 0) end
 	if self.overlays[name] ~= nil then error("overlay " .. name .. " is registered twice", 0) end
 
-	local registration = { value = surface, plugin = plugin}
+	local registration = { value = surface, plugin = plugin }
 	self.overlays[name] = registration
 	return function()
 		if self.overlays[name] == registration then self.overlays[name] = nil end
@@ -404,7 +411,7 @@ function Registry:addAction(action, plugin)
 		when = action.when,
 		message = action.message,
 		plugin = plugin,
-		index = #self.actionsList + 1,
+		index = #self.actionsList + 1
 	}
 	self.actionsList[#self.actionsList + 1] = entry
 
@@ -445,7 +452,7 @@ function Registry:addNav(entry, plugin)
 		page = entry.page,
 		order = entry.order or 100,
 		plugin = plugin,
-		index = #self.navList + 1,
+		index = #self.navList + 1
 	}
 	self.navList[#self.navList + 1] = registration
 
@@ -470,7 +477,7 @@ function Registry:addListener(kind, listener, plugin)
 		list = {}
 		self.listeners[kind] = list
 	end
-	local entry = { fn = listener, plugin = plugin}
+	local entry = { fn = listener, plugin = plugin }
 	list[#list + 1] = entry
 	return function()
 		for at, candidate in ipairs(list) do
@@ -493,7 +500,7 @@ function Registry:addInterceptor(kind, interceptor, plugin)
 		list = {}
 		self.interceptors[kind] = list
 	end
-	local entry = { fn = interceptor, plugin = plugin}
+	local entry = { fn = interceptor, plugin = plugin }
 	list[#list + 1] = entry
 	return function()
 		for at, candidate in ipairs(list) do
@@ -524,7 +531,7 @@ function Registry:addWrap(name, fn, plugin)
 	local field, target = splitName(name)
 	if self[field][target] == nil then error("nothing is registered as " .. name, 0) end
 
-	local mod = { kind = "wrap", fn = fn, plugin = plugin}
+	local mod = { kind = "wrap", fn = fn, plugin = plugin }
 	local list = self.mods[name]
 	if list == nil then
 		list = {}
@@ -551,7 +558,7 @@ function Registry:addReplace(name, value, plugin)
 	local field, target = splitName(name)
 	if self[field][target] == nil then error("nothing is registered as " .. name, 0) end
 
-	local mod = { kind = "replace", value = value, plugin = plugin}
+	local mod = { kind = "replace", value = value, plugin = plugin }
 	local list = self.mods[name]
 	if list == nil then
 		list = {}
@@ -596,9 +603,7 @@ local function resolve(self, field, name)
 	local registration = self[field][name]
 	if registration == nil then return nil end
 	local value = registration.value
-	local list = self.mods[field == "services" and ("service:" .. name)
-	or field == "pages" and ("page:" .. name)
-	or ("overlay:" .. name)]
+	local list = self.mods[field == "services" and ("service:" .. name) or field == "pages" and ("page:" .. name) or ("overlay:" .. name)]
 	if list ~= nil then
 		for _, mod in ipairs(list) do
 			if not mod.plugin.disabled then
@@ -675,7 +680,7 @@ function Registry:actions(menu, ctx)
 					end
 				end
 				if type(message) == "table" then
-					shown[#shown + 1] = { entry = entry, message = message}
+					shown[#shown + 1] = { entry = entry, message = message }
 				end
 			end
 		end
@@ -688,7 +693,7 @@ function Registry:actions(menu, ctx)
 
 	local actions = {}
 	for at, item in ipairs(shown) do
-		actions[at] = { title = item.entry.title, message = item.message, tone = item.entry.tone}
+		actions[at] = { title = item.entry.title, message = item.message, tone = item.entry.tone }
 	end
 	return actions
 end

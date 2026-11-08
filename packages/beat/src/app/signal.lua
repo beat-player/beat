@@ -9,7 +9,7 @@ Signal.__index = Signal
 
 ---@return beat.Signal
 function Signal.new()
-	return setmetatable({ listeners = {}}, Signal)
+	return setmetatable({ listeners = {} }, Signal)
 end
 
 --- There is no disconnect: services are made together and dropped together, so a listener never

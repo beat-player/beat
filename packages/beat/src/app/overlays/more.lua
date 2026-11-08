@@ -15,13 +15,17 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local function nowPlayingEntry(app, label, action, width, height)
 	local theme = app.services.appearance.theme
 	return div()
-	:style(sty():row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12))
-	:align("center"):radius(theme:radius("sm")))
-	:hover(sty():row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12))
-	:align("center"):radius(theme:radius("sm")):bg(theme:color("hover")))
-	:onClick(action)
-	:children(text(label):style(theme:s():wrel(1.0):text(theme:type("sm"))
-	:weight("medium"):fg(theme:color("text")):ellipsis()))
+		:style(
+			sty():row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
+		)
+		:hover(
+			sty()
+				:row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
+				:bg(theme:color("hover"))
+		):onClick(action)
+		:children(
+			text(label):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("medium"):fg(theme:color("text")):ellipsis())
+		)
 end
 
 ---@class beat.MoreAnchor
@@ -33,7 +37,7 @@ end
 ---@field anchor beat.MoreAnchor?
 
 ---@class beat.MoreOverlay: beat.OverlaySurface
-local more = { light = true, anchored = true}
+local more = { light = true, anchored = true }
 
 function more.new()
 	---@type beat.MoreState
@@ -69,17 +73,14 @@ function more.view(app, overlay, _window)
 	local album = app.services.library.current ? (app.services.library.current:album(track.albumId)) : nil
 	---@type { [1]: string, [2]: beat.Message }[]
 	local entries = {
-		{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id}},
-		{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track",
-				id = track.id}},
+		{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id } },
+		{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track", id = track.id } }
 	}
 	if album ~= nil then
-		entries[#entries + 1] = { "Go to album",
-			{ type = "navigate", page = { kind = "album", id = album.id}}}
-		entries[#entries + 1] = { "Go to artist",
-			{ type = "navigate", page = { kind = "artist", id = album.artistId}}}
+		entries[#entries + 1] = { "Go to album", { type = "navigate", page = { kind = "album", id = album.id } } }
+		entries[#entries + 1] = { "Go to artist", { type = "navigate", page = { kind = "artist", id = album.artistId } } }
 	end
-	entries[#entries + 1] = { "Open queue", { type = "open", overlay = "queue"}}
+	entries[#entries + 1] = { "Open queue", { type = "open", overlay = "queue" } }
 
 	-- Under its own button, unless that would carry it past the end of the row.
 	local width = math.min(theme:px(252), rowWidth)
@@ -90,17 +91,15 @@ function more.view(app, overlay, _window)
 	local height = padding * 2 + #entries * rowHeight + math.max(0, #entries - 1) * gap
 	local rows = {}
 	for _, entry in ipairs(entries) do
-		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2],
-		width - padding * 2, rowHeight)
+		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2], width - padding * 2, rowHeight)
 	end
 
 	local panel = div()
-	:style(sty():w(width):h(height):column():pad(padding):gap(gap)
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(14), theme:px(36), "#00000099"))
-	:onClick({ type = "keep"})
-	:children(rows)
+		:style(
+			sty()
+				:w(width):h(height):column():pad(padding):gap(gap):radius(theme:radius("md")):bg(theme:color("elevated"))
+				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099")
+		):onClick({ type = "keep" }):children(rows)
 
 	return nowPlaying.toolPanel(app, panel, x, width, height, room)
 end

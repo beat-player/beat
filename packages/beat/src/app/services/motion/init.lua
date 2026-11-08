@@ -28,12 +28,7 @@ Motion.handles = { "reduceMotion" }
 function Motion.new(deps)
 	local motionClock = clock.new(deps.settings.values.reduceMotion)
 	motionClock:set("nowPlaying", 0)
-	return setmetatable({
-		settings = deps.settings,
-		clock = motionClock,
-		ease = clock.ease,
-		pageSlide = nil,
-	}, Motion)
+	return setmetatable({ settings = deps.settings, clock = motionClock, ease = clock.ease, pageSlide = nil }, Motion)
 end
 
 --- A one-shot progress for something a view computes itself, such as a toast fading in.

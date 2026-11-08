@@ -45,9 +45,9 @@ local DEFAULTS = {
 	lastfmUsername = "",
 	lastfmEnabled = true,
 	equalizerPreset = "flat",
-	equalizerGains = { 0, 0, 0, 0, 0},
+	equalizerGains = { 0, 0, 0, 0, 0 },
 	equalizerCustomPresets = {},
-	disabledPlugins = {},
+	disabledPlugins = {}
 }
 
 ---@param value any
@@ -105,7 +105,7 @@ function settings.load(dir)
 		equalizerPreset = data.equalizerPreset,
 		equalizerGains = data.equalizerGains,
 		equalizerCustomPresets = data.equalizerCustomPresets,
-		disabledPlugins = pluginNames(data.disabledPlugins),
+		disabledPlugins = pluginNames(data.disabledPlugins)
 	}
 
 	return loaded, file

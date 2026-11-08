@@ -36,32 +36,48 @@ function albumCard.view(app, props)
 	local current = app.services.playback:current()
 	local thisAlbum = current?.albumId == album.id
 	local playing = thisAlbum and app.services.playback.player:isPlaying()
-	if thisAlbum then onPlay = { type = "togglePlay"} end
+	if thisAlbum then onPlay = { type = "togglePlay" } end
 
 	local titleStyle = theme:s():w(width):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()
 	local artistStyle = theme:s():w(width):text(theme:type("sm")):weight("regular"):fg(theme:color("muted")):ellipsis()
 
 	local height = albumCard.height(app, { width = width })
 	return div()
-	:style(sty():w(width):h(height):column())
-	:hover(sty():w(width):h(height):column():bright(1.08))
-	:onClick(props.onOpen)
-	:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY})
-	:children({
-		div():style(sty():size(width, width)):children({
-			cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
-			div()
-			:style(sty():size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
-			:offset(width - theme:px(44), width - theme:px(44))
-			:bg(theme:color("accent")):align("center"):justify("center"))
-			:onClick(onPlay)
-			:children(icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(18)), colour = theme.accentInk })),
-		}),
-		div():style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2))):children({
-			text(album.title):style(titleStyle),
-			text(album.artist):style(artistStyle),
-		}),
-	})
+		:style(sty():w(width):h(height):column()):hover(sty():w(width):h(height):column():bright(1.08)):onClick(props.onOpen)
+		:onContextMenu(
+			|_, _, _, _, _, windowX, windowY| -> {
+				type = "open",
+				overlay = "menu",
+				menu = "album",
+				id = album.id,
+				x = windowX,
+				y = windowY
+			}
+		)
+		:children(
+			{
+				div()
+					:style(sty():size(width, width))
+					:children(
+						{
+							cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
+							div()
+								:style(
+									sty()
+										:size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
+										:offset(width - theme:px(44), width - theme:px(44)):bg(theme:color("accent")):align("center")
+										:justify("center")
+								):onClick(onPlay)
+								:children(
+									icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(18)), colour = theme.accentInk })
+								)
+						}
+					),
+				div()
+					:style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2)))
+					:children({ text(album.title):style(titleStyle), text(album.artist):style(artistStyle) })
+			}
+		)
 end
 
 return albumCard

@@ -16,7 +16,7 @@ local function selfArgs()
 	local entry = package.searchpath("beat", package.path)
 	local root = entry and entry:match("^(.*)[/\\]target[/\\]beat[/\\]init%.lua$")
 	if root == nil then return {} end
-	return { "run", "-C", root}
+	return { "run", "-C", root }
 end
 
 --- Starts a worker with `vars` (BEAT_WORKER and its paths) in its environment.
@@ -24,11 +24,7 @@ end
 ---@return process.Child? child
 ---@return string? err
 function workerProcess.spawn(vars)
-	return process.spawn(assert(env.execPath()), selfArgs(), {
-		env = vars,
-		stdout = "null",
-		stderr = "null",
-	})
+	return process.spawn(assert(env.execPath()), selfArgs(), { env = vars, stdout = "null", stderr = "null" })
 end
 
 return workerProcess

@@ -22,10 +22,7 @@ Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled" }
 ---@param deps { settingsValues: beat.Settings }?
 ---@return beat.SettingsService
 function Settings.new(deps)
-	return setmetatable({
-		values = deps and deps.settingsValues or settingsModel.load(),
-		dirtyAt = nil,
-	}, Settings)
+	return setmetatable({ values = deps and deps.settingsValues or settingsModel.load(), dirtyAt = nil }, Settings)
 end
 
 --- A value changed: save once the changes settle.

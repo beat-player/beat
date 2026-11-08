@@ -38,16 +38,16 @@ local function read(app, state, pathname)
 
 	for entry in iterator do
 		if entry.type == "dir" and entry.name:sub(1, 1) ~= "." then
-			state.entries[#state.entries + 1] = { name = entry.name, path = path.join(state.path, entry.name)}
+			state.entries[#state.entries + 1] = { name = entry.name, path = path.join(state.path, entry.name) }
 		end
 	end
-	table.sort(state.entries,|a, b| -> a.name:lower() < b.name:lower())
+	table.sort(state.entries, |a, b| -> a.name:lower() < b.name:lower())
 end
 
 ---@param app beat.App
 function folders.new(app)
 	---@type beat.FoldersState
-	local state = { path = HOME, entries = {}}
+	local state = { path = HOME, entries = {} }
 	read(app, state, app.services.settings.values.root or HOME)
 	return state
 end
@@ -65,7 +65,7 @@ function folders.update(app, page, message)
 	elseif message.type == "folderUp" then
 		read(app, state, path.dirname(state.path))
 	elseif message.type == "folderSelect" then
-		app:act({ type = "startScan", root = message.path or state.path})
+		app:act({ type = "startScan", root = message.path or state.path })
 		return true
 	elseif message.type == "cancelFolders" then
 		app:back()
@@ -87,87 +87,105 @@ function folders.view(app, page, window)
 	local pad = metrics.pad(app, window.width)
 	local rows = {}
 
-	local choose = button.view(app, {
-		label = "Choose folder…",
-		onClick = { type = "chooseFolder"},
-		primary = true,
-		height = theme:px(30),
-		width = theme:px(142),
-	})
-	local up = button.view(app, {
-		label = "Up",
-		onClick = { type = "folderUp"},
-		height = theme:px(30),
-		width = theme:px(48),
-	})
-	local select = button.view(app, {
-		label = "Select this folder",
-		onClick = { type = "folderSelect", path = state.path},
-		height = theme:px(30),
-		width = theme:px(150),
-	})
-	local cancel = app.services.library.current ~= nil ? button.view(app, {
-		label = "Cancel",
-		onClick = { type = "cancelFolders"},
-		height = theme:px(30),
-		width = theme:px(80),
-	}) : nil
+	local choose = button.view(
+		app,
+		{
+			label = "Choose folder…",
+			onClick = { type = "chooseFolder" },
+			primary = true,
+			height = theme:px(30),
+			width = theme:px(142)
+		}
+	)
+	local up = button.view(
+		app,
+		{ label = "Up", onClick = { type = "folderUp" }, height = theme:px(30), width = theme:px(48) }
+	)
+	local select = button.view(
+		app,
+		{
+			label = "Select this folder",
+			onClick = { type = "folderSelect", path = state.path },
+			height = theme:px(30),
+			width = theme:px(150)
+		}
+	)
+	local cancel = app.services.library.current ~= nil ? button.view(
+		app,
+		{ label = "Cancel", onClick = { type = "cancelFolders" }, height = theme:px(30), width = theme:px(80) }
+	) : nil
 
 	if mobile then
-		local second = { select}
+		local second = { select }
 		if cancel ~= nil then second[#second + 1] = cancel end
-		rows[#rows + 1] = div():style(sty():column():h(theme:px(76)):gap(theme:px(8))):children({
-			div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children({ choose, up}),
-			div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children(second),
-		})
+		rows[#rows + 1] = div()
+			:style(sty():column():h(theme:px(76)):gap(theme:px(8)))
+			:children(
+				{
+					div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children({ choose, up }),
+					div():style(sty():row():h(theme:px(30)):gap(theme:px(8)):align("center")):children(second)
+				}
+			)
 	else
-		local actions = { choose, up, select}
+		local actions = { choose, up, select }
 		if cancel ~= nil then actions[#actions + 1] = cancel end
-		rows[#rows + 1] = div():style(sty():row():h(theme:px(38)):gap(theme:px(8)):align("center"))
-		:children(actions)
+		rows[#rows + 1] = div():style(sty():row():h(theme:px(38)):gap(theme:px(8)):align("center")):children(actions)
 	end
 
 	for _, entry in ipairs(state.entries) do
 		rows[#rows + 1] = div()
-		:style(sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")))
-		:hover(sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm"))
-		:bg(theme:color("hover")))
-		:onClick({ type = "folderOpen", path = entry.path})
-		:children({
-			icon.view(app, { name = "folder", size = theme:px(20), colour = theme:color("muted") }),
-			text(entry.name):style(theme:s():text(theme:type("base")):fg(theme:color("text"))),
-		})
+			:style(sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")))
+			:hover(
+				sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover"))
+			):onClick({ type = "folderOpen", path = entry.path })
+			:children(
+				{
+					icon.view(app, { name = "folder", size = theme:px(20), colour = theme:color("muted") }),
+					text(entry.name):style(theme:s():text(theme:type("base")):fg(theme:color("text")))
+				}
+			)
 	end
 
 	local content = div():style(sty():column():wrel(1.0):h("auto"):gap(theme:space(10)))
-	content:children({
-		text(mobile ? "Choose a folder" : "Choose your music folder"):style((theme:s()):wrel(1.0)
-		:text((theme:type(mobile ? "xl" : "xxl"))):weight("bold"):fg((theme:color("text"))):ellipsis()),
-		text(mobile ? "Everything is scanned locally." : "Everything under it is scanned. Nothing is uploaded anywhere."):style(
-		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
-		),
-		text(state.path):style(theme:s():wrel(1.0):h(theme:px(24)):pad(theme:px(5), theme:px(8),
-		theme:px(5), theme:px(8)):radius(theme:radius("sm")):bg(theme:color("surface"))
-		:text(theme:type("xs")):fg(theme:color("faint")):ellipsis())
-		:input({
-			name = "folderPath",
-			value = state.path,
-			oninput = function() end,
-			onsubmit = |value| -> { type = "folderGo", path = value},
-		}),
-	})
+	content:children(
+		{
+			text(mobile ? "Choose a folder" : "Choose your music folder")
+				:style(
+					(theme:s()):wrel(1.0)
+						:text(((theme:type(mobile ? "xl" : "xxl")))):weight("bold"):fg(((theme:color("text")))):ellipsis()
+				),
+			text(mobile ? "Everything is scanned locally." : "Everything under it is scanned. Nothing is uploaded anywhere.")
+				:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+			text(state.path)
+				:style(
+					theme:s()
+						:wrel(1.0):h(theme:px(24)):pad(theme:px(5), theme:px(8), theme:px(5), theme:px(8)):radius(theme:radius("sm"))
+						:bg(theme:color("surface")):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()
+				)
+				:input(
+					{
+						name = "folderPath",
+						value = state.path,
+						oninput = function() end,
+						onsubmit = |value| -> { type = "folderGo", path = value }
+					}
+				)
+		}
+	)
 	if state.error ~= nil then
-		content:children(text(state.error):style(
-		theme:s():text(theme:type("xs")):fg(theme:color("danger"))
-		))
+		content:children(text(state.error):style(theme:s():text(theme:type("xs")):fg(theme:color("danger"))))
 	end
-	content:children(div():style(sty():column():wrel(1.0):h(theme:px(320)):pad(0, 0, 0, 0)
-	:bar(theme:px(8), theme:px(40), theme:color("faint")))
-	:scroll(app.services.scroll:offset("folders"))
-	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to}):children(rows))
+	content:children(
+		div()
+			:style(
+				sty():column():wrel(1.0):h(theme:px(320)):pad(0, 0, 0, 0):bar(theme:px(8), theme:px(40), theme:color("faint"))
+			):scroll(app.services.scroll:offset("folders"))
+			:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to }):children(rows)
+	)
 
-	return div():style(sty():column():wrel(1.0):h(theme:px(540)):pad(theme:space(20), pad, theme:space(20), pad)
-	:gap(theme:space(16))):children({ content})
+	return div()
+		:style(sty():column():wrel(1.0):h(theme:px(540)):pad(theme:space(20), pad, theme:space(20), pad):gap(theme:space(16)))
+		:children({ content })
 end
 
 return folders

@@ -62,7 +62,7 @@ local current = nil
 local function recordError(path, message)
 	skipped += 1
 	if #errors < 100 then
-		errors[#errors + 1] = { path = clean(path), message = clean(message)}
+		errors[#errors + 1] = { path = clean(path), message = clean(message) }
 	end
 end
 
@@ -74,7 +74,7 @@ local function inspect(entry)
 		dir = entry.dir,
 		name = entry.name,
 		ext = entry.ext,
-		modifyTime = stat?.modifyTime,
+		modifyTime = stat?.modifyTime
 	}
 
 	local ok, info = pcall(audio.inspect, entry.path)
@@ -87,30 +87,35 @@ local function inspect(entry)
 	local coverCache = cached[key]
 	if coverCache == nil then
 		if info.hasPicture then
-			coverCache = artwork.cacheCover({
-				path = entry.path,
-				hasPicture = true,
-				coverPath = entry.cover,
-				modified = fileEntry.modifyTime,
-			}, COVER_SIZE, cacheRoot)
+			coverCache = artwork.cacheCover(
+				{ path = entry.path, hasPicture = true, coverPath = entry.cover, modified = fileEntry.modifyTime },
+				COVER_SIZE,
+				cacheRoot
+			)
 		elseif entry.cover ~= nil and not triedFolder[key] then
 			triedFolder[key] = true
 			local coverStat = fs.stat(entry.cover)
-			coverCache = artwork.cacheCover({
-				path = entry.path,
-				hasPicture = false,
-				coverPath = entry.cover,
-				modified = fileEntry.modifyTime,
-				coverModified = coverStat?.modifyTime,
-			}, COVER_SIZE, cacheRoot)
+			coverCache = artwork.cacheCover(
+				{
+					path = entry.path,
+					hasPicture = false,
+					coverPath = entry.cover,
+					modified = fileEntry.modifyTime,
+					coverModified = coverStat?.modifyTime
+				},
+				COVER_SIZE,
+				cacheRoot
+			)
 		end
 
 		if coverCache ~= nil then cached[key] = coverCache end
 	end
 
 	dropUnsendableTags(info)
-	local sent, encoded = pcall(json.encode,
-	{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	local sent, encoded = pcall(
+		json.encode,
+		{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache }
+	)
 	if not sent then
 		recordError(entry.path, "skipped: its tags are not UTF-8")
 		return
@@ -143,8 +148,7 @@ local ok, err = pcall(function()
 
 		local now = time.now()
 		if inspected % PROGRESS_EVERY == 0 or now - lastProgress >= PROGRESS_SECONDS then
-			emit({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped,
-				current = current ~= nil ? clean(current) : nil})
+			emit({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped, current = current ~= nil ? clean(current) : nil })
 			lastProgress = now
 		end
 	end
@@ -152,10 +156,9 @@ end)
 
 if not ok then
 	Log.write("error", "scan inspector failed on " .. tostring(current) .. ": " .. tostring(err))
-	emit({ type = "error",
-		message = "Could not read " .. clean(current or "a track") .. ": " .. clean(err) })
+	emit({ type = "error", message = "Could not read " .. clean(current or "a track") .. ": " .. clean(err) })
 else
-	emit({ type = "done", inspected = inspected, tracks = tracks, skipped = skipped, errors = errors})
+	emit({ type = "done", inspected = inspected, tracks = tracks, skipped = skipped, errors = errors })
 end
 
 file:close()

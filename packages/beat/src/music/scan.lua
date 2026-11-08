@@ -11,35 +11,13 @@ local names = require("beat.music.names")
 local Library = require("beat.music.library")
 local audio = require("treble.audio")
 
-local AUDIO = {
-	flac = true,
-	mp3 = true,
-	opus = true,
-	ogg = true,
-	wav = true,
-}
+local AUDIO = { flac = true, mp3 = true, opus = true, ogg = true, wav = true }
 
-local IMAGES = {
-	jpg = true,
-	jpeg = true,
-	png = true,
-	gif = true,
-	bmp = true,
-}
+local IMAGES = { jpg = true, jpeg = true, png = true, gif = true, bmp = true }
 
-local COVER_NAMES = {
-	cover = true,
-	folder = true,
-	front = true,
-	album = true,
-}
+local COVER_NAMES = { cover = true, folder = true, front = true, album = true }
 
-local JUNK = {
-	["@eaDir"] = true,
-	["#recycle"] = true,
-	["System Volume Information"] = true,
-	["$RECYCLE.BIN"] = true,
-}
+local JUNK = { ["@eaDir"] = true, ["#recycle"] = true, ["System Volume Information"] = true, ["$RECYCLE.BIN"] = true }
 
 ---@class beat.ScanProgress
 ---@field phase "enumerate"|"inspect"|"done"|"cancelled"
@@ -75,21 +53,24 @@ function Scanner.new(root, opts)
 	local normalized = path.normalize(root)
 	local keepLibrary = opts == nil or opts.library ~= false
 
-	return setmetatable({
-		root = normalized,
-		library = keepLibrary ? Library.new(normalized) : nil,
-		phase = "enumerate",
-		files = {},
-		trackCount = 0,
-		dirs = { normalized},
-		dirIndex = 1,
-		fileIndex = 1,
-		dirCovers = {},
-		skipped = 0,
-		errors = {},
-		current = nil,
-		version = 0,
-	}, Scanner)
+	return setmetatable(
+		{
+			root = normalized,
+			library = keepLibrary ? Library.new(normalized) : nil,
+			phase = "enumerate",
+			files = {},
+			trackCount = 0,
+			dirs = { normalized },
+			dirIndex = 1,
+			fileIndex = 1,
+			dirCovers = {},
+			skipped = 0,
+			errors = {},
+			current = nil,
+			version = 0
+		},
+		Scanner
+	)
 end
 
 ---@param entry string
@@ -128,7 +109,7 @@ local function enumerateOne(self)
 	if iterator == nil then
 		self.skipped += 1
 		if #self.errors < 100 then
-			self.errors[#self.errors + 1] = { path = dir, message = "cannot read folder"}
+			self.errors[#self.errors + 1] = { path = dir, message = "cannot read folder" }
 		end
 		return
 	end
@@ -185,13 +166,7 @@ local function inspectOne(self)
 	local name = path.basename(entry)
 	local ext = extensionOf(name) or ""
 	local stat = fs.stat(entry)
-	local fileEntry = {
-		path = entry,
-		dir = dir,
-		name = name,
-		ext = ext,
-		modifyTime = stat?.modifyTime,
-	}
+	local fileEntry = { path = entry, dir = dir, name = name, ext = ext, modifyTime = stat?.modifyTime }
 
 	local ok, info = pcall(audio.inspect, entry)
 	if not ok or info == nil then
@@ -199,7 +174,7 @@ local function inspectOne(self)
 		if #self.errors < 100 then
 			self.errors[#self.errors + 1] = {
 				path = entry,
-				message = ok ? "not an audio file this library reads" : tostring(info),
+				message = ok ? "not an audio file this library reads" : tostring(info)
 			}
 		end
 	else
@@ -281,7 +256,7 @@ function Scanner:entries()
 			dir = dir,
 			name = name,
 			ext = extensionOf(name) or "",
-			cover = self.dirCovers[dir],
+			cover = self.dirCovers[dir]
 		}
 	end
 
@@ -297,7 +272,7 @@ function Scanner:progress()
 		tracks = self.trackCount,
 		skipped = self.skipped,
 		errors = self.errors,
-		current = self.current,
+		current = self.current
 	}
 end
 

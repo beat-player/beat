@@ -148,7 +148,7 @@ test.it("scans without building the worker a second library", function()
 	copy(TONE, path.join(root, "one.wav"))
 
 	local seen = 0
-	local scanner = Scanner.new(root, { library = false})
+	local scanner = Scanner.new(root, { library = false })
 	scanner.onTrack = function() seen = seen + 1 end
 
 	while not scanner:isDone() do

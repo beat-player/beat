@@ -16,21 +16,21 @@ local u8 = ffi.typeof("uint8_t*")
 ---@return image.Image?
 ---@return string?
 function artwork.decode(picture)
-	return image.decode(picture.data, { channels = 4})
+	return image.decode(picture.data, { channels = 4 })
 end
 
 ---@param bytes string
 ---@return image.Image?
 ---@return string?
 function artwork.decodePNG(bytes)
-	return image.decode(bytes, { channels = 4})
+	return image.decode(bytes, { channels = 4 })
 end
 
 ---@param path string
 ---@return image.Image?
 ---@return string?
 function artwork.load(path)
-	return image.load(path, { channels = 4})
+	return image.load(path, { channels = 4 })
 end
 
 --- A square, centred copy no larger than `maxSide`. The source keeps its aspect ratio by being
@@ -137,14 +137,14 @@ function artwork.forTrack(track, maxSide)
 	if track.hasPicture then
 		local tags = audio.tags(track.path)
 		if tags?.picture ~= nil then
-			decoded, err = image.decode(tags.picture.data, { channels = 4})
+			decoded, err = image.decode(tags.picture.data, { channels = 4 })
 		end
 	end
 
 	-- A picture inside the track is preferred, but a picture beside it is still better than a
 	-- placeholder when the tag reader or the embedded image cannot handle it.
 	if decoded == nil and track.coverPath ~= nil then
-		decoded, err = image.load(track.coverPath, { channels = 4})
+		decoded, err = image.load(track.coverPath, { channels = 4 })
 	end
 
 	if decoded == nil then
@@ -156,7 +156,7 @@ function artwork.forTrack(track, maxSide)
 	local r, g, b = artwork.dominant(fitted)
 	decoded:close()
 
-	return fitted, { r = r, g = g, b = b}
+	return fitted, { r = r, g = g, b = b }
 end
 
 --- Downscale one track's art and write it to the local cache. The scan worker calls this while
@@ -187,7 +187,7 @@ function artwork.cacheCover(track, maxSide, root)
 		end
 	end
 
-	local encoded, encodeErr = fitted:encode("jpg", { quality = 90})
+	local encoded, encodeErr = fitted:encode("jpg", { quality = 90 })
 	fitted:close()
 	if encoded == nil then return nil, encodeErr end
 
@@ -216,14 +216,14 @@ function artwork.forAlbum(album, maxSide)
 	local cache = album.coverCache
 	if cache == nil then return nil, nil, "cover has not been cached yet" end
 
-	local decoded, err = image.load(cache, { channels = 4})
+	local decoded, err = image.load(cache, { channels = 4 })
 	if decoded == nil then return nil, nil, err end
 
 	local fitted = artwork.fit(decoded, maxSide)
 	local r, g, b = artwork.dominant(fitted)
 	decoded:close()
 
-	return fitted, { r = r, g = g, b = b}
+	return fitted, { r = r, g = g, b = b }
 end
 
 --- What a file says about a picture it holds, before decoding it.

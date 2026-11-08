@@ -31,8 +31,7 @@ local TLS_1_3 = 7
 local TLS_1_2 = 6 + bit.lshift(6, 16)
 -- A browser-like agent: Bandcamp and other sites answer a request that looks like a script with
 -- a challenge or a refusal, and the album art and stream URLs are meant for a browser.
-local USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-	.. "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+local USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " .. "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 ---@class beat.HttpResponse
 ---@field status number # The HTTP status, or 0 when the transfer failed before one arrived
@@ -83,12 +82,7 @@ function Http.new(deps)
 	-- `rawget`: a service's deps table answers a key it was not given with an error, and the
 	-- stand-in is only there when a test hands it over.
 	local seam = rawget(deps, "curl")
-	return setmetatable({
-		curl = seam or (curlOk and curl or nil),
-		batch = nil,
-		queue = {},
-		active = {},
-	}, Http)
+	return setmetatable({ curl = seam or (curlOk and curl or nil), batch = nil, queue = {}, active = {} }, Http)
 end
 
 -- The libcurl handle curl-sys opened. Its batch wrapper exposes neither FAILONERROR nor the
@@ -178,8 +172,11 @@ end
 ---@param err any
 ---@return boolean
 local function tlsFailure(err)
-	return type(err) == "string" and (err:find("SSL", 1, true) ~= nil or err:find("TLS", 1, true) ~= nil
-		or err:find("built-in", 1, true) ~= nil)
+	return type(err) == "string" and (err:find("SSL", 1, true) ~= nil or err:find("TLS", 1, true) ~= nil or err:find(
+		"built-in",
+		1,
+		true
+	) ~= nil)
 end
 
 ---@param service beat.HttpService
@@ -303,10 +300,7 @@ function Http:finish(transfer, result)
 		if result.ok == true then
 			call(transfer.onDone, { status = tonumber(result.status) or 0, body = result.body })
 		else
-			call(transfer.onDone, {
-				status = 0,
-				error = type(result.err) == "string" and result.err or "network error",
-			})
+			call(transfer.onDone, { status = 0, error = type(result.err) == "string" and result.err or "network error" })
 		end
 		return
 	end
@@ -314,15 +308,15 @@ function Http:finish(transfer, result)
 	---@cast transfer beat.HttpTransfer
 	local status = transfer.httpStatus ~= nil and transfer.httpStatus.code or 0
 	if result.ok == true and not badStatus(status) then
-		local moved, moveErr = fs.move(transfer.part --[[@as string]], transfer.path --[[@as string]])
+		local moved, moveErr = fs.move(transfer.part --[[@as string]],  transfer.path --[[@as string]] )
 		if moved then
 			call(transfer.onDone, true)
 		else
-			fs.delete(transfer.part --[[@as string]])
+			fs.delete(transfer.part --[[@as string]] )
 			call(transfer.onDone, false, moveErr or "could not move the download into place")
 		end
 	else
-		fs.delete(transfer.part --[[@as string]])
+		fs.delete(transfer.part --[[@as string]] )
 		if badStatus(status) then
 			call(transfer.onDone, false, "HTTP " .. status)
 		else
@@ -375,7 +369,7 @@ function Http:add(transfer)
 		if not watched and transfer.url:match("^https?://") ~= nil then
 			transfer.cancelled = true
 			self:restartBatch()
-			fs.delete(transfer.part --[[@as string]])
+			fs.delete(transfer.part --[[@as string]] )
 			call(transfer.onDone, false, "could not check the download's HTTP status")
 			return false
 		end
@@ -425,10 +419,10 @@ function Http:request(request)
 			headers = request.headers,
 			body = request.body,
 			timeout = REQUEST_TIMEOUT,
-			useragent = USER_AGENT,
+			useragent = USER_AGENT
 		},
 		onDone = request.onDone,
-		cancelled = false,
+		cancelled = false
 	}
 
 	self.queue[#self.queue + 1] = transfer
@@ -462,10 +456,10 @@ function Http:download(download)
 			progress = onProgress ~= nil and function(dlTotal, dlNow)
 				call(onProgress, dlNow, dlTotal > 0 and dlTotal or nil)
 				return nil
-			end or nil,
+			end or nil
 		},
 		onDone = download.onDone,
-		cancelled = false,
+		cancelled = false
 	}
 
 	self.queue[#self.queue + 1] = transfer
@@ -517,7 +511,7 @@ function Http:step(_now)
 				local index = transfer.index --[[@as number]]
 				local state = self.batch.order and self.batch.order[index]
 				local result = state and state.result
-				if result ~= nil then done[#done + 1] = { transfer = transfer, result = result} end
+				if result ~= nil then done[#done + 1] = { transfer = transfer, result = result } end
 			end
 			for _, entry in ipairs(done) do self:forgetActive(entry.transfer) end
 			for _, entry in ipairs(done) do self:finish(entry.transfer, entry.result) end

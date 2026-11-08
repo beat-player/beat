@@ -18,7 +18,7 @@ local SORT_LABELS = {
 	artist = "Artist",
 	year = "Year",
 	recent = "Recently added",
-	modified = "File modified",
+	modified = "File modified"
 }
 
 --- The view the shelf would switch to, drawn rather than taken from the icon face: the face has
@@ -31,28 +31,23 @@ local function viewButton(app, size, grid)
 	local colour = theme:color("muted")
 	local inner = math.max(12, math.floor(size * 0.5 + 0.5))
 
-	return iconButton.surface(app, {
-		size = size,
-		onClick = { type = "toggleView"},
-		content = div():style(sty():size(inner, inner)):canvas(function(canvas)
-			local gap = math.max(2, math.floor(inner * 0.16))
-			if grid then
-				local tile = math.floor((canvas.width - gap) / 2)
-				for at = 0, 3 do
-					canvas:rect((at % 2) * (tile + gap), math.floor(at / 2) * (tile + gap), tile, tile,
-					colour, math.max(1, math.floor(tile * 0.25)))
-				end
-			else
-				local line = math.max(2, math.floor(inner * 0.14))
-				local step = math.floor((canvas.height - line) / 2)
-				for at = 0, 2 do
-					local y = at * step
-					canvas:rect(0, y, line, line, colour, line / 2)
-					canvas:rect(line + gap, y, canvas.width - line - gap, line, colour, line / 2)
-				end
+	return iconButton.surface(app, { size = size, onClick = { type = "toggleView" }, content = div():style(sty():size(inner, inner)):canvas(function(canvas)
+		local gap = math.max(2, math.floor(inner * 0.16))
+		if grid then
+			local tile = math.floor((canvas.width - gap) / 2)
+			for at = 0, 3 do
+				canvas:rect((at % 2) * (tile + gap), math.floor(at / 2) * (tile + gap), tile, tile, colour, math.max(1, math.floor(tile * 0.25)))
 			end
-		end),
-	})
+		else
+			local line = math.max(2, math.floor(inner * 0.14))
+			local step = math.floor((canvas.height - line) / 2)
+			for at = 0, 2 do
+				local y = at * step
+				canvas:rect(0, y, line, line, colour, line / 2)
+				canvas:rect(line + gap, y, canvas.width - line - gap, line, colour, line / 2)
+			end
+		end
+	end) })
 end
 
 ---@param app beat.App
@@ -74,12 +69,15 @@ function libraryPage.view(app, page, window)
 	local theme = app.services.appearance.theme
 	local library = app.services.library.current
 	if library == nil then
-		return emptyState.view(app, {
-			title = "Awkward. Nothing's here.",
-			actionLabel = "Choose a folder",
-			action = { type = "chooseFolder"},
-			icon = "😬",
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Awkward. Nothing's here.",
+				actionLabel = "Choose a folder",
+				action = { type = "chooseFolder" },
+				icon = "😬"
+			}
+		)
 	end
 	local content = metrics.contentWidth(app, window.width)
 	local albums = app.services.library:sorted(app.services.settings.values.sort)
@@ -106,45 +104,54 @@ function libraryPage.view(app, page, window)
 	local stacked = content < 480
 	local headerHeight = stacked ? (theme:px(104)) : (theme:px(58))
 	local viewWidth = theme:px(32)
-	local sortWidth = math.max(theme:px(88),
-	math.min(theme:px(150), content - viewWidth - theme:px(8)))
+	local sortWidth = math.max(theme:px(88), math.min(theme:px(150), content - viewWidth - theme:px(8)))
 	local titleWidth = math.max(theme:px(0), content - sortWidth - viewWidth - theme:space(16))
 
-	local titleBlock = div():style(sty():column():w(stacked and content or titleWidth)
-	:h(stacked ? (theme:px(58)) : headerHeight):gap(4)):children({
-		text("Your library"):style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold")
-		:fg(theme:color("text")):ellipsis()),
-		text(format.count(#albums, "album") .. " · " .. format.count(#library.tracks, "track")):style(
-		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
-		),
-	})
+	local titleBlock = div()
+		:style(sty():column():w(stacked and content or titleWidth):h(stacked ? (theme:px(58)) : headerHeight):gap(4))
+		:children(
+			{
+				text("Your library")
+					:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis()),
+				text(format.count(#albums, "album") .. " · " .. format.count(#library.tracks, "track"))
+					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+			}
+		)
 
 	local sort = app.services.settings.values.sort
-	local controls = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
-	:justify(stacked ? "start" : "end")):children({
-		button.view(app, {
-			label = sortWidth < (theme:px(130)) ? "Sort" : "Sort: " .. (SORT_LABELS[sort] or sort),
-			onClick = { type = "open", overlay = "sort_menu"},
-			height = theme:px(32),
-			width = sortWidth,
-		}),
-		viewButton(app, viewWidth, list),
-	})
+	local controls = div()
+		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify(stacked ? "start" : "end"))
+		:children(
+			{
+				button.view(
+					app,
+					{
+						label = sortWidth < (theme:px(130)) ? "Sort" : "Sort: " .. (SORT_LABELS[sort] or sort),
+						onClick = { type = "open", overlay = "sort_menu" },
+						height = theme:px(32),
+						width = sortWidth
+					}
+				),
+				viewButton(app, viewWidth, list)
+			}
+		)
 
 	local header = div()
-	:style(stacked ? (sty():column():wrel(1.0):h(headerHeight):gap((theme:px(10)))) : (sty():row():wrel(1.0):h(headerHeight):align("center"):justify("space-between")))
-	:children({
-		titleBlock,
-		controls,
-	})
+		:style(
+			stacked ? (sty():column():wrel(1.0):h(headerHeight):gap(((theme:px(10))))) : (sty()
+				:row():wrel(1.0):h(headerHeight):align("center"):justify("space-between"))
+		):children({ titleBlock, controls })
 
 	if #albums == 0 then
-		return emptyState.view(app, {
-			title = "Awkward. Nothing's here.",
-			actionLabel = "Choose a folder",
-			action = { type = "chooseFolder"},
-			icon = "😬",
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Awkward. Nothing's here.",
+				actionLabel = "Choose a folder",
+				action = { type = "chooseFolder" },
+				icon = "😬"
+			}
+		)
 	end
 
 	local cardHeight = albumCard.height(app, { width = cardWidth })
@@ -152,12 +159,16 @@ function libraryPage.view(app, page, window)
 	local totalRows = list and #albums or math.ceil(#albums / columns)
 	local contentHeight = headerHeight + theme:space(18) + totalRows * rowHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(),
-	math.max(0, contentHeight - viewport))
+	app.services.scroll:setLimit(app:pageKey(), math.max(0, contentHeight - viewport))
 	local scroll = app.services.scroll:offset(app:pageKey())
 	local listStart = headerHeight + theme:space(18)
-	local first, last, top = app.services.scroll.slices(#albums, list ? 1 : columns, rowHeight,
-	math.max(0, scroll - listStart), viewport)
+	local first, last, top = app.services.scroll.slices(
+		#albums,
+		list ? 1 : columns,
+		rowHeight,
+		math.max(0, scroll - listStart),
+		viewport
+	)
 	local children = {}
 
 	if top > 0 then children[#children + 1] = div():style(sty():h(top)) end
@@ -166,38 +177,55 @@ function libraryPage.view(app, page, window)
 		for at = first, last do
 			local album = albums[at]
 			children[#children + 1] = div()
-			:style(sty():row():w(content):h(rowHeight):gap(theme:px(14)):align("center")
-			:radius(theme:radius("sm")))
-			:hover(sty():row():w(content):h(rowHeight):gap(theme:px(14)):align("center")
-			:radius(theme:radius("sm")):bg(theme:color("hover")))
-			:onClick({ type = "navigate", page = { kind = "album", id = album.id}})
-			:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY})
-			:children({
-				cover.view(app, { album = album, size = theme:px(48), radius = theme:radius("sm") }),
-				div():style(sty():column():w(content - (theme:px(mobile ? 80 : 190)))):children({
-					text(album.title):style(theme:s():wrel(1.0):text(theme:type("base"))
-					:weight("semibold"):fg(theme:color("text")):ellipsis()),
-					text(album.artist .. (album.year and (" · " .. album.year) or "")):style(
-					theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-				}),
-				(not mobile) and text(format.count(#album.tracks, "track")):style(
-				theme:s():text(theme:type("sm")):fg(theme:color("muted"))) or div():style(
-				sty():w(0):h(0)),
-				(not mobile) and text(format.duration(album.duration)):style(
-				theme:s():text(theme:type("sm")):fg(theme:color("faint"))) or div():style(
-				sty():w(0):h(0)),
-			})
+				:style(sty():row():w(content):h(rowHeight):gap(theme:px(14)):align("center"):radius(theme:radius("sm")))
+				:hover(
+					sty()
+						:row():w(content):h(rowHeight):gap(theme:px(14)):align("center"):radius(theme:radius("sm"))
+						:bg(theme:color("hover"))
+				):onClick({ type = "navigate", page = { kind = "album", id = album.id } })
+				:onContextMenu(
+					|_, _, _, _, _, windowX, windowY| -> {
+						type = "open",
+						overlay = "menu",
+						menu = "album",
+						id = album.id,
+						x = windowX,
+						y = windowY
+					}
+				)
+				:children(
+					{
+						cover.view(app, { album = album, size = theme:px(48), radius = theme:radius("sm") }),
+						div()
+							:style(sty():column():w(content - (theme:px(mobile ? 80 : 190))))
+							:children(
+								{
+									text(album.title)
+										:style(theme:s():wrel(1.0):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
+									text(album.artist .. (album.year and (" · " .. album.year) or ""))
+										:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+								}
+							),
+						(not mobile) and text(format.count(#album.tracks, "track"))
+							:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))) or div():style(sty():w(0):h(0)),
+						(not mobile) and text(format.duration(album.duration))
+							:style(theme:s():text(theme:type("sm")):fg(theme:color("faint"))) or div():style(sty():w(0):h(0))
+					}
+				)
 		end
 	else
 		local row = {}
 		for at = first, last do
 			local album = albums[at]
-			row[#row + 1] = albumCard.view(app, {
-				album = album,
-				width = cardWidth,
-				onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
-				onPlay = { type = "playAlbum", id = album.id},
-			})
+			row[#row + 1] = albumCard.view(
+				app,
+				{
+					album = album,
+					width = cardWidth,
+					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
+					onPlay = { type = "playAlbum", id = album.id }
+				}
+			)
 			if #row == columns or at == last then
 				children[#children + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)
 				row = {}
@@ -209,10 +237,9 @@ function libraryPage.view(app, page, window)
 	local bottomPad = math.max(0, (totalRows - (first - 1) - usedRows) * rowHeight)
 	if bottomPad > 0 then children[#children + 1] = div():style(sty():h(bottomPad)) end
 
-	return div():style(sty():column():wrel(1.0):h(contentHeight):gap(theme:space(18))):children({
-		header,
-		div():style(sty():column():wrel(1.0):h(totalRows * rowHeight):gap(0)):children(children),
-	})
+	return div()
+		:style(sty():column():wrel(1.0):h(contentHeight):gap(theme:space(18)))
+		:children({ header, div():style(sty():column():wrel(1.0):h(totalRows * rowHeight):gap(0)):children(children) })
 end
 
 return libraryPage

@@ -21,7 +21,7 @@ local function track(id, duration)
 		channels = 2,
 		hasPicture = false,
 		modified = 0,
-		hash = "hash-" .. id,
+		hash = "hash-" .. id
 	}
 end
 

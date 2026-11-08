@@ -48,7 +48,7 @@ local function track(id, albumId, path)
 		channels = 2,
 		hasPicture = false,
 		modified = 0,
-		hash = "track-" .. id,
+		hash = "track-" .. id
 	}
 end
 
@@ -59,14 +59,11 @@ local albumA = {
 	title = "First",
 	artist = "Artist",
 	artistId = 1,
-	tracks = {
-		track(1, 10, "/tmp/a1.wav"),
-		track(2, 10, "/tmp/a2.wav"),
-	},
+	tracks = { track(1, 10, "/tmp/a1.wav"), track(2, 10, "/tmp/a2.wav") },
 	duration = 240,
 	trackCount = 2,
 	modified = 0,
-	hash = "first",
+	hash = "first"
 }
 
 ---@type beat.Album
@@ -76,23 +73,16 @@ local albumB = {
 	title = "Second",
 	artist = "Artist",
 	artistId = 1,
-	tracks = {
-		track(3, 20, "/tmp/b1.wav"),
-		track(4, 20, "/tmp/b2.wav"),
-	},
+	tracks = { track(3, 20, "/tmp/b1.wav"), track(4, 20, "/tmp/b2.wav") },
 	duration = 240,
 	trackCount = 2,
 	modified = 0,
-	hash = "second",
+	hash = "second"
 }
 
 ---@param albums beat.Album[]
 local function libraryOf(albums)
-	local service = LibraryService.new({
-		settings = { values = {} },
-		options = { scan = false },
-		emit = function() end,
-	})
+	local service = LibraryService.new({ settings = { values = {} }, options = { scan = false }, emit = function() end })
 
 	---@type beat.Library
 	local current = Library.new("/tmp/beat-playback-events")
@@ -164,9 +154,9 @@ local function start(albums)
 		lastfmUsername = "",
 		lastfmEnabled = true,
 		equalizerPreset = "flat",
-		equalizerGains = { 0, 0, 0, 0, 0},
+		equalizerGains = { 0, 0, 0, 0, 0 },
 		equalizerCustomPresets = {},
-		disabledPlugins = {},
+		disabledPlugins = {}
 	}
 
 	local library = libraryOf(albums or { albumA, albumB })
@@ -177,15 +167,17 @@ local function start(albums)
 		library = library,
 		toasts = toasts,
 		changed = Signal.new(),
-		recordListen = function() end,
+		recordListen = function() end
 	}
-	local service = Playback.new({
-		settings = { values = settingsValues },
-		library = library,
-		collections = collections,
-		toasts = toasts,
-		emit = function(message) messages[#messages + 1] = message end,
-	})
+	local service = Playback.new(
+		{
+			settings = { values = settingsValues },
+			library = library,
+			collections = collections,
+			toasts = toasts,
+			emit = function(message) messages[#messages + 1] = message end
+		}
+	)
 	device(service.player)
 	return service, messages, toasts
 end
@@ -338,11 +330,11 @@ test.it("says the queue changed when it is shuffled, without a track transition"
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "shuffle"})
+	service:update({ type = "shuffle" })
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
 
-	service:update({ type = "shuffle"})
+	service:update({ type = "shuffle" })
 	test.equal(#messages, 2)
 	test.equal(messages[2].type, "queueChanged")
 end)
@@ -352,7 +344,7 @@ test.it("puts an album next and plays it when the current track ends", function(
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "queueAlbum", id = albumB.id, next = true})
+	service:update({ type = "queueAlbum", id = albumB.id, next = true })
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
@@ -375,7 +367,7 @@ test.it("adds an album to the end of the queue", function()
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "queueAlbum", id = albumB.id})
+	service:update({ type = "queueAlbum", id = albumB.id })
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")

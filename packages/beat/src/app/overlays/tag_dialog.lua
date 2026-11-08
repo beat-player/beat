@@ -23,7 +23,7 @@ function tagDialog.new(app, params)
 	-- The caret goes in as soon as the dialog opens, so typing is the next thing that happens.
 	app:focusField("newTag")
 	---@type beat.TagDialogState
-	return { draft = ""}
+	return { draft = "" }
 end
 
 ---@param app beat.App
@@ -64,43 +64,55 @@ function tagDialog.view(app, overlay, window)
 	local theme = app.services.appearance.theme
 	local panelWidth = metrics.panelWidth(app, window, 360)
 	local pad = theme:px(18)
-	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32)
-	+theme:px(12) * 3
+	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32) + theme:px(12) * 3
 	local panel = div()
-	:style(sty():w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12)):radius(theme:radius("lg"))
-	:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(16), theme:px(42), "#00000080"))
-	:onClick({ type = "keep"})
-	:children({
-		text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-		text("Tag tracks so playlists and search can find them."):style(
-		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-		field.view(app, {
-			name = "newTag",
-			value = state.draft,
-			placeholder = "Tag name",
-			oninput = |value| -> { type = "tagDraft", value = value},
-			onsubmit = || -> { type = "createTag"},
-		}),
-		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end")):children({
-			button.view(app, {
-				label = "Cancel",
-				onClick = { type = "dismiss"},
-				height = theme:px(30),
-				width = theme:px(80),
-			}),
-			button.view(app, {
-				label = "Create",
-				onClick = { type = "createTag"},
-				primary = true,
-				height = theme:px(30),
-				width = theme:px(86),
-			}),
-		}),
-	})
+		:style(
+			sty()
+				:w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12)):radius(theme:radius("lg"))
+				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+				:shadow(0, theme:px(16), theme:px(42), "#00000080")
+		):onClick({ type = "keep" })
+		:children(
+			{
+				text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+				text("Tag tracks so playlists and search can find them.")
+					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+				field.view(
+					app,
+					{
+						name = "newTag",
+						value = state.draft,
+						placeholder = "Tag name",
+						oninput = |value| -> { type = "tagDraft", value = value },
+						onsubmit = || -> { type = "createTag" }
+					}
+				),
+				div()
+					:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
+					:children(
+						{
+							button.view(
+								app,
+								{ label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(30), width = theme:px(80) }
+							),
+							button.view(
+								app,
+								{
+									label = "Create",
+									onClick = { type = "createTag" },
+									primary = true,
+									height = theme:px(30),
+									width = theme:px(86)
+								}
+							)
+						}
+					)
+			}
+		)
 
-	return div():style(sty():fill():offset(0, 0):z(120):column():align("center"):justify("center")
-	:bg(theme:color("overlay"))):onClick({ type = "dismiss"}):children({ panel})
+	return div()
+		:style(sty():fill():offset(0, 0):z(120):column():align("center"):justify("center"):bg(theme:color("overlay")))
+		:onClick({ type = "dismiss" }):children({ panel })
 end
 
 return tagDialog

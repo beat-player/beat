@@ -18,12 +18,10 @@ Collections.handles = { "deletePlaylist" }
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
 function Collections.new(deps)
-	return setmetatable({
-		taxonomy = TagStore.load(),
-		library = deps.library,
-		toasts = deps.toasts,
-		changed = Signal.new(),
-	}, Collections)
+	return setmetatable(
+		{ taxonomy = TagStore.load(), library = deps.library, toasts = deps.toasts, changed = Signal.new() },
+		Collections
+	)
 end
 
 --- Writes the taxonomy. A read-only config directory must not take the screen, so the failure is

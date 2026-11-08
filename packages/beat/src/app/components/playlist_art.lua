@@ -28,10 +28,7 @@ local function firstCluster(value, at)
 	local last = nextAt - 1
 
 	local function modifier(cp)
-		return (cp >= 0x0300 and cp <= 0x036F)
-		or (cp >= 0xFE00 and cp <= 0xFE0F)
-		or (cp >= 0x1F3FB and cp <= 0x1F3FF)
-		or cp == 0x20E3
+		return (cp >= 0x0300 and cp <= 0x036F) or (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0x1F3FB and cp <= 0x1F3FF) or cp == 0x20E3
 	end
 
 	if codepoint >= 0x1F1E6 and codepoint <= 0x1F1FF and nextAt <= #value then
@@ -127,14 +124,15 @@ function PlaylistArt.view(app, props)
 	local initials = PlaylistArt.initials(name)
 	local badgeSize = math.floor(size * (#initials > 1 and 0.46 or 0.5))
 	local fontSize = math.max(10, math.floor(size * (#initials > 1 and 0.32 or 0.38)))
-	local badge = div():style(sty():size(badgeSize, badgeSize):radius(badgeSize / 2)
-	:offset(math.floor((size - badgeSize) / 2), math.floor((size - badgeSize) / 2))
-	:bg(theme:color("bg", 0.72)):align("center"):justify("center"))
-	:children(text(initials):style(theme:s():text(fontSize):weight("bold")
-	:fg(theme:color("text"))))
+	local badge = div()
+		:style(
+			sty()
+				:size(badgeSize, badgeSize):radius(badgeSize / 2)
+				:offset(math.floor((size - badgeSize) / 2), math.floor((size - badgeSize) / 2)):bg(theme:color("bg", 0.72))
+				:align("center"):justify("center")
+		):children(text(initials):style(theme:s():text(fontSize):weight("bold"):fg(theme:color("text"))))
 
-	local root = div():style(sty():column():size(size, size):radius(artRadius):bg("#000000"))
-	:clip()
+	local root = div():style(sty():column():size(size, size):radius(artRadius):bg("#000000")):clip()
 
 	local library = app.services.library.current
 	if #picked <= 1 then
@@ -143,7 +141,7 @@ function PlaylistArt.view(app, props)
 		if album ~= nil then
 			root:children({ cover.view(app, { album = album, size = size, radius = 0 }) })
 		end
-		root:children({ badge})
+		root:children({ badge })
 		return root
 	end
 
@@ -157,11 +155,13 @@ function PlaylistArt.view(app, props)
 		return div():style(sty():size(cell, cell):bg("#000000"))
 	end
 
-	root:children({
-		div():style(sty():row():h(cell)):children({ cellAt(1), cellAt(2)}),
-		div():style(sty():row():h(cell)):children({ cellAt(3), cellAt(4)}),
-		badge,
-	})
+	root:children(
+		{
+			div():style(sty():row():h(cell)):children({ cellAt(1), cellAt(2) }),
+			div():style(sty():row():h(cell)):children({ cellAt(3), cellAt(4) }),
+			badge
+		}
+	)
 	return root
 end
 
@@ -181,8 +181,8 @@ function PlaylistArt.icons(app, props)
 	if playlist.manual then
 		children[#children + 1] = icon.view(app, { name = "hand", size = theme:px(13), colour = theme:color("muted") })
 	end
-	return div():style(sty():row():w(theme:px(#children * 17)):h(theme:px(16)):gap(theme:px(4))
-	:align("center")):children(children)
+	return div()
+		:style(sty():row():w(theme:px(#children * 17)):h(theme:px(16)):gap(theme:px(4)):align("center")):children(children)
 end
 
 ---@param at number

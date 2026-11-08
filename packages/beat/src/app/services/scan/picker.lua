@@ -24,13 +24,13 @@ function picker.start(window, opts)
 
 	if dialog == nil then
 		fs.write(file, "__NO_PICKER__")
-		return { file = file, platform = osName}
+		return { file = file, platform = osName }
 	end
 
 	local pickFolder = dialog.pickFolder
 	if pickFolder == nil then
 		fs.write(file, "__NO_PICKER__")
-		return { file = file, platform = osName}
+		return { file = file, platform = osName }
 	end
 	local title = opts ~= nil and opts.title or "Choose music folder"
 	local ok, path = pcall(pickFolder, window, { title = title })
@@ -43,7 +43,7 @@ function picker.start(window, opts)
 		fs.write(file, path)
 	end
 
-	return { file = file, platform = osName}
+	return { file = file, platform = osName }
 end
 
 --- The chosen folder, or a status when the dialog was cancelled or is not available.

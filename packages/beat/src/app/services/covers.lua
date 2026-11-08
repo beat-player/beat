@@ -25,14 +25,7 @@ Covers.needs = {}
 -- in, not when the services are made.
 ---@return beat.CoversService
 function Covers.new(_deps)
-	return setmetatable({
-		assets = nil,
-		entries = {},
-		jobs = {},
-		epoch = 0,
-		frame = 0,
-		jobsByKey = {},
-	}, Covers)
+	return setmetatable({ assets = nil, entries = {}, jobs = {}, epoch = 0, frame = 0, jobsByKey = {} }, Covers)
 end
 
 ---@param assets wonderland.Assets
@@ -67,9 +60,9 @@ function Covers:sweep()
 
 	local stale = {}
 	for key, entry in pairs(self.entries) do
-		if entry.seen ~= self.frame then stale[#stale + 1] = { key = key, seen = entry.seen} end
+		if entry.seen ~= self.frame then stale[#stale + 1] = { key = key, seen = entry.seen } end
 	end
-	table.sort(stale,|a, b| -> a.seen < b.seen)
+	table.sort(stale, |a, b| -> a.seen < b.seen)
 
 	local over = count - CACHE_LIMIT
 	for at = 1, math.min(over, #stale) do
@@ -96,13 +89,7 @@ function Covers:request(album, size)
 
 	if not self.jobsByKey[key] then
 		self.jobsByKey[key] = true
-		self.jobs[#self.jobs + 1] = {
-			key = key,
-			album = album,
-			size = size,
-			epoch = self.epoch,
-			seen = self.frame,
-		}
+		self.jobs[#self.jobs + 1] = { key = key, album = album, size = size, epoch = self.epoch, seen = self.frame }
 	else
 		for at = 1, #self.jobs do
 			if self.jobs[at].key == key then
@@ -142,9 +129,9 @@ function Covers:step()
 		---@cast fitted image.Image
 		local asset = self.assets:upload(fitted)
 		fitted:close()
-		self.entries[job.key] = { asset = asset, colour = colour, seen = job.seen}
+		self.entries[job.key] = { asset = asset, colour = colour, seen = job.seen }
 	else
-		self.entries[job.key] = { failed = true, colour = nil, seen = job.seen}
+		self.entries[job.key] = { failed = true, colour = nil, seen = job.seen }
 		if err ~= nil and err ~= "no artwork" then
 			-- A missing picture is normal; a broken one is only worth a single attempt.
 			self.entries[job.key].failed = true

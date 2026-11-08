@@ -7,11 +7,7 @@ local LibraryService = require("beat.app.services.library")
 test.it("announces the library a scan starts from", function()
 	---@type beat.Message[]
 	local emitted = {}
-	local service = LibraryService.new({
-		settings = { values = {}},
-		options = { scan = false},
-		emit = function(message) emitted[#emitted + 1] = message end,
-	})
+	local service = LibraryService.new({ settings = { values = {} }, options = { scan = false }, emit = function(message) emitted[#emitted + 1] = message end })
 
 	service:replace("/roots/one")
 
@@ -24,11 +20,7 @@ end)
 test.it("announces every replacement, not only the first", function()
 	---@type beat.Message[]
 	local emitted = {}
-	local service = LibraryService.new({
-		settings = { values = {}},
-		options = { scan = false},
-		emit = function(message) emitted[#emitted + 1] = message end,
-	})
+	local service = LibraryService.new({ settings = { values = {} }, options = { scan = false }, emit = function(message) emitted[#emitted + 1] = message end })
 
 	service:replace("/roots/one")
 	service:replace("/roots/two")

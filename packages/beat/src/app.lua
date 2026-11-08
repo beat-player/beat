@@ -25,7 +25,7 @@ local MEDIA_MESSAGES = {
 	pause = "pause",
 	stop = "stop",
 	next = "next",
-	previous = "previous",
+	previous = "previous"
 }
 
 --- Where a navigation goes: a page kind and what picks the one page of that kind. `App:go` turns
@@ -114,7 +114,7 @@ end
 ---@return beat.PageInstance
 function App:pageFor(route)
 	---@type beat.PageInstance
-	local page = { kind = route.kind, state = {}}
+	local page = { kind = route.kind, state = {} }
 	for field, value in pairs(route) do page[field] = value end
 	local surface = self.registry:page(page.kind)
 	page.state = surface.new ~= nil and surface.new(self, page) or {}
@@ -143,7 +143,7 @@ function App:open(name, params)
 	if state == nil then return nil end
 	---@cast state beat.OverlayState
 	---@type beat.OverlayInstance
-	local overlay = { name = name, state = state}
+	local overlay = { name = name, state = state }
 	self.overlays[#self.overlays + 1] = overlay
 	self:refresh()
 	return overlay
@@ -214,7 +214,13 @@ function App:takeMediaKeys(window)
 
 	local refused = window.captureMediaKeys()
 	if #refused > 0 then
-		self:act({type = "toast", tone = "error", text = "Another application is using the media keys: " .. table.concat(refused, ", ")})
+		self:act(
+			{
+				type = "toast",
+				tone = "error",
+				text = "Another application is using the media keys: " .. table.concat(refused, ", ")
+			}
+		)
 	end
 end
 
@@ -253,11 +259,11 @@ function App:init(opts)
 	-- it is delivered after the one being handled. `pointer` is where the pointer is in the window,
 	-- and `window` is the one a native dialog is shown over: the two pieces of the shell a service
 	-- has to ask about rather than own.
-	collection:provide("emit",|message| -> self:act(message))
+	collection:provide("emit", |message| -> self:act(message))
 	collection:provide("messages", self.messages)
 	collection:provide("options", opts)
 	collection:provide("settingsValues", settingsValues)
-	collection:provide("window",|| -> self.window)
+	collection:provide("window", || -> self.window)
 	collection:provide("pointer", function()
 		if self.window == nil or self.layoutPlugin == nil then return nil end
 		if self.layoutPlugin.pointer ~= nil then return self.layoutPlugin:pointer(self.window) end
@@ -284,7 +290,7 @@ function App:init(opts)
 
 	-- After the library, so a page that reads it on opening sees it, and before the scan, whose
 	-- reset message is delivered through the page that is showing.
-	self.page = (self:pageFor({ kind = values.root == nil ? "folders" : "home"}))
+	self.page = (self:pageFor({ kind = values.root == nil ? "folders" : "home" }))
 	self.services.scan:resume()
 
 	self.ticker = self:onTick(|now, window| -> self:tick(now, window))
@@ -498,11 +504,11 @@ function App:event(event, _handler)
 	if event.name == "fileDrop" then
 		for _, drop in ipairs(event.paths or {}) do
 			if fs.isdir(drop) then
-				self:act({ type = "startScan", root = drop})
+				self:act({ type = "startScan", root = drop })
 				return nil
 			end
 		end
-		self:act({ type = "toast", text = "Drop a folder to build a library", tone = "error"})
+		self:act({ type = "toast", text = "Drop a folder to build a library", tone = "error" })
 		return nil
 	end
 
@@ -515,7 +521,7 @@ function App:event(event, _handler)
 
 	if event.name == "mediaKey" then
 		local messageType = MEDIA_MESSAGES[event.action]
-		if messageType ~= nil then self:act({ type = messageType}) end
+		if messageType ~= nil then self:act({ type = messageType }) end
 		return nil
 	end
 
@@ -524,19 +530,19 @@ function App:event(event, _handler)
 	local modifiers = event.modifiers or {}
 
 	if key == "space" then
-		self:act({ type = "togglePlay"})
+		self:act({ type = "togglePlay" })
 	elseif key == "left" then
-		self:act({ type = "seek", by = -5})
+		self:act({ type = "seek", by = -5 })
 	elseif key == "right" then
-		self:act({ type = "seek", by = 5})
+		self:act({ type = "seek", by = 5 })
 	elseif key == "escape" then
-		self:act({ type = "escape"})
+		self:act({ type = "escape" })
 	elseif key == "/" or (modifiers.ctrl and key == "f") then
-		self:act({ type = "openSearch"})
+		self:act({ type = "openSearch" })
 	elseif modifiers.ctrl and key == "o" then
-		self:act({ type = "chooseFolder"})
+		self:act({ type = "chooseFolder" })
 	elseif modifiers.ctrl and key == "," then
-		self:act({ type = "navigate", page = { kind = "settings"}})
+		self:act({ type = "navigate", page = { kind = "settings" } })
 	end
 
 	self:refresh()

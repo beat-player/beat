@@ -41,7 +41,7 @@ local function packed(track, key)
 		hasPicture = track.hasPicture,
 		coverPath = track.coverPath,
 		coverCache = track.coverCache,
-		modified = track.modified,
+		modified = track.modified
 	}
 end
 
@@ -55,11 +55,7 @@ function LibraryCache.save(library)
 		tracks[#tracks + 1] = packed(track, album?.key)
 	end
 
-	local ok, encoded = pcall(json.encode, {
-		version = VERSION,
-		root = library.root,
-		tracks = tracks,
-	})
+	local ok, encoded = pcall(json.encode, { version = VERSION, root = library.root, tracks = tracks })
 	if not ok then return false, tostring(encoded) end
 
 	local folder = paths.directory()
@@ -89,8 +85,7 @@ function LibraryCache.load(root)
 		return nil
 	end
 
-	if type(decoded) ~= "table" or decoded.version ~= VERSION or decoded.root ~= root
-	or type(decoded.tracks) ~= "table" then
+	if type(decoded) ~= "table" or decoded.version ~= VERSION or decoded.root ~= root or type(decoded.tracks) ~= "table" then
 		return nil
 	end
 
@@ -115,17 +110,22 @@ function LibraryCache.load(root)
 				track = item.number,
 				disc = item.disc,
 				date = item.year ? tostring(item.year) : nil,
-				genre = item.genre,
-			},
+				genre = item.genre
+			}
 		}
-		library:add(info, {
-			path = item.path,
-			dir = dir,
-			name = name,
-			ext = ext,
-			modifyTime = item.modified,
-			key = type(item.key) == "string" and item.key or nil,
-		}, item.coverPath, item.coverCache)
+		library:add(
+			info,
+			{
+				path = item.path,
+				dir = dir,
+				name = name,
+				ext = ext,
+				modifyTime = item.modified,
+				key = type(item.key) == "string" and item.key or nil
+			},
+			item.coverPath,
+			item.coverCache
+		)
 	end
 	library:finish()
 

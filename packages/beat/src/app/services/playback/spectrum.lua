@@ -28,17 +28,20 @@ function Spectrum.new()
 	local levels, display, peaks = {}, {}, {}
 	for at = 1, BANDS do levels[at], display[at], peaks[at] = 0, 0, 0 end
 
-	return setmetatable({
-		real = {},
-		imag = {},
-		window = window,
-		levels = levels,
-		display = display,
-		shown = false,
-		peaks = peaks,
-		top = 0,
-		dirty = false,
-	}, Spectrum)
+	return setmetatable(
+		{
+			real = {},
+			imag = {},
+			window = window,
+			levels = levels,
+			display = display,
+			shown = false,
+			peaks = peaks,
+			top = 0,
+			dirty = false
+		},
+		Spectrum
+	)
 end
 
 local function reverseBits(value)

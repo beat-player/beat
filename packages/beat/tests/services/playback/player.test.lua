@@ -31,7 +31,7 @@ local function track(at, file, duration)
 		coverPath = nil,
 		coverCache = nil,
 		modified = 0,
-		hash = "hash" .. at,
+		hash = "hash" .. at
 	}
 	return fixture
 end
@@ -41,29 +41,29 @@ end
 ---@param overrides table<string, function>
 local function fake(overrides)
 	local base = treble.Player.new()
-	setmetatable(base, {
-		__index = function(_, key)
-			local override = overrides[key]
-			if override ~= nil then return override end
-			return treble.Player[key]
-		end,
-	})
+	setmetatable(base, { __index = function(_, key)
+		local override = overrides[key]
+		if override ~= nil then return override end
+		return treble.Player[key]
+	end })
 	return base
 end
 
 local function standIn(player)
 	local volumes = {}
-	player.player = fake({
-		close = function() end,
-		enqueue = function() end,
-		play = function() end,
-		pause = function() end,
-		stop = function() end,
-		update = function() end,
-		position = function() return 0 end,
-		isPlaying = function() return true end,
-		setVolume = function(_, value) volumes[#volumes + 1] = value end,
-	})
+	player.player = fake(
+		{
+			close = function() end,
+			enqueue = function() end,
+			play = function() end,
+			pause = function() end,
+			stop = function() end,
+			update = function() end,
+			position = function() return 0 end,
+			isPlaying = function() return true end,
+			setVolume = function(_, value) volumes[#volumes + 1] = value end
+		}
+	)
 	return volumes
 end
 
@@ -72,7 +72,7 @@ local oneTrack = track(1)
 test.it("fades a manual start in over 120 ms", function()
 	local player = Player.new()
 	local volumes = standIn(player)
-	player:playTracks({ oneTrack}, 1)
+	player:playTracks({ oneTrack }, 1)
 
 	test.equal(#volumes, 1)
 	test.equal(volumes[1], 0, "the first frame is silent")
@@ -94,7 +94,7 @@ end)
 test.it("does not fade when the queue repeats the same track", function()
 	local player = Player.new()
 	local volumes = standIn(player)
-	player:playTracks({ oneTrack}, 1, { repeatMode = "one"})
+	player:playTracks({ oneTrack }, 1, { repeatMode = "one" })
 	player:update(100)
 	player:update(100.12)
 	test.equal(player.fadeGain, 1)
@@ -106,26 +106,10 @@ test.it("does not fade when the queue repeats the same track", function()
 end)
 
 test.it("changes repeat and shuffle without touching the current audio", function()
-	local tracks = {
-		track(1, "/one.flac", 100),
-		track(2, "/two.flac", 100),
-		track(3, "/three.flac", 100),
-	}
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
 	local touched = 0
 	local player = Player.new()
-	player.player = fake({
-		isPlaying = function() return true end,
-		position = function() return 42 end,
-		duration = function() return 100 end,
-		close = function() touched = touched + 1 end,
-		enqueue = function() touched = touched + 1 end,
-		play = function() touched = touched + 1 end,
-		pause = function() touched = touched + 1 end,
-		seek = function() touched = touched + 1 end,
-		stop = function() touched = touched + 1 end,
-		update = function() end,
-		setVolume = function() end,
-	})
+	player.player = fake({ isPlaying = function() return true end, position = function() return 42 end, duration = function() return 100 end, close = function() touched = touched + 1 end, enqueue = function() touched = touched + 1 end, play = function() touched = touched + 1 end, pause = function() touched = touched + 1 end, seek = function() touched = touched + 1 end, stop = function() touched = touched + 1 end, update = function() end, setVolume = function() end })
 	player:playTracks(tracks, 1)
 	touched = 0
 
@@ -140,26 +124,10 @@ test.it("changes repeat and shuffle without touching the current audio", functio
 end)
 
 test.it("hands a shuffle change over at the track boundary", function()
-	local tracks = {
-		track(1, "/one.flac", 100),
-		track(2, "/two.flac", 100),
-		track(3, "/three.flac", 100),
-	}
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
 	local closes = 0
 	local player = Player.new()
-	player.player = fake({
-		isPlaying = function() return true end,
-		position = function() return 100 end,
-		duration = function() return 100 end,
-		close = function() closes = closes + 1 end,
-		enqueue = function() end,
-		play = function() end,
-		pause = function() end,
-		seek = function() end,
-		stop = function() end,
-		update = function() end,
-		setVolume = function() end,
-	})
+	player.player = fake({ isPlaying = function() return true end, position = function() return 100 end, duration = function() return 100 end, close = function() closes = closes + 1 end, enqueue = function() end, play = function() end, pause = function() end, seek = function() end, stop = function() end, update = function() end, setVolume = function() end })
 	player:playTracks(tracks, 1)
 	closes = 0
 
@@ -175,25 +143,10 @@ test.it("hands a shuffle change over at the track boundary", function()
 end)
 
 test.it("leaves a repeat-all change to the existing queue", function()
-	local tracks = {
-		track(1, "/one.flac", 100),
-		track(2, "/two.flac", 100),
-	}
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100) }
 	local closes = 0
 	local player = Player.new()
-	player.player = fake({
-		isPlaying = function() return true end,
-		position = function() return 100 end,
-		duration = function() return 100 end,
-		close = function() closes = closes + 1 end,
-		enqueue = function() end,
-		play = function() end,
-		pause = function() end,
-		seek = function() end,
-		stop = function() end,
-		update = function() end,
-		setVolume = function() end,
-	})
+	player.player = fake({ isPlaying = function() return true end, position = function() return 100 end, duration = function() return 100 end, close = function() closes = closes + 1 end, enqueue = function() end, play = function() end, pause = function() end, seek = function() end, stop = function() end, update = function() end, setVolume = function() end })
 	player:playTracks(tracks, 1)
 	closes = 0
 
@@ -209,25 +162,10 @@ test.it("leaves a repeat-all change to the existing queue", function()
 end)
 
 test.it("applies repeat-one at the boundary instead of on the button", function()
-	local tracks = {
-		track(1, "/one.flac", 100),
-		track(2, "/two.flac", 100),
-	}
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100) }
 	local closes = 0
 	local player = Player.new()
-	player.player = fake({
-		isPlaying = function() return true end,
-		position = function() return 100 end,
-		duration = function() return 100 end,
-		close = function() closes = closes + 1 end,
-		enqueue = function() end,
-		play = function() end,
-		pause = function() end,
-		seek = function() end,
-		stop = function() end,
-		update = function() end,
-		setVolume = function() end,
-	})
+	player.player = fake({ isPlaying = function() return true end, position = function() return 100 end, duration = function() return 100 end, close = function() closes = closes + 1 end, enqueue = function() end, play = function() end, pause = function() end, seek = function() end, stop = function() end, update = function() end, setVolume = function() end })
 	player:playTracks(tracks, 1)
 	closes = 0
 
@@ -244,26 +182,13 @@ test.it("applies repeat-one at the boundary instead of on the button", function(
 end)
 
 test.it("queues the next album without touching the current audio", function()
-	local tracks = {
-		track(1, "/one.flac", 100),
-		track(2, "/two.flac", 100),
-		track(3, "/three.flac", 100),
-	}
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
 	local touched = 0
 	local player = Player.new()
 	player.queue = Queue.new(tracks, 1, {})
-	player.player = fake({
-		close = function() touched = touched + 1 end,
-		enqueue = function() touched = touched + 1 end,
-		play = function() touched = touched + 1 end,
-		pause = function() touched = touched + 1 end,
-		seek = function() touched = touched + 1 end,
-		setVolume = function() touched = touched + 1 end,
-		isPlaying = function() return true end,
-		position = function() return 40 end,
-	})
+	player.player = fake({ close = function() touched = touched + 1 end, enqueue = function() touched = touched + 1 end, play = function() touched = touched + 1 end, pause = function() touched = touched + 1 end, seek = function() touched = touched + 1 end, setVolume = function() touched = touched + 1 end, isPlaying = function() return true end, position = function() return 40 end })
 
-	player:playNext({ tracks[3]})
+	player:playNext({ tracks[3] })
 
 	local queue = assert(player.queue)
 	test.equal(touched, 0, "the current output is not reloaded or seeked")
@@ -274,31 +199,16 @@ end)
 -- A device that knows whether it is playing and what it was handed, for the tests that start and
 -- stop it: the stand-in above is always playing.
 local function device(player)
-	local calls = { closes = 0, enqueued = {}, seeks = {}}
+	local calls = { closes = 0, enqueued = {}, seeks = {} }
 	local playing = false
-	player.player = fake({
-		close = function()
-			calls.closes = calls.closes + 1
-			calls.enqueued = {}
-		end,
-		enqueue = function(_, path) calls.enqueued[#calls.enqueued + 1] = path end,
-		play = function() playing = true end,
-		pause = function() playing = false end,
-		stop = function() playing = false end,
-		seek = function(_, seconds) calls.seeks[#calls.seeks + 1] = seconds end,
-		update = function() end,
-		position = function() return 0 end,
-		isPlaying = function() return playing end,
-		setVolume = function() end,
-	})
+	player.player = fake({ close = function()
+		calls.closes = calls.closes + 1
+		calls.enqueued = {}
+	end, enqueue = function(_, path) calls.enqueued[#calls.enqueued + 1] = path end, play = function() playing = true end, pause = function() playing = false end, stop = function() playing = false end, seek = function(_, seconds) calls.seeks[#calls.seeks + 1] = seconds end, update = function() end, position = function() return 0 end, isPlaying = function() return playing end, setVolume = function() end })
 	return calls
 end
 
-local album = {
-	track(1, "/tmp/one.wav"),
-	track(2, "/tmp/two.wav"),
-	track(3, "/tmp/three.wav"),
-}
+local album = { track(1, "/tmp/one.wav"), track(2, "/tmp/two.wav"), track(3, "/tmp/three.wav") }
 
 test.it("stops with the queue kept, and plays the same track again from the top", function()
 	local player = Player.new()

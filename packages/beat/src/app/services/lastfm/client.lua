@@ -99,7 +99,7 @@ local function new(settings, handlers, opts)
 		scrobbling = false,
 		scrobbleError = nil,
 		retryAt = 0,
-		nowPlayingTrackId = nil,
+		nowPlayingTrackId = nil
 	}, Client)
 
 	if trim(settings.lastfmSessionKey) ~= "" and self.apiKey ~= "" and self.apiSecret ~= "" then
@@ -154,8 +154,7 @@ end
 
 ---@return boolean
 function Client:isBusy()
-	local flushing = self.batch ~= nil and self.state == "connected"
-	and self.settings.lastfmEnabled ~= false and #self.scrobbles > 0
+	local flushing = self.batch ~= nil and self.state == "connected" and self.settings.lastfmEnabled ~= false and #self.scrobbles > 0
 	return self.pendingCount > 0 or self.scrobbling or flushing
 end
 
@@ -190,16 +189,21 @@ end
 function Client:send(kind, params, onDone)
 	if self.batch == nil then return false, self.error or "Last.fm network is unavailable" end
 
-	local ok, index = pcall(self.batch.add, self.batch, self.apiRoot, {
-		method = "POST",
-		body = protocol.encode(params),
-		timeout = REQUEST_TIMEOUT,
-		useragent = USER_AGENT,
-		headers = { ["Content-Type"] = "application/x-www-form-urlencoded"},
-	})
+	local ok, index = pcall(
+		self.batch.add,
+		self.batch,
+		self.apiRoot,
+		{
+			method = "POST",
+			body = protocol.encode(params),
+			timeout = REQUEST_TIMEOUT,
+			useragent = USER_AGENT,
+			headers = { ["Content-Type"] = "application/x-www-form-urlencoded" }
+		}
+	)
 	if not ok or type(index) ~= "number" then return false, tostring(index) end
 
-	self.pending[index] = { kind = kind, onDone = onDone}
+	self.pending[index] = { kind = kind, onDone = onDone }
 	self.pendingCount += 1
 	return true
 end
@@ -260,10 +264,10 @@ function Client:pump()
 	for index, item in pairs(self.pending) do
 		local state = batch.order?.[index]
 		local result = state?.result
-		if result ~= nil then done[#done + 1] = { index = index, item = item, result = result} end
+		if result ~= nil then done[#done + 1] = { index = index, item = item, result = result } end
 	end
 
-	table.sort(done,|a, b| -> a.index < b.index)
+	table.sort(done, |a, b| -> a.index < b.index)
 
 	for _, entry in ipairs(done) do
 		self.pending[entry.index] = nil
@@ -314,8 +318,7 @@ function Client:connect()
 	self.authStartedAt = self.now()
 	self.state = "token"
 
-	local ok, err = self:send("token", protocol.tokenParams(apiKey, secret),
-	function(value, message)
+	local ok, err = self:send("token", protocol.tokenParams(apiKey, secret), function(value, message)
 		if epoch ~= self.authEpoch then return end
 		if message ~= nil then
 			self:failAuth(message)
@@ -375,8 +378,7 @@ function Client:poll(now)
 	self.authInFlight = true
 	local epoch = self.authEpoch
 
-	local ok, err = self:send("session", protocol.sessionParams(apiKey, secret, self.token),
-	function(value, message, code)
+	local ok, err = self:send("session", protocol.sessionParams(apiKey, secret, self.token), function(value, message, code)
 		self.authInFlight = false
 		if epoch ~= self.authEpoch then return end
 
@@ -402,9 +404,7 @@ function Client:poll(now)
 		self.authInFlight = false
 		self.nowPlayingTrackId = nil
 		self:persist()
-		self:notify("Connected to Last.fm as "
-		.. (trim(self.settings.lastfmUsername) ~= "" and self.settings.lastfmUsername
-		or "your account"), "success")
+		self:notify("Connected to Last.fm as " .. (trim(self.settings.lastfmUsername) ~= "" and self.settings.lastfmUsername or "your account"), "success")
 	end)
 
 	if not ok then
@@ -459,9 +459,7 @@ function Client:flush()
 	local sessionKey = trim(self.settings.lastfmSessionKey)
 
 	self.scrobbling = true
-	local ok, err = self:send("scrobble",
-	protocol.scrobbleParams(apiKey, secret, sessionKey, chunk),
-	function(value, message, code)
+	local ok, err = self:send("scrobble", protocol.scrobbleParams(apiKey, secret, sessionKey, chunk), function(value, message, code)
 		self.scrobbling = false
 
 		if message ~= nil then
@@ -523,8 +521,7 @@ function Client:sendNowPlaying(track)
 		return
 	end
 
-	self:send("nowPlaying", protocol.nowPlayingParams(apiKey, secret, sessionKey, track),
-	function(_, message, code)
+	self:send("nowPlaying", protocol.nowPlayingParams(apiKey, secret, sessionKey, track), function(_, message, code)
 		if message ~= nil and code == 9 then self:expireSession() end
 	end)
 end
@@ -606,4 +603,4 @@ function Client:close()
 	self.scrobbling = false
 end
 
-return { new = new}
+return { new = new }

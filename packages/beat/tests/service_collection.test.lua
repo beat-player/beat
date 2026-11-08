@@ -16,24 +16,20 @@ local function service(needs, handles, made)
 	---@param deps table<string, any>
 	---@return TestServiceInstance
 	local function new(deps)
-		local instance = { deps = deps}
+		local instance = { deps = deps }
 		if made ~= nil then made[#made + 1] = instance end
 		return instance
 	end
-	return {
-		needs = needs,
-		handles = handles,
-		new = new,
-	}
+	return { needs = needs, handles = handles, new = new }
 end
 
 test.it("makes every service after what it needs, whatever order they were added in", function()
 	---@type TestServiceInstance[]
 	local made = {}
 	local collection = ServiceCollection.new()
-	collection:add("scan", service({ "library", "playback"}, nil, made))
-	collection:add("playback", service({ "settings"}, nil, made))
-	collection:add("library", service({ "settings"}, nil, made))
+	collection:add("scan", service({ "library", "playback" }, nil, made))
+	collection:add("playback", service({ "settings" }, nil, made))
+	collection:add("library", service({ "settings" }, nil, made))
 	collection:add("settings", service({}, nil, made))
 	local services = collection:build()
 
@@ -52,8 +48,8 @@ end)
 test.it("gives a service what was provided in place of a service", function()
 	local collection = ServiceCollection.new()
 	local emit = function() end
-	local standIn = { stand = "in"}
-	collection:add("search", service({ "library", "emit"}))
+	local standIn = { stand = "in" }
+	collection:add("search", service({ "library", "emit" }))
 	collection:provide("library", standIn)
 	collection:provide("emit", emit)
 	---@type TestServiceInstance
@@ -65,7 +61,7 @@ end)
 
 test.it("stops at a dependency nobody added", function()
 	local collection = ServiceCollection.new()
-	collection:add("search", service({ "library"}))
+	collection:add("search", service({ "library" }))
 	local ok, err = pcall(function() collection:build() end)
 
 	test.falsy(ok)
@@ -74,9 +70,9 @@ end)
 
 test.it("stops at services that need each other in a circle", function()
 	local collection = ServiceCollection.new()
-	collection:add("a", service({ "b"}))
-	collection:add("b", service({ "c"}))
-	collection:add("c", service({ "a"}))
+	collection:add("a", service({ "b" }))
+	collection:add("b", service({ "c" }))
+	collection:add("c", service({ "a" }))
 	local ok, err = pcall(function() collection:build() end)
 
 	test.falsy(ok)
@@ -86,10 +82,7 @@ end)
 test.it("stops a service using something it did not list", function()
 	local collection = ServiceCollection.new()
 	collection:add("settings", service({}))
-	collection:add("search", {
-		needs = {},
-		new = function(deps) return { settings = deps.settings} end,
-	})
+	collection:add("search", { needs = {}, new = function(deps) return { settings = deps.settings } end })
 	local ok, err = pcall(function() collection:build() end)
 
 	test.falsy(ok)
@@ -98,15 +91,15 @@ end)
 
 test.it("gives each message type one owner", function()
 	local collection = ServiceCollection.new()
-	collection:add("search", service({}, { "search", "clearSearch"}))
-	collection:add("playback", service({}, { "togglePlay"}))
+	collection:add("search", service({}, { "search", "clearSearch" }))
+	collection:add("playback", service({}, { "togglePlay" }))
 	local services = collection:build()
 	test.equal(services.owners.clearSearch, services.byName.search)
 	test.equal(services.owners.togglePlay, services.byName.playback)
 
 	local clash = ServiceCollection.new()
-	clash:add("search", service({}, { "clearSearch"}))
-	clash:add("library", service({}, { "clearSearch"}))
+	clash:add("search", service({}, { "clearSearch" }))
+	clash:add("library", service({}, { "clearSearch" }))
 	local ok, err = pcall(function() clash:build() end)
 	test.falsy(ok)
 	test.truthy(tostring(err):find("clearSearch is handled by two services", 1, true))

@@ -41,28 +41,23 @@ ScanJob.__index = ScanJob
 ---@param cancelFile string
 ---@return beat.ScanJob
 function ScanJob.new(root, output, cancelFile)
-	return setmetatable({
-		root = root,
-		output = output,
-		cancelFile = cancelFile,
-		offset = 0,
-		buffer = "",
-		queued = {},
-		latest = {
-			phase = "enumerate",
-			files = 0,
-			inspected = 0,
-			tracks = 0,
-			skipped = 0,
-			errors = {},
-			current = nil,
+	return setmetatable(
+		{
+			root = root,
+			output = output,
+			cancelFile = cancelFile,
+			offset = 0,
+			buffer = "",
+			queued = {},
+			latest = { phase = "enumerate", files = 0, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = nil },
+			done = false,
+			cancelled = false,
+			error = nil,
+			changed = false,
+			decodeErrors = 0
 		},
-		done = false,
-		cancelled = false,
-		error = nil,
-		changed = false,
-		decodeErrors = 0,
-	}, ScanJob)
+		ScanJob
+	)
 end
 
 ---@param root string
@@ -74,12 +69,9 @@ function ScanJob.start(root)
 	fs.delete(cancelFile)
 
 	local job = ScanJob.new(root, output, cancelFile)
-	local child, err = workerProcess.spawn({
-		BEAT_WORKER = "scan",
-		BEAT_SCAN_ROOT = root,
-		BEAT_SCAN_OUTPUT = output,
-		BEAT_SCAN_CANCEL = cancelFile,
-	})
+	local child, err = workerProcess.spawn(
+		{ BEAT_WORKER = "scan", BEAT_SCAN_ROOT = root, BEAT_SCAN_OUTPUT = output, BEAT_SCAN_CANCEL = cancelFile }
+	)
 
 	if child == nil then
 		job.done = true
@@ -202,7 +194,7 @@ function ScanJob:progress()
 		tracks = 0,
 		skipped = 0,
 		errors = {},
-		current = nil,
+		current = nil
 	}
 end
 

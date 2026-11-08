@@ -43,34 +43,51 @@ function albumPage.view(app, page, window)
 	local library = app.services.library.current
 	local album = library ~= nil ? (library:album(id)) : nil
 	if album == nil then
-		return emptyState.view(app, {
-			title = "Album not found",
-			copy = "The scan no longer has it.",
-			actionLabel = "Library",
-			action = { type = "navigate", page = { kind = "library"}},
-		})
+		return emptyState.view(
+			app,
+			{
+				title = "Album not found",
+				copy = "The scan no longer has it.",
+				actionLabel = "Library",
+				action = { type = "navigate", page = { kind = "library" } }
+			}
+		)
 	end
 	local current = app.services.playback:current()
 	local thisAlbum = current?.albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
-	return collection.view(app, {
-		window = window,
-		label = "ALBUM",
-		cover = |size| -> cover.view(app, { album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true }),
-		coverMenu = |_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY},
-		title = album.title,
-		subtitle = album.artist,
-		subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId}},
-		meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track")
-		.. " · " .. format.duration(album.duration),
-		playAction = thisAlbum ? { type = "togglePlay"} : { type = "playAlbum", id = album.id},
-		playIcon = playing and thisAlbum ? "pause" : "play",
-		titleOnly = true,
-		shuffleAction = { type = "playAlbum", id = album.id, shuffle = true},
-		tracks = album.tracks,
-		trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id},
-		trackIndex = |track, at| -> track.number or at,
-	})
+	return collection.view(
+		app,
+		{
+			window = window,
+			label = "ALBUM",
+			cover = |size| -> cover.view(
+				app,
+				{ album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true }
+			),
+			coverMenu = |_, _, _, _, _, windowX, windowY| -> {
+				type = "open",
+				overlay = "menu",
+				menu = "album",
+				id = album.id,
+				x = windowX,
+				y = windowY
+			},
+			title = album.title,
+			subtitle = album.artist,
+			subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId } },
+			meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track") .. " · " .. format.duration(
+				album.duration
+			),
+			playAction = thisAlbum ? { type = "togglePlay" } : { type = "playAlbum", id = album.id },
+			playIcon = playing and thisAlbum ? "pause" : "play",
+			titleOnly = true,
+			shuffleAction = { type = "playAlbum", id = album.id, shuffle = true },
+			tracks = album.tracks,
+			trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id },
+			trackIndex = |track, at| -> track.number or at
+		}
+	)
 end
 
 return albumPage

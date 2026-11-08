@@ -46,15 +46,12 @@ local function equalizerChip(app, preset, width, height)
 	local resting = selected ? (theme:color("accent")) : (theme:color("surface"))
 	local hover = selected ? (theme:color("accent", 0.86)) : (theme:color("hover"))
 	local chip = div()
-	:style(sty():row():w(width):h(height):align("center"):justify("center")
-	:radius(theme:radius("full")):bg(resting))
-	:hover(sty():row():w(width):h(height):align("center"):justify("center")
-	:radius(theme:radius("full")):bg(hover))
-	:onClick({ type = "equalizerPreset", id = preset.id})
-	:children(text(preset.name):style(theme:s():text(theme:type("xs")):weight("semibold")
-	:fg(textColour):ellipsis()))
+		:style(sty():row():w(width):h(height):align("center"):justify("center"):radius(theme:radius("full")):bg(resting))
+		:hover(sty():row():w(width):h(height):align("center"):justify("center"):radius(theme:radius("full")):bg(hover))
+		:onClick({ type = "equalizerPreset", id = preset.id })
+		:children(text(preset.name):style(theme:s():text(theme:type("xs")):weight("semibold"):fg(textColour):ellipsis()))
 	if preset.custom then
-		chip:onDoubleClick({ type = "editEqualizerPreset", name = preset.id})
+		chip:onDoubleClick({ type = "editEqualizerPreset", name = preset.id })
 	end
 	return chip
 end
@@ -79,22 +76,26 @@ function equalizer.view(app, _overlay, window)
 	local presetHeight = presetRows * chipHeight + (presetRows - 1) * gap
 	local rowHeight = compact ? (theme:px(26)) : (theme:px(30))
 	local bandGap = theme:px(3)
-	local bandsHeight = #service.frequencies * rowHeight
-	+(#service.frequencies - 1) * bandGap
+	local bandsHeight = #service.frequencies * rowHeight + (#service.frequencies - 1) * bandGap
 	local headerHeight = compact ? (theme:px(22)) : (theme:px(24))
 	local height = padding * 2 + headerHeight + gap + presetHeight + gap + bandsHeight
 	local panels = {}
 
-	local header = div():style(sty():row():wrel(1.0):h(headerHeight):align("center")
-	:justify("space-between")):children({
-		text("Equalizer"):style(theme:s():text(theme:type("md")):weight("bold")
-		:fg(theme:color("text"))),
-		div():style(sty():row():w(theme:px(24) * 2 + theme:px(4)):h(headerHeight)
-		:gap(theme:px(4)):align("center")):children({
-			iconButton.view(app, { name = "add", size = theme:px(24), onClick = { type = "newEqualizerPreset"} }),
-			iconButton.view(app, { name = "close", size = theme:px(24), onClick = { type = "dismiss"} }),
-		}),
-	})
+	local header = div()
+		:style(sty():row():wrel(1.0):h(headerHeight):align("center"):justify("space-between"))
+		:children(
+			{
+				text("Equalizer"):style(theme:s():text(theme:type("md")):weight("bold"):fg(theme:color("text"))),
+				div()
+					:style(sty():row():w(theme:px(24) * 2 + theme:px(4)):h(headerHeight):gap(theme:px(4)):align("center"))
+					:children(
+						{
+							iconButton.view(app, { name = "add", size = theme:px(24), onClick = { type = "newEqualizerPreset" } }),
+							iconButton.view(app, { name = "close", size = theme:px(24), onClick = { type = "dismiss" } })
+						}
+					)
+			}
+		)
 	panels[#panels + 1] = header
 
 	for row = 1, presetRows do
@@ -103,12 +104,10 @@ function equalizer.view(app, _overlay, window)
 			local at = (row - 1) * columns + column
 			local preset = presets[at]
 			if preset ~= nil then
-				children[#children + 1] = equalizerChip(app,
-				preset, chipWidth, chipHeight)
+				children[#children + 1] = equalizerChip(app, preset, chipWidth, chipHeight)
 			end
 		end
-		panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(chipHeight):gap(gap)
-		:align("center")):children(children)
+		panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(chipHeight):gap(gap):align("center")):children(children)
 	end
 
 	local labelWidth = theme:px(60)
@@ -120,40 +119,44 @@ function equalizer.view(app, _overlay, window)
 		local gain = gains[at] or 0
 		local shown = math.floor(gain + 0.5)
 		local value = shown == 0 ? "0 dB" : string.format("%+d dB", shown)
-		panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)
-		:align("center")):children({
-			text(service.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
-			:fg(theme:color("muted"))),
-			slider.view(app, {
-				width = sliderWidth,
-				value = gain,
-				min = service.minimum,
-				max = service.maximum,
-				origin = 0.5,
-				onchange = |value_| -> { type = "equalizerGain", band = band, value = value_},
-				trackColour = theme:color("text", 0.12),
-				fillColour = theme:color("accent"),
-				thumbColour = theme:color("text"),
-				thumbSize = theme:px(12),
-			}),
-			text(value):style(theme:s():w(valueWidth):text(theme:type("xs"))
-			:fg(theme:color("text"))),
-		})
+		panels[#panels + 1] = div()
+			:style(sty():row():wrel(1.0):h(rowHeight):gap(gap):align("center"))
+			:children(
+				{
+					text(service.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs")):fg(theme:color("muted"))),
+					slider.view(
+						app,
+						{
+							width = sliderWidth,
+							value = gain,
+							min = service.minimum,
+							max = service.maximum,
+							origin = 0.5,
+							onchange = |value_| -> { type = "equalizerGain", band = band, value = value_ },
+							trackColour = theme:color("text", 0.12),
+							fillColour = theme:color("accent"),
+							thumbColour = theme:color("text"),
+							thumbSize = theme:px(12)
+						}
+					),
+					text(value):style(theme:s():w(valueWidth):text(theme:type("xs")):fg(theme:color("text")))
+				}
+			)
 	end
 
 	local panel = div()
-	:style(sty():w(width):h(height):column():pad(padding):gap(gap)
-	:radius(theme:radius("md")):bg(theme:color("elevated"))
-	:border(theme:px(1), theme:color("border"))
-	:shadow(0, theme:px(14), theme:px(36), "#00000099"))
-	:onClick({ type = "keep"})
-	:children(panels)
+		:style(
+			sty()
+				:w(width):h(height):column():pad(padding):gap(gap):radius(theme:radius("md")):bg(theme:color("elevated"))
+				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099")
+		):onClick({ type = "keep" }):children(panels)
 
 	return div()
-	:style(sty():size(window.width, window.height):offset(0, 0):z(130)
-	:column():align("center"):justify("center")
-	:bg(theme:color("overlay"))):onClick({ type = "dismiss"})
-	:children({ panel})
+		:style(
+			sty()
+				:size(window.width, window.height):offset(0, 0):z(130):column():align("center"):justify("center")
+				:bg(theme:color("overlay"))
+		):onClick({ type = "dismiss" }):children({ panel })
 end
 
 return equalizer
