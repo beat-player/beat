@@ -38,8 +38,7 @@ end
 ---@param message beat.Message
 function playlists.update(app, page, message)
 	local state = page.state
-	local kind = message.type
-	if kind == "editTag" then
+	if message.type == "editTag" then
 		local tag = app.services.collections.taxonomy.tagById[tonumber(message.id)]
 		if tag ~= nil and not tag.hidden then
 			state.tagEditId = tag.id
@@ -48,17 +47,17 @@ function playlists.update(app, page, message)
 			app:refresh()
 		end
 		return true
-	elseif kind == "tagEditDraft" then
+	elseif message.type == "tagEditDraft" then
 		state.tagEditDraft = message.value or ""
 		app:refresh()
 		return true
-	elseif kind == "cancelTagEdit" then
+	elseif message.type == "cancelTagEdit" then
 		state.tagEditId = nil
 		state.tagEditDraft = ""
 		app:focusField(nil)
 		app:refresh()
 		return true
-	elseif kind == "renameTag" then
+	elseif message.type == "renameTag" then
 		local tag = app.services.collections.taxonomy:renameTag(state.tagEditId --[[@as number]], state.tagEditDraft)
 		if tag == nil then
 			app.services.toasts:show("Choose a tag name that is not already used", "error")
@@ -71,13 +70,13 @@ function playlists.update(app, page, message)
 		end
 		app:refresh()
 		return true
-	elseif kind == "hoverTag" then
+	elseif message.type == "hoverTag" then
 		if state.hoverTagId ~= message.id then
 			state.hoverTagId = message.id
 			app:refresh()
 		end
 		return true
-	elseif kind == "deleteTag" then
+	elseif message.type == "deleteTag" then
 		local id = tonumber(message.id)
 		local tag = id ~= nil and app.services.collections.taxonomy.tagById[id] or nil
 		if tag ~= nil then
@@ -130,9 +129,9 @@ function playlists.view(app, page, window)
 			width = theme:px(92),
 		}),
 	}
-	local headerHeight = theme:px(mobile and 92 or 44)
+	local headerHeight = (theme:px(mobile ? 92 : 44))
 	local actionRow = div():style(sty():row():wrel(1.0):h(theme:px(30)):gap(theme:px(8))
-	:align("center"):justify(mobile and "start" or "end")):children(headerActions)
+	:align("center"):justify(mobile ? "start" : "end")):children(headerActions)
 	local title = text("Playlists"):style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold")
 	:fg(theme:color("text")):ellipsis())
 	local header
@@ -164,9 +163,7 @@ function playlists.view(app, page, window)
 		theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center"):radius(theme:radius("md"))
 		:bg(theme:color("hover")))
 		:onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id}})
-		:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-			return { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY}
-		end)
+		:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY})
 		:children({
 			PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }),
 			div():style(sty():column():w(infoWidth):hrel(1.0):justify("center")
@@ -203,8 +200,8 @@ function playlists.view(app, page, window)
 	local pillPadLeft = theme:px(10)
 	local pillPadRight = theme:px(6)
 	local gaps = theme:px(12)
-	local closeWidth = theme:px(mobile and 28 or 22)
-	local nameSize = theme:type(mobile and "sm" or "base")
+	local closeWidth = (theme:px(mobile ? 28 : 22))
+	local nameSize = (theme:type(mobile ? "sm" : "base"))
 
 	local function flushTagLine()
 		if #tagLine == 0 then return end
@@ -244,8 +241,8 @@ function playlists.view(app, page, window)
 				name = "tagName",
 				value = state.tagEditDraft,
 				placeholder = tag.name,
-				oninput = function(value) return { type = "tagEditDraft", value = value} end,
-				onsubmit = function() return { type = "renameTag"} end,
+				oninput = |value| -> { type = "tagEditDraft", value = value},
+				onsubmit = || -> { type = "renameTag"},
 				width = fieldWidth,
 			})
 			pill = div():style(sty():row():w(editWidth):h(theme:px(34)):gap(theme:px(4))
@@ -263,12 +260,12 @@ function playlists.view(app, page, window)
 			:hover(sty():row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6))
 			:pad(0, pillPadRight, 0, pillPadLeft):align("center"):radius(theme:radius("full"))
 			:bg(theme:color("hover")):border(theme:px(1), theme:color("border")))
-			:onMouseMove(function() return { type = "hoverTag", id = tag.id} end)
+			:onMouseMove(|| -> { type = "hoverTag", id = tag.id})
 			:children({
 				text(countText):style(countStyle:w(countWidth):fg(theme:color("faint")):ellipsis()),
 				text(tag.name):style(nameStyle:w(nameWidth):fg(theme:color("text")):ellipsis())
 				:onClick({ type = "editTag", id = tag.id}),
-				div():style(sty():size(closeWidth, theme:px(mobile and 28 or 22))
+				div():style(sty():size(closeWidth, (theme:px(mobile ? 28 : 22)))
 				:align("center"):justify("center"))
 				:onClick({ type = "deleteTag", id = tag.id})
 				:children(text("×"):style(theme:s():text(theme:type("lg")):weight("semibold")

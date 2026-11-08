@@ -124,24 +124,23 @@ function Search:clear()
 end
 
 function Search:update(message)
-	local kind = message.type
-	if kind == "search" then
+	if message.type == "search" then
 		self.query = message.value or ""
 		-- The field started this navigation. It keeps the keyboard and its caret, so the next
 		-- character is typed after the first rather than put in front of it; navigating to the
 		-- page already showing does nothing.
 		self.emit({ type = "navigate", page = { kind = "search"}, keepFocus = true})
-	elseif kind == "clearSearch" then
+	elseif message.type == "clearSearch" then
 		self:clear()
-	elseif kind == "openSearch" then
+	elseif message.type == "openSearch" then
 		self.emit({ type = "navigate", page = { kind = "search"}})
 		self.emit({ type = "focus", field = "search", at = #self.query})
-	elseif kind == "toggleTagFilter" then
+	elseif message.type == "toggleTagFilter" then
 		if self.tagFilter[message.id] then self.tagFilter[message.id] = nil
 		else self.tagFilter[message.id] = true end
-	elseif kind == "tagFilterMatch" then
-		self.match = message.value == "any" and "any" or "all"
-	elseif kind == "clearTagFilter" then
+	elseif message.type == "tagFilterMatch" then
+		self.match = message.value == "any" ? "any" : "all"
+	elseif message.type == "clearTagFilter" then
 		self.tagFilter = {}
 	end
 end

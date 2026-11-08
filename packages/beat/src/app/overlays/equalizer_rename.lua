@@ -40,11 +40,10 @@ end
 ---@param message beat.Message
 function equalizerRename.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "equalizerEditDraft" then
+	if message.type == "equalizerEditDraft" then
 		state.draft = message.value or ""
 		app:refresh()
-	elseif kind == "cancelEqualizerPresetRename" then
+	elseif message.type == "cancelEqualizerPresetRename" then
 		app:close(overlay)
 	else
 		return false
@@ -76,8 +75,8 @@ function equalizerRename.view(app, overlay, window)
 			name = "equalizerPresetName",
 			value = state.draft,
 			placeholder = "Preset name",
-			oninput = function(value) return { type = "equalizerEditDraft", value = value} end,
-			onsubmit = function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end,
+			oninput = |value| -> { type = "equalizerEditDraft", value = value},
+			onsubmit = || -> { type = "saveEqualizerPresetRename", name = name, value = state.draft},
 		}),
 		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
 		:justify("end")):children({

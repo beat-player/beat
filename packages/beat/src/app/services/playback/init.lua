@@ -73,15 +73,9 @@ function Playback.new(deps)
 
 	-- The player knows when a track actually starts or stops; everything listening to playback
 	-- -- the tag store, Last.fm, a plugin -- hears it as a message rather than watching the queue.
-	self.player.onTrackStarted = function(track, position)
-		self.emit({ type = "trackStarted", track = track, position = position})
-	end
-	self.player.onTrackEnded = function(track, completed)
-		self.emit({ type = "trackEnded", track = track, completed = completed})
-	end
-	self.player.onQueueChanged = function()
-		self.emit({ type = "queueChanged"})
-	end
+	self.player.onTrackStarted = |track, position| -> self.emit({ type = "trackStarted", track = track, position = position })
+	self.player.onTrackEnded = |track, completed| -> self.emit({ type = "trackEnded", track = track, completed = completed })
+	self.player.onQueueChanged = || -> self.emit({ type = "queueChanged" })
 	return self
 end
 
@@ -94,12 +88,12 @@ function Playback:restoreSession()
 
 	local byPath = {}
 	for _, track in ipairs(library.tracks) do byPath[track.path] = track end
-	local queue, sameTrack = Queue.unpack(saved.queue, function(path) return byPath[path] end)
+	local queue, sameTrack = Queue.unpack(saved.queue,|path| -> byPath[path])
 	if queue == nil then return end
 
 	self.player:restore(queue, sameTrack and saved.seconds or 0)
 	local current = queue:current()
-	self.lastListenedTrackId = current and current.id or nil
+	self.lastListenedTrackId = current?.id
 end
 
 --- What would be written, in a form that changes when the file would: the queue, where its play
@@ -120,7 +114,7 @@ end
 function Playback:flush()
 	local queue = self.player.queue
 	if queue == nil and self.sessionKey == "" then return end
-	Session.save({ queue = queue and queue:pack() or nil, seconds = self.player:position()})
+	Session.save({ queue = queue ? (queue:pack()) : nil, seconds = (self.player:position())})
 	self.sessionKey = self:sessionKeyOf()
 	self.sessionDueAt = nil
 end
@@ -173,7 +167,7 @@ end
 ---@param restart boolean
 function Playback:playAlbum(albumId, shuffle, restart)
 	local library = self.library.current
-	local album = library ~= nil and library:album(albumId) or nil
+	local album = library ~= nil ? (library:album(albumId)) : nil
 	if album == nil then return end
 
 	local current = self.player:current()
@@ -193,7 +187,7 @@ end
 ---@param asNext boolean? # True puts it after the current track; false at the end of the queue
 function Playback:queueAlbum(albumId, asNext)
 	local library = self.library.current
-	local album = library ~= nil and library:album(albumId) or nil
+	local album = library ~= nil ? (library:album(albumId)) : nil
 	if album == nil then return end
 
 	if asNext then
@@ -210,14 +204,14 @@ end
 ---@param message table
 function Playback:playTrack(message)
 	local library = self.library.current
-	local track = library ~= nil and library:track(message.trackId) or nil
+	local track = library ~= nil ? (library:track(message.trackId)) : nil
 	local tracks = nil
 	if message.albumId ~= nil and library ~= nil then
 		local album = library:album(message.albumId --[[@as number]])
-		tracks = album and album.tracks
+		tracks = album?.tracks
 	elseif message.artistId ~= nil and library ~= nil then
 		local artist = library:artist(message.artistId --[[@as number]])
-		tracks = artist and artist.tracks
+		tracks = artist?.tracks
 	end
 
 	local current = self.player:current()
@@ -283,47 +277,46 @@ function Playback:toggleMute()
 end
 
 function Playback:update(message)
-	local kind = message.type
-	if kind == "togglePlay" then
+	if message.type == "togglePlay" then
 		self:toggle()
-	elseif kind == "next" then
+	elseif message.type == "next" then
 		self.player:next()
-	elseif kind == "previous" then
+	elseif message.type == "previous" then
 		self.player:previous()
-	elseif kind == "seek" then
+	elseif message.type == "seek" then
 		local seconds = message.seconds
 		if message.by ~= nil then seconds = self.player:position() + message.by end
 		self.player:seek(math.max(0, seconds or 0))
-	elseif kind == "volume" then
+	elseif message.type == "volume" then
 		self:setVolume(message.value)
-	elseif kind == "mute" then
+	elseif message.type == "mute" then
 		self:toggleMute()
-	elseif kind == "shuffle" then
+	elseif message.type == "shuffle" then
 		local queue = self.player.queue
 		if queue ~= nil then self.player:setShuffle(not queue.shuffle) end
-	elseif kind == "repeat" then
+	elseif message.type == "repeat" then
 		self.player:cycleRepeat()
-	elseif kind == "playAlbum" then
+	elseif message.type == "playAlbum" then
 		self:playAlbum(message.id --[[@as number]], message.shuffle == true, message.restart == true)
-	elseif kind == "queueAlbum" then
+	elseif message.type == "queueAlbum" then
 		self:queueAlbum(message.id --[[@as number]], message.next == true)
-	elseif kind == "playTrack" then
+	elseif message.type == "playTrack" then
 		self:playTrack(message)
-	elseif kind == "playArtist" then
+	elseif message.type == "playArtist" then
 		local library = self.library.current
-		local artist = library ~= nil and library:artist(message.id --[[@as number]]) or nil
+		local artist = library ~= nil ? (library:artist(message.id --[[@as number]])) : nil
 		if artist ~= nil then self.player:playArtist(artist, message.trackId) end
-	elseif kind == "playPlaylist" then
+	elseif message.type == "playPlaylist" then
 		self:playPlaylist(message.id --[[@as number]], message.shuffle == true)
-	elseif kind == "playPlaylistTrack" then
+	elseif message.type == "playPlaylistTrack" then
 		self:playPlaylistTrack(message.playlistId --[[@as number]], message.trackId --[[@as number]])
-	elseif kind == "jumpTrack" then
+	elseif message.type == "jumpTrack" then
 		self.player:jump(message.trackId)
-	elseif kind == "play" then
+	elseif message.type == "play" then
 		self:play()
-	elseif kind == "pause" then
+	elseif message.type == "pause" then
 		self:pause()
-	elseif kind == "stop" then
+	elseif message.type == "stop" then
 		self:stop()
 	end
 end
@@ -341,7 +334,7 @@ function Playback:step(now)
 	and current.id ~= self.lastListenedTrackId then
 		self.lastListenedTrackId = current.id
 		local playlistId = nil
-		local source = self.player.queue and self.player.queue.source
+		local source = self.player.queue?.source
 		if source ~= nil then
 			local id = source:match("^playlist:(%d+)$")
 			if id ~= nil then playlistId = tonumber(id) end

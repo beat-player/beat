@@ -35,15 +35,14 @@ end
 ---@param message beat.Message
 function playlistAdder.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "playlistAdderQuery" then
+	if message.type == "playlistAdderQuery" then
 		state.query = message.value or ""
 		app:refresh()
 		return true
-	elseif kind == "playlistAddAlbum" then
+	elseif message.type == "playlistAddAlbum" then
 		local playlist = app.services.collections.taxonomy:playlist(state.playlistId)
 		local library = app.services.library.current
-		local album = library ~= nil and library:album(tonumber(message.id) or 0) or nil
+		local album = library ~= nil ? (library:album(tonumber(message.id) or 0)) : nil
 		if playlist ~= nil and album ~= nil then
 			app.services.collections.taxonomy:setPlaylistAlbum(playlist, album)
 			app.services.collections:save()
@@ -110,12 +109,11 @@ function playlistAdder.view(app, overlay, window)
 			name = "playlistAddSearch",
 			value = state.query,
 			placeholder = "Search albums",
-			oninput = function(value) return { type = "playlistAdderQuery", value = value} end,
-			onsubmit = function() return nil end,
+			oninput = |value| -> { type = "playlistAdderQuery", value = value},
+			onsubmit = || -> nil,
 		}),
 		div():style(sty():column():wrel(1.0):h(theme:px(8 * 44)):gap(theme:px(2))):children(rows),
-		text(#albums > 8 and "Showing the first 8; search to narrow the list."
-		or "Click an album to add every track in it."):style(theme:s():text(theme:type("xs"))
+		text(#albums > 8 ? "Showing the first 8; search to narrow the list." : "Click an album to add every track in it."):style((theme:s()):text((theme:type("xs")))
 		:fg(theme:color("faint"))),
 	})
 

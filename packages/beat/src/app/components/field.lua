@@ -23,8 +23,7 @@ function field.view(app, props)
 	local focused = app.layoutPlugin ~= nil and app.window ~= nil
 	and app.layoutPlugin:getFocusedId(app.window) == props.name
 	local shown = props.value ~= "" and props.value or (focused and " " or props.placeholder)
-	local colour = props.value ~= "" and theme:color("text")
-	or (focused and theme:color("text") or theme:color("faint"))
+	local colour = props.value ~= "" ? (theme:color("text")) : focused and (theme:color("text")) or (theme:color("faint"))
 	local fieldStyle = sty():h(theme:px(34)):row():align("center")
 	:pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("sm")):bg(theme:color("surface"))
 	:text(theme:type("sm")):fg(theme:color("text"))

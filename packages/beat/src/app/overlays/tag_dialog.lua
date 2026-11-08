@@ -37,12 +37,11 @@ end
 ---@param message beat.Message
 function tagDialog.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "tagDraft" then
+	if message.type == "tagDraft" then
 		state.draft = message.value or ""
 		app:refresh()
 		return true
-	elseif kind == "createTag" then
+	elseif message.type == "createTag" then
 		local tag = app.services.collections.taxonomy:addTag(state.draft)
 		if tag == nil then
 			app.services.toasts:show("Choose a tag name that is not already used", "error")
@@ -80,8 +79,8 @@ function tagDialog.view(app, overlay, window)
 			name = "newTag",
 			value = state.draft,
 			placeholder = "Tag name",
-			oninput = function(value) return { type = "tagDraft", value = value} end,
-			onsubmit = function() return { type = "createTag"} end,
+			oninput = |value| -> { type = "tagDraft", value = value},
+			onsubmit = || -> { type = "createTag"},
 		}),
 		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end")):children({
 			button.view(app, {

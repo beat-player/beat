@@ -35,7 +35,7 @@ end
 -- found and the service keeps it only when that is a playlist that still exists.
 function Sidebar:update(message)
 	local id = tonumber(message.id)
-	local playlist = id ~= nil and self.collections.taxonomy:playlist(id) or nil
+	local playlist = id ~= nil ? (self.collections.taxonomy:playlist(id)) : nil
 	if playlist == nil then
 		self.hover = nil
 		return

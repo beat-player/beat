@@ -8,6 +8,7 @@
 -- they were registered and applied when the value is asked for, so a page is never frozen into
 -- whichever plugin happened to look at it first.
 local Log = require("beat.log")
+local messages = require("beat.message")
 
 --- What a page keeps while it is showing and while it waits in the history. Each page module
 --- declares its own state class, and `new` returns it.
@@ -58,10 +59,13 @@ local Log = require("beat.log")
 ---@field view (fun(app: beat.App, overlay: beat.OverlayInstance<beat.OverlayState>, window: wonderland.RenderWindow): wonderland.Element?)?
 ---@field close (fun(app: beat.App, overlay: beat.OverlayInstance<beat.OverlayState>))? # What closing it undoes: a focused field, a draft
 
---- A message as it travels through the app. `type` names the service or screen that answers it,
---- and the rest is what that owner reads.
----@class beat.Message: table<string, any>
----@field type string
+--- What a context-menu action is made for. A menu sets the one field it was opened on — an album,
+--- a track, a playlist — and a callback reads that field; the menu name says which one is there.
+---@class beat.MenuContext: table<string, any>
+---@field message beat.Messages # Message constructors for the action's return
+---@field album beat.Album?
+---@field track beat.Track?
+---@field playlist beat.Playlist?
 
 --- One entry of a context menu. The message may be made when the menu opens, so it can name the
 --- album or track the menu is for.
@@ -70,8 +74,8 @@ local Log = require("beat.log")
 ---@field title string
 ---@field order number?
 ---@field tone string? # A colour name from the theme; `danger` is the one built-in menus use
----@field when (fun(ctx: table, app: beat.App): boolean?)?
----@field message beat.Message|fun(ctx: table, app: beat.App): beat.Message?
+---@field when (fun(ctx: beat.MenuContext, app: beat.App): boolean?)?
+---@field message beat.Message|fun(ctx: beat.MenuContext, app: beat.App): beat.Message?
 
 --- An action as the registry keeps it: the entry it was, the plugin that made it, and where it
 --- sits in registration order.
@@ -125,6 +129,7 @@ local Log = require("beat.log")
 --- What a plugin registers through: one function per kind of registration, each answering the
 --- undo that takes it out again.
 ---@class beat.PluginHandle
+---@field msg beat.Messages
 ---@field service fun(name: string, module: beat.Service)
 ---@field page fun(kind: string, surface: beat.PageSurface)
 ---@field overlay fun(name: string, surface: beat.OverlaySurface)
@@ -256,7 +261,6 @@ end
 ---@param self beat.Registry
 ---@param module beat.Service
 ---@param plugin beat.Plugin
----@return beat.Service
 local function guardService(self, module, plugin)
 	if plugin.builtin then return module end
 	-- What the collection asks a module for, and nothing else: the plugin's own fields are not
@@ -512,7 +516,6 @@ end
 ---@param value any
 ---@param disable fun(plugin: beat.Plugin, reason: any)
 ---@param name string
----@return any
 local function applyMod(mod, value, disable, name)
 	if mod.kind == "replace" then return mod.value end
 	if mod.plugin.builtin then return mod.fn(value) end
@@ -579,6 +582,9 @@ end
 ---@param ctx table
 ---@return { title: string, message: table, tone: string? }[]
 function Registry:actions(menu, ctx)
+	-- The constructors are the context's, so an action written anywhere can make its message
+	-- without the screen that opened the menu having to carry them.
+	ctx.message = messages
 	local shown = {}
 	for _, entry in ipairs(self.actionsList) do
 		if entry.menu == menu and not entry.plugin.disabled then
@@ -649,7 +655,7 @@ function Registry:intercept(message, app)
 		while at <= #list do
 			local entry = list[at]
 			if entry.plugin.disabled then
-				at = at + 1
+				at += 1
 			else
 				local proceeded, result, delivered = false, true, current
 				---@param next beat.Message?

@@ -31,7 +31,7 @@ function Queue.new(tracks, index, opts)
 		naturalOrder = naturalOrder,
 		position = math.max(1, math.min(index or 1, #tracks)),
 		repeatMode = opts.repeatMode or "off",
-		shuffle = opts.shuffle or false,
+		shuffle = opts.shuffle ?? false,
 		source = opts.source or "library",
 	}, Queue)
 
@@ -90,7 +90,7 @@ end
 function Queue:jump(trackId)
 	for at, index in ipairs(self.order) do
 		local track = self.tracks[index]
-		if track ~= nil and track.id == trackId then
+		if track?.id == trackId then
 			self.position = at
 			return track
 		end
@@ -108,7 +108,7 @@ end
 ---@return beat.Track?
 function Queue:next()
 	if self.position < #self.order then
-		self.position = self.position + 1
+		self.position += 1
 		return self:current()
 	end
 
@@ -127,7 +127,7 @@ end
 ---@return beat.Track?
 function Queue:previous()
 	if self.position > 1 then
-		self.position = self.position - 1
+		self.position -= 1
 		return self:current()
 	end
 
@@ -144,7 +144,7 @@ end
 function Queue:onEnded()
 	if self.repeatMode == "one" then return "again" end
 	if self.position < #self.order then
-		self.position = self.position + 1
+		self.position += 1
 		return "next"
 	end
 
@@ -208,7 +208,7 @@ function Queue:add(tracks, afterCurrent)
 		local index = #self.tracks
 		table.insert(self.order, at, index)
 		self.naturalOrder[#self.naturalOrder + 1] = index
-		at = at + 1
+		at += 1
 	end
 end
 
@@ -263,7 +263,7 @@ function Queue.unpack(packed, find)
 
 	local tracks, moved = {}, {}
 	for at, path in ipairs(packed.tracks) do
-		local track = type(path) == "string" and find(path) or nil
+		local track = type(path) == "string" ? find(path) : nil
 		if track ~= nil then
 			tracks[#tracks + 1] = track
 			moved[at] = #tracks
@@ -283,7 +283,7 @@ function Queue.unpack(packed, find)
 	if #order == 0 then return nil, false end
 	local before = 0
 	for at = 1, math.min(packed.position - 1, #packed.order) do
-		if moved[packed.order[at]] ~= nil then before = before + 1 end
+		if moved[packed.order[at]] ~= nil then before += 1 end
 	end
 
 	local queue = setmetatable({

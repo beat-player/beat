@@ -34,7 +34,7 @@ function albumCard.view(app, props)
 	local theme = app.services.appearance.theme
 	local album, width, onPlay = props.album, props.width, props.onPlay
 	local current = app.services.playback:current()
-	local thisAlbum = current ~= nil and current.albumId == album.id
+	local thisAlbum = current?.albumId == album.id
 	local playing = thisAlbum and app.services.playback.player:isPlaying()
 	if thisAlbum then onPlay = { type = "togglePlay"} end
 
@@ -46,9 +46,7 @@ function albumCard.view(app, props)
 	:style(sty():w(width):h(height):column())
 	:hover(sty():w(width):h(height):column():bright(1.08))
 	:onClick(props.onOpen)
-	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
-	end)
+	:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY})
 	:children({
 		div():style(sty():size(width, width)):children({
 			cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
@@ -57,7 +55,7 @@ function albumCard.view(app, props)
 			:offset(width - theme:px(44), width - theme:px(44))
 			:bg(theme:color("accent")):align("center"):justify("center"))
 			:onClick(onPlay)
-			:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(18), colour = theme.accentInk })),
+			:children(icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(18)), colour = theme.accentInk })),
 		}),
 		div():style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2))):children({
 			text(album.title):style(titleStyle),

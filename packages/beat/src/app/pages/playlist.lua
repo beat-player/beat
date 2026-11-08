@@ -40,18 +40,18 @@ function playlistPage.view(app, page, window)
 		if tag ~= nil then tagNames[#tagNames + 1] = tag.name end
 	end
 	local duration = 0
-	for _, track in ipairs(tracks) do duration = duration + track.duration end
+	for _, track in ipairs(tracks) do duration += track.duration end
 
 	local subtitle = "Playlist"
 	if playlist.autoTagId ~= nil then
 		subtitle = "Auto playlist"
 	elseif playlist.smart and #tagNames > 0 then
-		subtitle = "Smart playlist · " .. table.concat(tagNames, playlist.match == "any" and " or " or " · ")
+		subtitle = "Smart playlist · " .. table.concat(tagNames, playlist.match == "any" ? " or " : " · ")
 	end
 
 	local current = app.services.playback:current()
 	local queue = app.services.playback.player.queue
-	local source = queue ~= nil and queue.source or nil
+	local source = queue?.source
 	local thisPlaylist = current ~= nil and source == "playlist:" .. tostring(playlist.id)
 	local playing = app.services.playback.player:isPlaying()
 
@@ -69,28 +69,23 @@ function playlistPage.view(app, page, window)
 		window = window,
 		label = "PLAYLIST",
 		icons = PlaylistArt.icons(app, { playlist = playlist }),
-		cover = function(size)
-			return PlaylistArt.view(app, {
+		cover = |size| -> PlaylistArt.view(app, {
 				tracks = tracks,
 				size = size,
 				radius = app.services.appearance.theme:radius("lg"),
 				name = playlist.name,
-			})
-		end,
+			}),
 		title = playlist.name,
 		subtitle = subtitle,
 		meta = format.count(#tracks, "track")
 		.. (duration > 0 and (" · " .. format.duration(duration)) or "")
 		.. " · " .. PlaylistArt.editedLabel(playlist.updatedAt),
-		playAction = thisPlaylist and { type = "togglePlay"}
-		or { type = "playPlaylist", id = playlist.id},
-		playIcon = playing and thisPlaylist and "pause" or "play",
+		playAction = thisPlaylist ? { type = "togglePlay"} : { type = "playPlaylist", id = playlist.id},
+		playIcon = playing and thisPlaylist ? "pause" : "play",
 		shuffleAction = { type = "playPlaylist", id = playlist.id, shuffle = true},
 		addAction = { type = "open", overlay = "playlist_adder", playlistId = playlist.id},
 		tracks = tracks,
-		trackAction = function(track)
-			return { type = "playPlaylistTrack", playlistId = playlist.id, trackId = track.id}
-		end,
+		trackAction = |track| -> { type = "playPlaylistTrack", playlistId = playlist.id, trackId = track.id},
 		empty = empty,
 	})
 end

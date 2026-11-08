@@ -12,7 +12,6 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param action any
 ---@param width number
 ---@param height number
----@return wonderland.Element
 local function nowPlayingEntry(app, label, action, width, height)
 	local theme = app.services.appearance.theme
 	return div()
@@ -67,7 +66,7 @@ function more.view(app, overlay, _window)
 	local room = anchor.room
 	local x = anchor.x
 	local theme = app.services.appearance.theme
-	local album = app.services.library.current and app.services.library.current:album(track.albumId) or nil
+	local album = app.services.library.current ? (app.services.library.current:album(track.albumId)) : nil
 	---@type { [1]: string, [2]: beat.Message }[]
 	local entries = {
 		{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id}},

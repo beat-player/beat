@@ -19,6 +19,7 @@ local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local cacheRoot = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 
 local file = assert(io.open(outputPath, "wb"))
+---@param value beat.MessageFields
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()
@@ -27,7 +28,6 @@ end
 -- Error text travels through JSON, which is UTF-8: a malformed tag byte or an ANSI Windows path
 -- must not make the report of a failure fail too.
 ---@param value any
----@return string
 local function clean(value)
 	return (tostring(value):gsub("[%z\1-\31\127-\255]", "?"))
 end
@@ -60,7 +60,7 @@ local current = nil
 ---@param path string
 ---@param message string
 local function recordError(path, message)
-	skipped = skipped + 1
+	skipped += 1
 	if #errors < 100 then
 		errors[#errors + 1] = { path = clean(path), message = clean(message)}
 	end
@@ -74,12 +74,12 @@ local function inspect(entry)
 		dir = entry.dir,
 		name = entry.name,
 		ext = entry.ext,
-		modifyTime = stat and stat.modifyTime or nil,
+		modifyTime = stat?.modifyTime,
 	}
 
 	local ok, info = pcall(audio.inspect, entry.path)
 	if not ok or info == nil then
-		recordError(entry.path, ok and "not an audio file this library reads" or tostring(info))
+		recordError(entry.path, ok ? "not an audio file this library reads" : tostring(info))
 		return
 	end
 
@@ -101,7 +101,7 @@ local function inspect(entry)
 				hasPicture = false,
 				coverPath = entry.cover,
 				modified = fileEntry.modifyTime,
-				coverModified = coverStat and coverStat.modifyTime or nil,
+				coverModified = coverStat?.modifyTime,
 			}, COVER_SIZE, cacheRoot)
 		end
 
@@ -116,7 +116,7 @@ local function inspect(entry)
 		return
 	end
 
-	tracks = tracks + 1
+	tracks += 1
 	file:write(encoded, "\n")
 	file:flush()
 end
@@ -138,13 +138,13 @@ local ok, err = pcall(function()
 			---@cast decoded beat.ScanEntry
 			current = decoded.path
 			inspect(decoded)
-			inspected = inspected + 1
+			inspected += 1
 		end
 
 		local now = time.now()
 		if inspected % PROGRESS_EVERY == 0 or now - lastProgress >= PROGRESS_SECONDS then
 			emit({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped,
-				current = current ~= nil and clean(current) or nil})
+				current = current ~= nil ? clean(current) : nil})
 			lastProgress = now
 		end
 	end

@@ -35,13 +35,13 @@ function tagPills.view(app, props)
 		local pill = div()
 		:style(sty():w(pillWidth):h(theme:px(28)):pad(0, theme:px(10), 0, theme:px(10))
 		:radius(theme:radius("full")):align("center"):justify("center")
-		:bg(active and theme:color("accent") or theme:color("elevated"))
-		:border(theme:px(1), active and theme:color("accent") or theme:color("border")))
+		:bg(active ? (theme:color("accent")) : (theme:color("elevated")))
+		:border((theme:px(1)), active ? (theme:color("accent")) : (theme:color("border"))))
 		:children(text(tag.name):style(theme:s():w(pillWidth - theme:px(20)):text(theme:type("xs"))
 		:weight("semibold"):fg(fg):ellipsis()))
 		if action ~= nil then pill:onClick(action(tag)) end
 		row[#row + 1] = pill
-		shown = shown + 1
+		shown += 1
 		if #row == columns then
 			rows[#rows + 1] = div():style(sty():row():h(theme:px(28)):gap(gap)):children(row)
 			row = {}
@@ -56,7 +56,7 @@ function tagPills.view(app, props)
 	end
 	if #rows == 0 then return nil end
 	local height = #rows * theme:px(28) + math.max(0, #rows - 1) * theme:px(8)
-	if limit ~= nil and #tags > limit then height = height + theme:px(18) end
+	if limit ~= nil and #tags > limit then height += theme:px(18) end
 	return div():style(sty():column():wrel(1.0):h(height):gap(theme:px(8))):children(rows)
 end
 

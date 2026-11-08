@@ -99,7 +99,7 @@ local function accentDefinition(value)
 		local luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
 		return {
 			colour = "#" .. custom:lower(),
-			ink = luminance > 0.62 and "#0a0c08" or "#f7f7fa",
+			ink = luminance > 0.62 ? "#0a0c08" : "#f7f7fa",
 		}, true
 	end
 
@@ -134,7 +134,6 @@ local RADII = {
 }
 
 ---@param value string
----@return number r, number g, number b, number a
 local function parse(value)
 	local hex = value:match("^#(%x+)$")
 	if hex == nil then return 1, 1, 1, 1 end
@@ -272,14 +271,14 @@ end
 ---@return string
 function theme.accentColour(name)
 	local chosen = accentDefinition(name)
-	return chosen and chosen.colour or ACCENTS.lime.colour
+	return chosen?.colour or ACCENTS.lime.colour
 end
 
 ---@param name string
 ---@return string
 function theme.accentInk(name)
 	local chosen = accentDefinition(name)
-	return chosen and chosen.ink or ACCENTS.lime.ink
+	return chosen?.ink or ACCENTS.lime.ink
 end
 
 return theme

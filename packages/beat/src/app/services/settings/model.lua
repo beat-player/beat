@@ -50,7 +50,6 @@ local DEFAULTS = {
 
 ---@param value any
 ---@param fallback number
----@return number
 local function number(value, fallback)
 	if type(value) ~= "number" or value ~= value then return fallback end
 	return value
@@ -65,7 +64,7 @@ function settings.load(dir)
 
 	local bytes = fs.read(file)
 	if bytes ~= nil then
-		local ok, parsed = pcall(function() return json.decode(bytes):unpack() end)
+		local ok, parsed = pcall(|| -> json.decode(bytes):unpack())
 		if ok and type(parsed) == "table" then data = parsed end
 	end
 
@@ -77,7 +76,7 @@ function settings.load(dir)
 		volume = math.max(0, math.min(1, number(data.volume, DEFAULTS.volume))),
 		isMuted = data.isMuted == true,
 		sort = type(data.sort) == "string" and data.sort or DEFAULTS.sort,
-		view = data.view == "list" and "list" or "grid",
+		view = data.view == "list" ? "list" : "grid",
 		sidebarWidth = math.max(200, math.min(360, number(data.sidebarWidth, DEFAULTS.sidebarWidth))),
 		sidebarCollapsed = data.sidebarCollapsed == true,
 		uiScale = math.max(0.75, math.min(1.5, number(data.uiScale, DEFAULTS.uiScale))),

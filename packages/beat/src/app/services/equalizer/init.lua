@@ -87,7 +87,7 @@ function Equalizer:load()
 	local gains = values.equalizerGains ~= nil and bands.sanitize(values.equalizerGains)
 	or (custom ~= nil and bands.copyGains(custom.gains)) or bands.presetGains(preset)
 	if bands.preset(preset) == nil and custom == nil then
-		preset = type(values.equalizerGains) == "table" and "custom" or "flat"
+		preset = type(values.equalizerGains) == "table" ? "custom" : "flat"
 	end
 
 	values.equalizerPreset = preset
@@ -158,7 +158,7 @@ function Equalizer:nextName()
 	local number = 2
 	while used[name] do
 		name = "Custom " .. tostring(number)
-		number = number + 1
+		number += 1
 	end
 	return name
 end
@@ -218,7 +218,7 @@ function Equalizer:setGain(band, value)
 	local gains = bands.sanitize(values.equalizerGains or {})
 	gains[band] = bands.clamp(value or 0)
 	local selected = self:find(values.equalizerPreset)
-	if selected ~= nil and selected.custom then
+	if selected?.custom then
 		for _, preset in ipairs(values.equalizerCustomPresets or {}) do
 			if preset.name == selected.id then preset.gains = bands.copyGains(gains) end
 		end
@@ -302,18 +302,17 @@ function Equalizer:closeDialog()
 end
 
 function Equalizer:update(message)
-	local kind = message.type
-	if kind == "equalizerPreset" then
+	if message.type == "equalizerPreset" then
 		self:select(message.id)
-	elseif kind == "newEqualizerPreset" then
+	elseif message.type == "newEqualizerPreset" then
 		self:create()
-	elseif kind == "editEqualizerPreset" then
+	elseif message.type == "editEqualizerPreset" then
 		self:edit(message.name)
-	elseif kind == "equalizerGain" then
+	elseif message.type == "equalizerGain" then
 		self:setGain(message.band, message.value)
-	elseif kind == "saveEqualizerPresetRename" then
+	elseif message.type == "saveEqualizerPresetRename" then
 		if self:rename(message.name, message.value) then self:closeDialog() end
-	elseif kind == "deleteEqualizerPreset" then
+	elseif message.type == "deleteEqualizerPreset" then
 		if self:delete(message.name) then self:closeDialog() end
 	end
 end

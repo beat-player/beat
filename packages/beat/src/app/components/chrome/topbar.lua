@@ -22,25 +22,24 @@ function topbar.view(app, props)
 	and app.layoutPlugin:getFocusedId(app.window) == "search"
 	local search = app.services.search.query
 	local available = metrics.contentWidth(app, width)
-	local leftWidth = available - theme:px(mobile and 48 or 44)
-	local searchWidth = leftWidth - theme:px(mobile and 50 or 84)
-	local pillHeight = theme:px(mobile and 38 or 34)
-	local iconSize = theme:px(mobile and 40 or 32)
+	local leftWidth = available - (theme:px(mobile ? 48 : 44))
+	local searchWidth = leftWidth - (theme:px(mobile ? 50 : 84))
+	local pillHeight = (theme:px(mobile ? 38 : 34))
+	local iconSize = (theme:px(mobile ? 40 : 32))
 
 	local searchAreaWidth = searchWidth - theme:px(24) - theme:px(16) - theme:px(8)
 	-(search ~= "" and theme:px(28) or 0)
 	local searchArea = div():style(sty():w(searchAreaWidth):h(theme:px(32)):row():align("center"))
 	local searchText = search ~= "" and search
 	or (focused and " " or (width < 480 and "Search" or "Search artists, albums, tracks"))
-	local searchColour = search ~= "" and theme:color("text")
-	or (focused and theme:color("text") or theme:color("faint"))
+	local searchColour = search ~= "" ? (theme:color("text")) : focused and (theme:color("text")) or (theme:color("faint"))
 	local searchInput = div()
 	:style(sty():wrel(1.0):h(theme:px(32)):row():align("center")
 	:pad(theme:px(10), 0, theme:px(10), 0):text(theme:type("sm")):fg(theme:color("text")))
 	:input({
 		name = "search",
 		value = search,
-		oninput = function(value) return { type = "search", value = value} end,
+		oninput = |value| -> { type = "search", value = value},
 	})
 	searchInput:children(text(searchText):style(theme:s():wrel(1.0):text(theme:type("sm"))
 	:fg(searchColour):ellipsis()))
@@ -70,12 +69,15 @@ function topbar.view(app, props)
 		end))
 	end
 
+	---@param name string
+	---@param action beat.Message
+	---@param enabled boolean
 	local function navButton(name, action, enabled)
 		return iconButton.view(app, { name = name, size = iconSize, onClick = enabled and action or nil, active = enabled })
 	end
 
 	local searchStyle = sty():row():w(searchWidth):h(pillHeight):radius(theme:radius("full"))
-	:bg(focused and theme:color("hover") or theme:color("elevated"))
+	:bg(focused ? (theme:color("hover")) : (theme:color("elevated")))
 	:pad(0, theme:px(12), 0, theme:px(12)):align("center")
 
 	local searchPill = div():style(searchStyle):children(field)

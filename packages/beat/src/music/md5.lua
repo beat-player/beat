@@ -25,7 +25,6 @@ local S = {
 
 ---@param a number
 ---@param b number
----@return number # 32-bit sum
 local function add(a, b)
 	return bit.tobit(a + b)
 end
@@ -33,7 +32,6 @@ end
 --- Message with the 0x80 terminator, zero padding and the 64-bit little-endian bit length
 --- appended, so the result is a whole number of 64-byte blocks.
 ---@param message string
----@return string
 local function pad(message)
 	local bitLength = #message * 8
 	local zeros = (56 - (#message + 1) % 64) % 64
@@ -47,7 +45,6 @@ local function pad(message)
 end
 
 ---@param message string
----@return number, number, number, number # a, b, c, d (host order)
 local function blockDigest(message)
 	local a0, b0, c0, d0 = 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476
 	local data = pad(message)
@@ -58,22 +55,21 @@ local function blockDigest(message)
 		local byte = blockStart
 		for i = 1, 16 do
 			local b1, b2, b3, b4 = string.byte(data, byte, byte + 3)
-			x[i] = bit.bor(bit.bor(b1, bit.lshift(b2, 8)),
-			bit.bor(bit.lshift(b3, 16), bit.lshift(b4, 24)))
-			byte = byte + 4
+			x[i] = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24)
+			byte += 4
 		end
 
 		local a, b, c, d = a0, b0, c0, d0
 		for i = 1, 64 do
 			local f, g
 			if i <= 16 then
-				f, g = bit.bor(bit.band(b, c), bit.band(bit.bnot(b), d)), i
+				f, g = (b & c) | (~b & d), i
 			elseif i <= 32 then
-				f, g = bit.bor(bit.band(d, b), bit.band(bit.bnot(d), c)), (5 * i - 4) % 16 + 1
+				f, g = (d & b) | (~d & c), (5 * i - 4) % 16 + 1
 			elseif i <= 48 then
-				f, g = bit.bxor(bit.bxor(b, c), d), (3 * i + 2) % 16 + 1
+				f, g = b ~ c ~ d, (3 * i + 2) % 16 + 1
 			else
-				f, g = bit.bxor(c, bit.bor(b, bit.bnot(d))), (7 * i - 7) % 16 + 1
+				f, g = c ~ (b | ~d), (7 * i - 7) % 16 + 1
 			end
 			f = add(f, add(add(a, K[i]), x[g]))
 			a, b, c, d = d, add(b, bit.rol(f, S[i])), b, c
@@ -86,13 +82,11 @@ local function blockDigest(message)
 end
 
 ---@param value number
----@return number
 local function unsigned(value)
 	return value % 0x100000000
 end
 
 ---@param value number
----@return string
 local function littleEndianHex(value)
 	local word = unsigned(value)
 	local b1 = word % 256
@@ -105,7 +99,6 @@ end
 
 --- Hex digest of `message`, lowercase and 32 characters, as Last.fm expects it.
 ---@param message string
----@return string
 local function sumhexa(message)
 	local a, b, c, d = blockDigest(message)
 

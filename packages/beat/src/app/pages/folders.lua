@@ -41,7 +41,7 @@ local function read(app, state, pathname)
 			state.entries[#state.entries + 1] = { name = entry.name, path = path.join(state.path, entry.name)}
 		end
 	end
-	table.sort(state.entries, function(a, b) return a.name:lower() < b.name:lower() end)
+	table.sort(state.entries,|a, b| -> a.name:lower() < b.name:lower())
 end
 
 ---@param app beat.App
@@ -57,18 +57,17 @@ end
 ---@param message beat.Message
 function folders.update(app, page, message)
 	local state = page.state
-	local kind = message.type
-	if kind == "folderOpen" then
+	if message.type == "folderOpen" then
 		read(app, state, message.path)
-	elseif kind == "folderGo" then
+	elseif message.type == "folderGo" then
 		if type(message.path) ~= "string" or message.path == "" then return true end
 		read(app, state, message.path)
-	elseif kind == "folderUp" then
+	elseif message.type == "folderUp" then
 		read(app, state, path.dirname(state.path))
-	elseif kind == "folderSelect" then
+	elseif message.type == "folderSelect" then
 		app:act({ type = "startScan", root = message.path or state.path})
 		return true
-	elseif kind == "cancelFolders" then
+	elseif message.type == "cancelFolders" then
 		app:back()
 		return true
 	else
@@ -107,12 +106,12 @@ function folders.view(app, page, window)
 		height = theme:px(30),
 		width = theme:px(150),
 	})
-	local cancel = app.services.library.current ~= nil and button.view(app, {
+	local cancel = app.services.library.current ~= nil ? button.view(app, {
 		label = "Cancel",
 		onClick = { type = "cancelFolders"},
 		height = theme:px(30),
 		width = theme:px(80),
-	}) or nil
+	}) : nil
 
 	if mobile then
 		local second = { select}
@@ -142,10 +141,9 @@ function folders.view(app, page, window)
 
 	local content = div():style(sty():column():wrel(1.0):h("auto"):gap(theme:space(10)))
 	content:children({
-		text(mobile and "Choose a folder" or "Choose your music folder"):style(theme:s():wrel(1.0)
-		:text(theme:type(mobile and "xl" or "xxl")):weight("bold"):fg(theme:color("text")):ellipsis()),
-		text(mobile and "Everything is scanned locally."
-		or "Everything under it is scanned. Nothing is uploaded anywhere."):style(
+		text(mobile ? "Choose a folder" : "Choose your music folder"):style((theme:s()):wrel(1.0)
+		:text((theme:type(mobile ? "xl" : "xxl"))):weight("bold"):fg((theme:color("text"))):ellipsis()),
+		text(mobile ? "Everything is scanned locally." : "Everything under it is scanned. Nothing is uploaded anywhere."):style(
 		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
 		),
 		text(state.path):style(theme:s():wrel(1.0):h(theme:px(24)):pad(theme:px(5), theme:px(8),
@@ -155,7 +153,7 @@ function folders.view(app, page, window)
 			name = "folderPath",
 			value = state.path,
 			oninput = function() end,
-			onsubmit = function(value) return { type = "folderGo", path = value} end,
+			onsubmit = |value| -> { type = "folderGo", path = value},
 		}),
 	})
 	if state.error ~= nil then
@@ -166,9 +164,7 @@ function folders.view(app, page, window)
 	content:children(div():style(sty():column():wrel(1.0):h(theme:px(320)):pad(0, 0, 0, 0)
 	:bar(theme:px(8), theme:px(40), theme:color("faint")))
 	:scroll(app.services.scroll:offset("folders"))
-	:onScroll(function(by, to)
-		return { type = "scroll", key = app:pageKey(), by = by, to = to}
-	end):children(rows))
+	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to}):children(rows))
 
 	return div():style(sty():column():wrel(1.0):h(theme:px(540)):pad(theme:space(20), pad, theme:space(20), pad)
 	:gap(theme:space(16))):children({ content})

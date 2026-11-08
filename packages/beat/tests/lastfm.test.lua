@@ -60,7 +60,6 @@ end
 
 ---@param body string
 ---@param method string
----@return boolean
 local function calls(body, method)
 	return body:find("method=" .. method, 1, true) ~= nil
 end

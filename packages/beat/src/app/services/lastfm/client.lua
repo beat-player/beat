@@ -21,7 +21,6 @@ local RETRY_INTERVAL = 60
 local RATE_LIMIT_RETRY = 120
 
 ---@param value string?
----@return string
 local function trim(value)
 	return (value or ""):match("^%s*(.-)%s*$")
 end
@@ -71,7 +70,6 @@ Client.__index = Client
 ---@param settings beat.Settings
 ---@param handlers beat.LastfmHandlers?
 ---@param opts beat.LastfmOptions?
----@return beat.LastfmClient
 local function new(settings, handlers, opts)
 	opts = opts or {}
 	local self = setmetatable({
@@ -84,7 +82,7 @@ local function new(settings, handlers, opts)
 		authPage = opts.authPage or AUTH_PAGE,
 		-- What opens the authorization page comes from outside: the client is the network, not the
 		-- desktop. A caller that leaves it out simply cannot open one.
-		openBrowser = opts.openBrowser or function() return false end,
+		openBrowser = opts.openBrowser or || -> false,
 		curl = opts.curl or (curlOk and curl or nil),
 		batch = nil,
 		pending = {},
@@ -202,7 +200,7 @@ function Client:send(kind, params, onDone)
 	if not ok or type(index) ~= "number" then return false, tostring(index) end
 
 	self.pending[index] = { kind = kind, onDone = onDone}
-	self.pendingCount = self.pendingCount + 1
+	self.pendingCount += 1
 	return true
 end
 
@@ -260,16 +258,16 @@ function Client:pump()
 
 	local done = {}
 	for index, item in pairs(self.pending) do
-		local state = batch.order and batch.order[index]
-		local result = state and state.result
+		local state = batch.order?.[index]
+		local result = state?.result
 		if result ~= nil then done[#done + 1] = { index = index, item = item, result = result} end
 	end
 
-	table.sort(done, function(a, b) return a.index < b.index end)
+	table.sort(done,|a, b| -> a.index < b.index)
 
 	for _, entry in ipairs(done) do
 		self.pending[entry.index] = nil
-		self.pendingCount = self.pendingCount - 1
+		self.pendingCount -= 1
 		local value, err, code = resultOf(entry.result)
 		entry.item.onDone(value, err, code)
 	end
@@ -308,7 +306,7 @@ function Client:connect()
 
 	local apiKey, secret = self.apiKey, self.apiSecret
 
-	self.authEpoch = self.authEpoch + 1
+	self.authEpoch += 1
 	local epoch = self.authEpoch
 	self.error = nil
 	self.token = nil
@@ -324,7 +322,7 @@ function Client:connect()
 			return
 		end
 
-		local token = value and value.token
+		local token = value?.token
 		if type(token) ~= "string" or token == "" then
 			self:failAuth("Last.fm did not return an authorization token")
 			return
@@ -384,12 +382,11 @@ function Client:poll(now)
 
 		if message ~= nil then
 			if code == 14 then return end
-			self:failAuth(code == 15 and "the authorization token expired; try connecting again"
-			or message)
+			self:failAuth(code == 15 ? "the authorization token expired; try connecting again" : message)
 			return
 		end
 
-		local session = value and value.session
+		local session = value?.session
 		local sessionKey = type(session) == "table" and session.key or nil
 		if type(sessionKey) ~= "string" or sessionKey == "" then
 			self:failAuth("Last.fm did not return a session key")
@@ -420,8 +417,8 @@ end
 function Client:cancelAuth()
 	if not self:isAuthorizing() then return end
 
-	self.authEpoch = self.authEpoch + 1
-	self.state = trim(self.settings.lastfmSessionKey) ~= "" and "connected" or "idle"
+	self.authEpoch += 1
+	self.state = trim(self.settings.lastfmSessionKey) ~= "" ? "connected" : "idle"
 	self.token = nil
 	self.authUrl = nil
 	self.error = nil
@@ -491,8 +488,8 @@ function Client:flush()
 
 		self.scrobbleError = nil
 		self.retryAt = 0
-		local scrobbles = value and value.scrobbles
-		local ignored = tonumber(scrobbles and scrobbles.ignored) or 0
+		local scrobbles = value?.scrobbles
+		local ignored = tonumber(scrobbles?.ignored) or 0
 		if ignored > 0 then
 			self:notify(tostring(ignored) .. " Last.fm scrobble(s) were ignored", "error")
 		end
@@ -570,7 +567,7 @@ function Client:update(track, playing, scrobbles)
 end
 
 function Client:disconnect()
-	self.authEpoch = self.authEpoch + 1
+	self.authEpoch += 1
 	self.authInFlight = false
 	self.token = nil
 	self.authUrl = nil

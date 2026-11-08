@@ -80,11 +80,11 @@ function artwork.fit(source, maxSide)
 				local row = sy * source.width
 				for sx = x0, x1 - 1, stepX do
 					local at = (row + sx) * channels
-					r = r + from[at]
-					g = g + from[at + 1]
-					b = b + from[at + 2]
-					a = a + (channels >= 4 and from[at + 3] or 255)
-					count = count + 1
+					r += from[at]
+					g += from[at + 1]
+					b += from[at + 2]
+					a += (channels >= 4 and from[at + 3] or 255)
+					count += 1
 				end
 			end
 
@@ -113,10 +113,10 @@ function artwork.dominant(source)
 	for y = 0, source.height - 1, step do
 		for x = 0, source.width - 1, step do
 			local at = (y * source.width + x) * source.channels
-			r = r + pixels[at]
-			g = g + pixels[at + 1]
-			b = b + pixels[at + 2]
-			count = count + 1
+			r += pixels[at]
+			g += pixels[at + 1]
+			b += pixels[at + 2]
+			count += 1
 		end
 	end
 
@@ -136,7 +136,7 @@ function artwork.forTrack(track, maxSide)
 
 	if track.hasPicture then
 		local tags = audio.tags(track.path)
-		if tags ~= nil and tags.picture ~= nil then
+		if tags?.picture ~= nil then
 			decoded, err = image.decode(tags.picture.data, { channels = 4})
 		end
 	end

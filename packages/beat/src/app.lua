@@ -61,6 +61,16 @@ local MEDIA_MESSAGES = {
 --- have them or not, and the app asks for them where it can. Optional fields keep a plain
 --- `wonderland.RenderWindow` — a headless stand-in, a test's table — accepted where one is handed
 --- to a function that wants these.
+--- The window's events as the app reads them. Wonderland hands the whole `winit.Event`; a test
+--- writes only the fields the app looks at.
+---@alias beat.AppEvent
+--- | winit.Event
+--- | { name: "windowClose" }
+--- | { name: "fileDrop", paths: string[]? }
+--- | { name: "mediaKey", action: string }
+--- | { name: "mousePress" }
+--- | { name: "keyPress", key: winit.KeyName, modifiers: winit.KeyModifiers? }
+
 ---@class beat.WindowCalls
 ---@field setIcon (fun(self: wonderland.RenderWindow, width: number, height: number, rgba: string))?
 ---@field captureMediaKeys (fun(self: wonderland.RenderWindow): string[])?
@@ -91,7 +101,7 @@ local App = wonderland.app("Beat")
 ---@return string
 function App:keyOf(page)
 	local surface = self.registry:page(page.kind)
-	return surface.key ~= nil and surface.key(page) or page.kind
+	return surface.key ~= nil ? surface.key(page) : page.kind
 end
 
 --- A page for a route, with the state its module starts it with.
@@ -220,17 +230,17 @@ function App:init(opts)
 	-- it is delivered after the one being handled. `pointer` is where the pointer is in the window,
 	-- and `window` is the one a native dialog is shown over: the two pieces of the shell a service
 	-- has to ask about rather than own.
-	collection:provide("emit", function(message) self:act(message) end)
+	collection:provide("emit",|message| -> self:act(message))
 	collection:provide("messages", self.messages)
 	collection:provide("options", opts or {})
-	collection:provide("window", function() return self.window end)
+	collection:provide("window",|| -> self.window)
 	collection:provide("pointer", function()
 		if self.window == nil or self.layoutPlugin == nil then return nil end
 		if self.layoutPlugin.pointer ~= nil then return self.layoutPlugin:pointer(self.window) end
 		-- Older wonderland releases keep the pointer on the layout context itself.
 		local contexts = self.layoutPlugin.contexts
-		local context = contexts and contexts[self.window]
-		return context and context.pointer or nil
+		local context = contexts?.[self.window]
+		return context?.pointer
 	end)
 	local services = collection:build()
 	-- The plugin system's boundary: the registry builds services by the names it was given, and
@@ -250,10 +260,10 @@ function App:init(opts)
 
 	-- After the library, so a page that reads it on opening sees it, and before the scan, whose
 	-- reset message is delivered through the page that is showing.
-	self.page = self:pageFor({ kind = values.root == nil and "folders" or "home"})
+	self.page = (self:pageFor({ kind = values.root == nil ? "folders" : "home"}))
 	self.services.scan:resume()
 
-	self.ticker = self:onTick(function(now, window) return self:tick(now, window) end)
+	self.ticker = self:onTick(|now, window| -> self:tick(now, window))
 end
 
 function App:refresh()
@@ -346,8 +356,7 @@ function App:act(message)
 	self.delivering = true
 	local delivered = 0
 	while #self.queue > 0 do
-		delivered = delivered + 1
-		-- Services asking each other for something forever is a bug, and it should say so.
+		delivered += 1
 		if delivered > 64 then
 			local stuck = self.queue[1].type
 			self.queue = {}
@@ -374,9 +383,8 @@ end
 ---@param app beat.App
 ---@param message table
 local function deliverTo(app, message)
-	local kind = message.type
-	if kind == "keep" then return end
-	if kind == "dismiss" or (kind == "escape" and #app.overlays > 0) then
+	if message.type == "keep" then return end
+	if message.type == "dismiss" or (message.type == "escape" and #app.overlays > 0) then
 		local top = app.overlays[#app.overlays]
 		if top ~= nil then app:close(top) end
 		return
@@ -395,7 +403,7 @@ local function deliverTo(app, message)
 	local surface = app.registry:page(page.kind)
 	if surface.update ~= nil and surface.update(app, page, message) then return end
 
-	local owner = app.owners[kind]
+	local owner = app.owners[message.type]
 	if owner ~= nil then
 		owner:update(message)
 		app:refresh()
@@ -425,22 +433,21 @@ end
 ---   escape                                  nothing was open and the page did not want it: back
 ---@param message table
 function App:route(message)
-	local kind = message.type
-	if kind == "navigate" then
+	if message.type == "navigate" then
 		self:go(message.page, message.keepFocus == true)
-	elseif kind == "back" or kind == "escape" then
+	elseif message.type == "back" or message.type == "escape" then
 		self:back()
-	elseif kind == "forward" then
+	elseif message.type == "forward" then
 		self:forward()
-	elseif kind == "reset" then
+	elseif message.type == "reset" then
 		self:closeTransient()
 		self:focusField(nil)
 		self.history, self.future = {}, {}
 		self.page = self:pageFor(message.page)
 		self:refresh()
-	elseif kind == "open" then
+	elseif message.type == "open" then
 		self:open(message.overlay, message)
-	elseif kind == "focus" then
+	elseif message.type == "focus" then
 		self:focusField(message.field, message.at)
 	end
 end
@@ -452,7 +459,7 @@ function App:update(message, _window)
 end
 
 --- What the window's own events mean to the app, as messages: the app decides nothing here.
----@param event winit.Event
+---@param event beat.AppEvent
 ---@param _handler winit.EventManager
 function App:event(event, _handler)
 	if event.name == "windowClose" then

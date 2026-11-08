@@ -86,7 +86,7 @@ function playlistPicker.view(app, overlay, window)
 	:shadow(0, theme:px(12), theme:px(30), "#00000080"))
 	:onClick({ type = "keep"})
 	:children({
-		text(state.kind == "album" and "Add album to playlist" or "Add track to playlist"):style(
+		text(state.kind == "album" ? "Add album to playlist" : "Add track to playlist"):style(
 		theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
 	})
 	for _, row in ipairs(rows) do panel:children({ row}) end

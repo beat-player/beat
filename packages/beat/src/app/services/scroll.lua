@@ -73,7 +73,7 @@ function Scroll:update(message)
 	---@param value number
 	local function clampScroll(value)
 		value = math.max(0, value)
-		return limit ~= nil and math.min(value, limit) or value
+		return limit ~= nil ? math.min(value, limit) : value
 	end
 
 	local to = tonumber(message.to)

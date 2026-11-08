@@ -77,7 +77,7 @@ function Scanner.new(root, opts)
 
 	return setmetatable({
 		root = normalized,
-		library = keepLibrary and Library.new(normalized) or nil,
+		library = keepLibrary ? Library.new(normalized) : nil,
 		phase = "enumerate",
 		files = {},
 		trackCount = 0,
@@ -99,7 +99,6 @@ local function isJunk(entry)
 end
 
 ---@param name string
----@return string?
 local function extensionOf(name)
 	local ext = name:match("%.([^%.]+)$")
 	if ext == nil then return nil end
@@ -108,7 +107,6 @@ end
 
 ---@param dir string
 ---@param name string
----@return string
 local function entryType(dir, name)
 	local entry = fs.stat(path.join(dir, name))
 	if entry == nil then return "unknown" end
@@ -118,7 +116,7 @@ end
 ---@param self beat.Scanner
 local function enumerateOne(self)
 	local dir = self.dirs[self.dirIndex]
-	self.dirIndex = self.dirIndex + 1
+	self.dirIndex += 1
 
 	if dir == nil then
 		self.phase = "inspect"
@@ -128,7 +126,7 @@ local function enumerateOne(self)
 
 	local iterator = fs.readdir(dir)
 	if iterator == nil then
-		self.skipped = self.skipped + 1
+		self.skipped += 1
 		if #self.errors < 100 then
 			self.errors[#self.errors + 1] = { path = dir, message = "cannot read folder"}
 		end
@@ -166,7 +164,7 @@ local function enumerateOne(self)
 
 	if cover ~= nil then self.dirCovers[dir] = cover end
 	self.current = dir
-	self.version = self.version + 1
+	self.version += 1
 end
 
 ---@param self beat.Scanner
@@ -176,11 +174,11 @@ local function inspectOne(self)
 		self.phase = "done"
 		self.current = nil
 		if self.library ~= nil then self.library:finish() end
-		self.version = self.version + 1
+		self.version += 1
 		return
 	end
 
-	self.fileIndex = self.fileIndex + 1
+	self.fileIndex += 1
 	self.current = entry
 
 	local dir = path.dirname(entry)
@@ -192,26 +190,26 @@ local function inspectOne(self)
 		dir = dir,
 		name = name,
 		ext = ext,
-		modifyTime = stat and stat.modifyTime or nil,
+		modifyTime = stat?.modifyTime,
 	}
 
 	local ok, info = pcall(audio.inspect, entry)
 	if not ok or info == nil then
-		self.skipped = self.skipped + 1
+		self.skipped += 1
 		if #self.errors < 100 then
 			self.errors[#self.errors + 1] = {
 				path = entry,
-				message = ok and "not an audio file this library reads" or tostring(info),
+				message = ok ? "not an audio file this library reads" : tostring(info),
 			}
 		end
 	else
 		local cover = self.dirCovers[dir]
 		if self.library ~= nil then self.library:add(info, fileEntry, cover) end
-		self.trackCount = self.trackCount + 1
+		self.trackCount += 1
 		if self.onTrack ~= nil then self.onTrack(info, fileEntry, cover) end
 	end
 
-	self.version = self.version + 1
+	self.version += 1
 end
 
 --- Runs work until the wall-clock budget is spent. Returns whether anything changed.

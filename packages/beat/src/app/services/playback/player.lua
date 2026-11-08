@@ -66,7 +66,7 @@ end
 ---@param self beat.Player
 local function applyVolume(self)
 	if self.player == nil then return end
-	self.player:setVolume(self.isMuted and 0 or self.volume * self.fadeGain)
+	self.player:setVolume(self.isMuted ? 0 : self.volume * self.fadeGain)
 end
 
 --- A manual start fades in over 120 ms; an automatic track change keeps the target volume.
@@ -393,7 +393,7 @@ function Player:setEqualizer(bands)
 		end
 		self.equalizerBands = copy
 	end
-	if self.player ~= nil and self.player.setEqualizer ~= nil then
+	if self.player?.setEqualizer ~= nil then
 		self.player:setEqualizer(self.equalizerBands)
 	end
 end
@@ -428,7 +428,7 @@ end
 
 ---@return beat.Track?
 function Player:current()
-	return self.queue and self.queue:current() or nil
+	return self.queue ? (self.queue:current()) : nil
 end
 
 ---@return number

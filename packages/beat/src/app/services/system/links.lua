@@ -3,7 +3,6 @@
 local links = {}
 
 ---@param value string
----@return string
 local function quote(value)
 	if jit.os == "Windows" then return '"' .. value:gsub('"', '\\"') .. '"' end
 	return "'" .. value:gsub("'", "'\\''") .. "'"

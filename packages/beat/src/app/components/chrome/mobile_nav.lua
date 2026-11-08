@@ -29,7 +29,7 @@ function mobileNav.view(app, props)
 		local active = app.page.kind == item.kind
 		or (item.kind == "search" and app.page.kind == "searchAll")
 		or (item.kind == "playlists" and app.page.kind == "playlist")
-		local colour = active and theme:color("accent") or theme:color("muted")
+		local colour = active ? (theme:color("accent")) : (theme:color("muted"))
 		tabs[#tabs + 1] = div()
 		:style(sty():w(tabWidth):hrel(1.0):column():align("center"):justify("center"):gap(2))
 		:hover(sty():w(tabWidth):hrel(1.0):column():align("center"):justify("center"):gap(2)

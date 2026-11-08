@@ -92,8 +92,8 @@ function Collections:recentPlaylists(limit)
 	table.sort(list, function(a, b)
 		local aMetric = plays[a.id]
 		local bMetric = plays[b.id]
-		local aLast = aMetric and aMetric.last or 0
-		local bLast = bMetric and bMetric.last or 0
+		local aLast = aMetric?.last or 0
+		local bLast = bMetric?.last or 0
 		if aLast ~= bLast then return aLast > bLast end
 		local aEdited = a.updatedAt or 0
 		local bEdited = b.updatedAt or 0

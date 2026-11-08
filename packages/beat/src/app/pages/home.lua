@@ -19,7 +19,6 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param fraction number
 ---@param trackColour string
 ---@param fillColour string
----@return wonderland.Element
 local function meter(width, height, fraction, trackColour, fillColour)
 	local value = math.max(0, math.min(1, fraction))
 	local radius = height / 2
@@ -54,7 +53,7 @@ function home.view(app, page, window)
 			if type(current) == "string" then currentName = path.basename(current) end
 			local scanning = {
 				playingBars.view(app, { playing = true }),
-				text(progress.phase == "enumerate" and "Finding your music" or "Reading your music"):style(
+				text(progress.phase == "enumerate" ? "Finding your music" : "Reading your music"):style(
 				theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))
 				),
 				text(format.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / "

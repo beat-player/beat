@@ -27,13 +27,12 @@ end
 ---@param message beat.Message
 function tagDelete.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "confirmDeleteTag" then
+	if message.type == "confirmDeleteTag" then
 		-- The page that asked clears what it was keeping about the tag: its row's hover and the
 		-- name field if it was being edited. The search service drops the tag from its filter
 		-- when collections announce the change.
 		local page = app.page
-		if page ~= nil and page.kind == "playlists" then
+		if page?.kind == "playlists" then
 			page = app:currentPage()
 			if page.state.tagEditId == state.id then
 				page.state.tagEditId = nil
@@ -46,7 +45,7 @@ function tagDelete.update(app, overlay, message)
 		app:close(overlay)
 		app:refresh()
 		return true
-	elseif kind == "cancelDeleteTag" then
+	elseif message.type == "cancelDeleteTag" then
 		app:close(overlay)
 		app:refresh()
 		return true

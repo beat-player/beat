@@ -47,7 +47,7 @@ end
 --- released by `sweep`, which is what keeps a scan's changing recently-added row from keeping a
 --- texture for every album it ever showed.
 function Covers:beginFrame()
-	self.frame = self.frame + 1
+	self.frame += 1
 end
 
 --- Drops jobs for covers the view no longer asks for, and evicts the oldest cached covers once
@@ -62,14 +62,14 @@ function Covers:sweep()
 	end
 
 	local count = 0
-	for _ in pairs(self.entries) do count = count + 1 end
+	for _ in pairs(self.entries) do count += 1 end
 	if count <= CACHE_LIMIT then return end
 
 	local stale = {}
 	for key, entry in pairs(self.entries) do
 		if entry.seen ~= self.frame then stale[#stale + 1] = { key = key, seen = entry.seen} end
 	end
-	table.sort(stale, function(a, b) return a.seen < b.seen end)
+	table.sort(stale,|a, b| -> a.seen < b.seen)
 
 	local over = count - CACHE_LIMIT
 	for at = 1, math.min(over, #stale) do
@@ -183,7 +183,7 @@ function Covers:releaseAll()
 	self.entries = {}
 	self.jobsByKey = {}
 	self.jobs = {}
-	self.epoch = self.epoch + 1
+	self.epoch += 1
 	self.frame = 0
 end
 

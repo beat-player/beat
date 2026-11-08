@@ -27,9 +27,9 @@ function trackRow.view(app, props)
 	local track, index, current = props.track, props.index, props.current
 	local onClick = props.onClick
 	if current then onClick = { type = "togglePlay"} end
-	local titleColour = current and theme:color("accent") or theme:color("text")
+	local titleColour = current ? (theme:color("accent")) : (theme:color("text"))
 	local muted = theme:color("muted")
-	local rowBg = current and theme:color("accent", 0.07) or theme:color("surface", 0)
+	local rowBg = current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))
 	local hoverBg = theme:color("hover")
 
 	local marker
@@ -74,9 +74,7 @@ function trackRow.view(app, props)
 	:hover(sty():row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12))
 	:align("center"):radius(theme:radius("sm")):bg(hoverBg))
 	:onClick(onClick)
-	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "menu", menu = "track", id = track.id, x = windowX, y = windowY}
-	end)
+	:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "track", id = track.id, x = windowX, y = windowY})
 	:children(children)
 end
 

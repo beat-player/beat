@@ -41,28 +41,27 @@ function Lastfm.new(deps)
 	-- Opening the authorization page is a link like any other, so it goes through the service that
 	-- owns that rather than a second copy of the platform's browser command.
 	self.client = LastfmClient.new(self.settings.values, {
-		onToast = function(text, tone) self.toasts:show(text, tone) end,
-		onSave = function() self.settings:save() end,
+		onToast = |text, tone| -> self.toasts:show(text, tone),
+		onSave = || -> self.settings:save(),
 	}, {
-		openBrowser = function(url) return self.system:open(url) end,
+		openBrowser = |url| -> self.system:open(url),
 	})
 
 	return self
 end
 
 function Lastfm:update(message)
-	local kind = message.type
-	if kind == "lastfmConnect" then
+	if message.type == "lastfmConnect" then
 		self.client:connect()
-	elseif kind == "lastfmCancel" then
+	elseif message.type == "lastfmCancel" then
 		self.client:cancelAuth()
-	elseif kind == "lastfmOpenAuth" then
+	elseif message.type == "lastfmOpenAuth" then
 		if not self.client:openAuthPage() then
 			self.toasts:show("Could not open a browser for Last.fm", "error")
 		end
-	elseif kind == "lastfmDisconnect" then
+	elseif message.type == "lastfmDisconnect" then
 		self.client:disconnect()
-	elseif kind == "lastfmEnabled" then
+	elseif message.type == "lastfmEnabled" then
 		self.settings.values.lastfmEnabled = message.value == true
 		self.settings:changed()
 	end

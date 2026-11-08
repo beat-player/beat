@@ -3,10 +3,11 @@
 -- registers what it adds through the handle it is given. Built-in plugins are part of beat, so a
 -- mistake in one stops the app; an outside plugin that does not fit is reported and left out,
 -- taking its own registrations with it.
+local Messages = require("beat.message")
+
 local Plugins = {}
 
 ---@param text string
----@return number[]?
 local function parseVersion(text)
 	local major, minor, patch = text:match("^(%d+)%.(%d+)%.(%d+)$")
 	if major ~= nil then return { tonumber(major), tonumber(minor), tonumber(patch) } end
@@ -105,10 +106,9 @@ end
 ---@param registry beat.Registry
 ---@param plugin beat.Plugin
 ---@param undo fun()[]
----@return beat.PluginHandle
 local function handleFor(registry, plugin, undo)
 	---@type beat.PluginHandle
-	local handle = {}
+	local handle = { msg = Messages }
 
 	---@param callback fun()
 	local function record(callback) undo[#undo + 1] = callback end

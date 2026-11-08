@@ -15,7 +15,6 @@ local LibraryCache = {}
 -- than trusted: 5 is treble's exact length for an MP3 with no length header, where 4 had a guess.
 local VERSION = 5
 
----@return string
 local function cacheFile()
 	return paths.file("library.json")
 end
@@ -53,7 +52,7 @@ function LibraryCache.save(library)
 	local tracks = {}
 	for _, track in ipairs(library.tracks) do
 		local album = library:album(track.albumId)
-		tracks[#tracks + 1] = packed(track, album ~= nil and album.key or nil)
+		tracks[#tracks + 1] = packed(track, album?.key)
 	end
 
 	local ok, encoded = pcall(json.encode, {
@@ -83,7 +82,7 @@ function LibraryCache.load(root)
 	local bytes = fs.read(cacheFile())
 	if bytes == nil then return nil end
 
-	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
+	local ok, decoded = pcall(|| -> json.decode(bytes):unpack())
 
 	if not ok then
 		Log.write("error", "library cache could not be read: " .. tostring(decoded))
@@ -115,7 +114,7 @@ function LibraryCache.load(root)
 				albumArtist = item.albumArtist,
 				track = item.number,
 				disc = item.disc,
-				date = item.year and tostring(item.year) or nil,
+				date = item.year ? tostring(item.year) : nil,
 				genre = item.genre,
 			},
 		}

@@ -12,7 +12,6 @@ local AUTH_PAGE = "https://www.last.fm/api/auth/"
 --- Which parameters Last.fm does not sign: `format` chooses the response encoding, `callback`
 --- wraps it, and `api_sig` is the signature itself.
 ---@param key string
----@return boolean
 local function unsigned(key)
 	return key == "format" or key == "callback" or key == "api_sig"
 end
@@ -22,9 +21,7 @@ end
 ---@param value any
 ---@return string
 function lastfm.escape(value)
-	return (tostring(value):gsub("[^%w%-%._~]", function(char)
-		return string.format("%%%02X", string.byte(char))
-	end))
+	return (tostring(value):gsub("[^%w%-%._~]",|char| -> string.format("%%%02X", string.byte(char))))
 end
 
 --- The api_sig for a set of parameters: names sorted by ASCII, concatenated as name..value with
@@ -185,9 +182,7 @@ end
 ---@return string? message
 ---@return number? code
 function lastfm.response(body)
-	local ok, value = pcall(function()
-		return json.decode(body):unpack()
-	end)
+	local ok, value = pcall(|| -> json.decode(body):unpack())
 
 	if not ok or type(value) ~= "table" then
 		return nil, "Last.fm returned a response beat could not read"

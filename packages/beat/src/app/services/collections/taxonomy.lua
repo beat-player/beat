@@ -54,7 +54,6 @@ function Taxonomy.new()
 end
 
 ---@param value string?
----@return string
 local function cleanName(value)
 	return (value or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -76,7 +75,7 @@ local function useTags(self)
 	for _, set in pairs(self.byPath) do
 		for id in pairs(set) do
 			local tag = self.tagById[id]
-			if tag ~= nil then tag.count = tag.count + 1 end
+			if tag ~= nil then tag.count += 1 end
 		end
 	end
 end
@@ -90,7 +89,7 @@ function Taxonomy:addTag(name)
 	if display == "" or self.tagByName[key] ~= nil then return nil end
 
 	local tag = { id = self.nextTagId, name = display, hidden = false, count = 0}
-	self.nextTagId = self.nextTagId + 1
+	self.nextTagId += 1
 	self.tags[#self.tags + 1] = tag
 	self.tagById[tag.id] = tag
 	self.tagByName[key] = tag
@@ -114,7 +113,7 @@ function Taxonomy:addHiddenPlaylistTag(playlistId)
 		playlistId = playlistId,
 		count = 0,
 	}
-	self.nextTagId = self.nextTagId + 1
+	self.nextTagId += 1
 	self.tags[#self.tags + 1] = tag
 	self.tagById[tag.id] = tag
 	return tag
@@ -151,7 +150,7 @@ function Taxonomy:setTag(path, tagId, on)
 		if not set[tagId] then
 			set[tagId] = true
 			local tag = self.tagById[tagId]
-			if tag ~= nil then tag.count = tag.count + 1 end
+			if tag ~= nil then tag.count += 1 end
 			for _, playlist in ipairs(self.playlists) do
 				if playlist.smart then
 					for _, id in ipairs(playlist.tagIds) do
@@ -218,12 +217,12 @@ function Taxonomy:addPlaylist(name, smart, tagIds, match, opts)
 		name = display,
 		smart = smart == true,
 		tagIds = {},
-		match = match == "any" and "any" or "all",
+		match = match == "any" ? "any" : "all",
 		manual = opts.manual ~= false,
 		autoTagId = opts.autoTagId,
 		updatedAt = opts.now or os.time(),
 	}
-	self.nextPlaylistId = self.nextPlaylistId + 1
+	self.nextPlaylistId += 1
 
 	local seen = {}
 	for _, id in ipairs(tagIds or {}) do
@@ -387,7 +386,7 @@ local function bump(map, key, now)
 		metric = { count = 0, last = 0}
 		map[key] = metric
 	end
-	metric.count = metric.count + 1
+	metric.count += 1
 	metric.last = now
 end
 
@@ -536,7 +535,7 @@ function Taxonomy.unpack(data)
 				name = raw.name,
 				smart = raw.smart == true or #tagIds > 0,
 				tagIds = tagIds,
-				match = raw.match == "any" and "any" or "all",
+				match = raw.match == "any" ? "any" : "all",
 				manual = raw.manual ~= nil and raw.manual == true or (raw.smart ~= true),
 				hiddenTagId = type(raw.hiddenTagId) == "number" and raw.hiddenTagId or nil,
 				autoTagId = type(raw.autoTagId) == "number" and raw.autoTagId or nil,

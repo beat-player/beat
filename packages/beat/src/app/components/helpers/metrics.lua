@@ -40,7 +40,7 @@ end
 ---@param width number
 ---@return number
 function metrics.topbarHeight(app, width)
-	return app.services.appearance.theme:px(metrics.mobile(app, width) and 56 or 64)
+	return (app.services.appearance.theme:px(metrics.mobile(app, width) ? 56 : 64))
 end
 
 ---@param app beat.App
@@ -49,10 +49,10 @@ end
 function metrics.bottomHeight(app, width)
 	local theme = app.services.appearance.theme
 	if metrics.mobile(app, width) then
-		local player = app.services.playback:current() ~= nil and theme:px(64) or 0
+		local player = (app.services.playback:current()) ~= nil ? (theme:px(64)) : 0
 		return player + theme:px(58)
 	end
-	return app.services.playback:current() ~= nil and theme:px(88) or 0
+	return (app.services.playback:current()) ~= nil ? (theme:px(88)) : 0
 end
 
 ---@param app beat.App
@@ -81,7 +81,7 @@ end
 ---@param max number
 ---@return number
 function metrics.panelWidth(app, window, max)
-	local gutter = app.services.appearance.theme:space(metrics.mobile(app, window.width) and 16 or 24)
+	local gutter = (app.services.appearance.theme:space(metrics.mobile(app, window.width) ? 16 : 24))
 	return math.min(app.services.appearance.theme:px(max), window.width - gutter * 2)
 end
 

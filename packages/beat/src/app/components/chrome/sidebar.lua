@@ -32,13 +32,13 @@ function sidebar.view(app, props)
 		{ kind = "playlists", icon = "playlists", label = "Playlists"},
 	}
 
-	local navRowHeight = theme:px(collapsed and 44 or 42)
+	local navRowHeight = (theme:px(collapsed ? 44 : 42))
 	local navHeight = navRowHeight * #nav + math.max(0, #nav - 1) * theme:px(2) + theme:px(20)
 	local navChildren = {}
 	for _, item in ipairs(nav) do
 		local active = current.kind == item.kind
-		local fg = active and theme:color("text") or theme:color("muted")
-		local bg = active and theme:color("elevated") or theme:color("sidebar", 0)
+		local fg = active ? (theme:color("text")) : (theme:color("muted"))
+		local bg = active ? (theme:color("elevated")) : (theme:color("sidebar", 0))
 		local rowStyle = sty():row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10))
 		:gap(theme:px(12)):radius(theme:radius("sm")):align("center"):bg(bg)
 		local rowHover = sty():row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10))
@@ -51,7 +51,7 @@ function sidebar.view(app, props)
 		:onClick({ type = "navigate", page = { kind = item.kind}})
 
 		row:children(icon.view(app, { name = item.icon, size = theme:px(19),
-			colour = active and theme:color("accent") or fg }))
+			colour = active ? (theme:color("accent")) : fg }))
 		if not collapsed then
 			row:children(text(item.label):style(theme:s():text(theme:type("base")):weight("semibold"):fg(fg)))
 		end
@@ -72,17 +72,17 @@ function sidebar.view(app, props)
 	local sectionGap = theme:px(4)
 	local playlists = app.services.collections:recentPlaylists(3)
 	local rowCount = #playlists + 1
-	local headerHeight = collapsed and theme:px(0) or theme:px(24)
+	local headerHeight = collapsed ? (theme:px(0)) : (theme:px(24))
 	-- The sidebar gaps and the header are style values, so the hover hit test can be the rows'
 	-- own geometry without asking the layout that has not run yet.
 	local sectionTop = theme:px(52) + theme:px(1) + theme:px(16) + theme:px(1)
 	+navHeight + theme:px(4) * 5
 	local sectionInset = collapsed and sectionGap or headerHeight + sectionGap
 	local available = height - sectionTop - sectionInset
-	local baseRowHeight = theme:px(collapsed and 44 or 52)
+	local baseRowHeight = (theme:px(collapsed ? 44 : 52))
 	local rowHeight = math.min(baseRowHeight,
 	math.max(theme:px(36), math.floor((available - (rowCount - 1) * rowGap) / rowCount)))
-	local artSize = math.min(theme:px(collapsed and 36 or 40), rowHeight - theme:px(8))
+	local artSize = math.min((theme:px(collapsed ? 36 : 40)), rowHeight - (theme:px(8)))
 	local rowStep = rowHeight + rowGap
 	local listTop = sectionTop + sectionInset
 	local rows = {}
@@ -92,7 +92,7 @@ function sidebar.view(app, props)
 		local active = current.kind == "playlist" and current.id == playlist.id
 		local style = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
 		:justify("space-between"):radius(theme:radius("sm"))
-		:bg(active and theme:color("elevated") or theme:color("sidebar", 0))
+		:bg(active ? (theme:color("elevated")) : (theme:color("sidebar", 0)))
 		local over = sty():row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center")
 		:justify("space-between"):radius(theme:radius("sm")):bg(theme:color("hover"))
 		if collapsed then
@@ -186,11 +186,9 @@ function sidebar.view(app, props)
 		min = theme:px(200),
 		max = theme:px(360),
 		grab = theme:px(5),
-		onchange = function(size)
-			return { type = "sidebarWidth", width = size / theme.scale}
-		end,
+		onchange = |size| -> { type = "sidebarWidth", width = size / theme.scale},
 	})
-	:onMouseMove(function(_, relY) return hoverAt(tonumber(relY) or 0) end)
+	:onMouseMove(|_, relY| -> hoverAt(tonumber(relY) or 0))
 	:children({
 		div():style(brandStyle):onClick({ type = "toggleSidebar"}):children(brandChildren),
 		div():style(sty():h(1):bg(theme:color("border"))),
@@ -198,7 +196,7 @@ function sidebar.view(app, props)
 		:pad(theme:px(10), 0, 0, 0)):children(navChildren),
 		div():style(sty():h(1):bg(theme:color("border"))),
 		div():style(sty():h(theme:px(16))),
-		div():style(sty():column():h(theme:px(collapsed and 0 or 28) + listHeight)
+		div():style(sty():column():h((theme:px(collapsed ? 0 : 28)) + listHeight)
 		:gap(sectionGap)):children({
 			(function()
 				if collapsed then return div():style(sty():h(theme:px(0))) end
@@ -268,7 +266,7 @@ function sidebar.tooltip(app, props)
 
 	return div()
 	:style(sty():w(artWidth):h(totalHeight):offset(wrapperX, wrapperY):z(80):column():align("center"))
-	:onMouseMove(function() return nil end)
+	:onMouseMove(|| -> nil)
 	:children({ box, arrow})
 end
 

@@ -44,7 +44,6 @@ end
 
 ---@param value any
 ---@param fallback number
----@return number
 local function number(value, fallback)
 	if type(value) ~= "number" or value ~= value then return fallback end
 	return value

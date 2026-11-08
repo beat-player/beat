@@ -19,7 +19,7 @@
 - **Last.fm.** You can connect a Last.fm account in Settings. The application sends now-playing data and scrobbles. Network requests do not block the user interface. Failed scrobbles are retried while the application runs.
 - **Tags and playlists.** A tag makes a smart playlist. You can add tracks to a playlist by hand. You can also combine tag rules and hand-added tracks. Search filters use the same tags. The application stores tags and playlists in JSON files next to the settings.
 
-> **Plugins (WIP)** The application is one LuaJIT process. The pages, services, library, tags, and playback queue are Lua code. The renderer and audio engine are lde packages with Lua interfaces. A plugin will load into the same Lua state. A plugin can call the same functions as the application and can extend any screen. There is no IPC boundary and no ABI. The plugin loader and lifecycle are not complete.
+> **Plugins (WIP)** The application is one LuaJIT process. The pages, services, library, tags, and playback queue are Lua code. The renderer and audio engine are lde packages with Lua interfaces. A plugin will load into the same Lua state. A plugin can call the same functions as the application and can extend any screen. There is no IPC boundary and no ABI. A plugin is written as `return require("beat").plugin({ setup = function(beat) … end })`, and `beat.plugin` types the definition, `beat.Message` is the tagged union every screen and service answers, and `ctx.message` writes one through its constructor. The plugin loader and lifecycle are not complete.
 
 ## Screenshots
 

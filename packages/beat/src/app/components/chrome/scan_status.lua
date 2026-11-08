@@ -21,7 +21,6 @@ local BOTTOM_STRIP_SEGMENTS = 8
 ---@param width number
 ---@param height number
 ---@param radius number
----@return number[]
 local function bottomStrip(width, height, radius)
 	local r = math.min(radius, width / 2)
 	if r <= 0 or height <= 0 then
@@ -127,8 +126,8 @@ local function bottomBar(canvas, opts)
 
 	local points = bottomStrip(opts.width, opts.height, opts.radius)
 	for at = 1, #points, 2 do
-		points[at] = points[at] + opts.x
-		points[at + 1] = points[at + 1] + opts.y
+		points[at] += opts.x
+		points[at + 1] += opts.y
 	end
 
 	canvas:polygon(points, opts.trackColour)
@@ -169,10 +168,10 @@ function scanStatus.island(app, props)
 	local pad = theme:px(14)
 	local barHeight = theme:px(4)
 	local radius = theme:radius("md")
-	local margin = metrics.mobile(app, width) and metrics.pad(app, width) or theme:space(24)
+	local margin = metrics.mobile(app, width) ? metrics.pad(app, width) : (theme:space(24))
 	local current = nil
 	if type(progress.current) == "string" then current = path.basename(progress.current) end
-	local label = progress.phase == "enumerate" and "Finding music" or "Reading metadata"
+	local label = progress.phase == "enumerate" ? "Finding music" : "Reading metadata"
 
 	return div()
 	:style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin,
@@ -238,12 +237,12 @@ function scanStatus.summary(app, props)
 	local pad = theme:px(14)
 	local barHeight = theme:px(4)
 	local radius = theme:radius("md")
-	local margin = metrics.mobile(app, width) and metrics.pad(app, width) or theme:space(24)
+	local margin = metrics.mobile(app, width) ? metrics.pad(app, width) : (theme:space(24))
 
 	local detail = summary.skipped > 0
 	and format.count(summary.skipped, "file") .. " skipped"
 	or "Saved to your library"
-	local detailColour = summary.skipped > 0 and theme:color("danger") or theme:color("muted")
+	local detailColour = summary.skipped > 0 ? (theme:color("danger")) : (theme:color("muted"))
 
 	return div()
 	:style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin,

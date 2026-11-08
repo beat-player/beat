@@ -26,7 +26,6 @@ local SEEK_SLOP = 2
 ---@field duration number
 ---@field startedAt number
 
----@return beat.Scrobbler
 local function new()
 	return setmetatable({
 		trackId = nil,
@@ -37,7 +36,6 @@ local function new()
 	}, Scrobbler)
 end
 
----@return number
 local function threshold(duration)
 	return math.min(MAX_THRESHOLD, duration / 2)
 end
@@ -78,7 +76,7 @@ function Scrobbler:update(track, position, playing, now)
 	if playing then
 		local delta = position - self.lastPosition
 		-- A seek is not listening: only a normal forward step counts.
-		if delta > 0 and delta <= SEEK_SLOP then self.played = self.played + delta end
+		if delta > 0 and delta <= SEEK_SLOP then self.played += delta end
 	end
 	self.lastPosition = position
 

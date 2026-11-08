@@ -71,7 +71,7 @@ function PlaylistArt.initials(name)
 	local initials = {}
 	local at = 1
 	while at <= #name and #initials < 2 do
-		while at <= #name and name:sub(at, at):match("%s") do at = at + 1 end
+		while at <= #name and name:sub(at, at):match("%s") do at += 1 end
 		if at > #name then break end
 
 		local cluster, nextAt = firstCluster(name, at)
@@ -139,7 +139,7 @@ function PlaylistArt.view(app, props)
 	local library = app.services.library.current
 	if #picked <= 1 then
 		local track = picked[1]
-		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
+		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
 		if album ~= nil then
 			root:children({ cover.view(app, { album = album, size = size, radius = 0 }) })
 		end
@@ -150,7 +150,7 @@ function PlaylistArt.view(app, props)
 	local cell = math.floor(size / 2)
 	local function cellAt(slot)
 		local track = picked[slot]
-		local album = track ~= nil and library ~= nil and library:album(track.albumId) or nil
+		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
 		if album ~= nil then
 			return cover.view(app, { album = album, size = cell, radius = 0 })
 		end

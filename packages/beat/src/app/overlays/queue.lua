@@ -27,15 +27,14 @@ end
 ---@param overlay beat.OverlayInstance<beat.QueueState>
 ---@param message beat.Message
 function queuePanel.update(app, overlay, message)
-	local kind = message.type
-	if kind == "scroll" and message.key == "queue" then
+	if message.type == "scroll" and message.key == "queue" then
 		-- The list scrolls by itself. A light overlay closes on a message it does not take, and
 		-- scrolling the queue is not a press elsewhere. It takes the message here, so the redraw
 		-- a service update gets from the message pump has to be asked for.
 		app.services.scroll:update(message)
 		app:refresh()
 		return true
-	elseif kind == "toggleQueue" then
+	elseif message.type == "toggleQueue" then
 		-- The queue button closes what it opened rather than opening a second one.
 		app:close(overlay)
 		return true
@@ -58,7 +57,7 @@ function queuePanel.view(app, overlay, _window)
 	local room = anchor.room
 	local theme = app.services.appearance.theme
 	local queue = app.services.playback.player.queue
-	local upcoming = queue and queue:upcoming() or {}
+	local upcoming = queue ? (queue:upcoming()) : {}
 	local rowHeight = theme:px(48)
 	local padding = theme:px(10)
 	local headerHeight = theme:px(24)
@@ -125,9 +124,7 @@ function queuePanel.view(app, overlay, _window)
 		rows[#rows + 1] = div()
 		:style(sty():column():w(inner):h(listHeight):bar(barWidth, theme:px(32), theme:color("faint")))
 		:scroll(offset)
-		:onScroll(function(by, to)
-			return { type = "scroll", key = "queue", max = scrollMax, by = by, to = to}
-		end)
+		:onScroll(|by, to| -> { type = "scroll", key = "queue", max = scrollMax, by = by, to = to})
 		:children(list)
 	end
 

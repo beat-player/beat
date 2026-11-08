@@ -29,7 +29,7 @@ end
 function artistPage.view(app, page, window)
 	local id = assert(page.id)
 	local library = app.services.library.current
-	local artist = library ~= nil and library:artist(id) or nil
+	local artist = library ~= nil ? (library:artist(id)) : nil
 	if artist == nil then
 		return emptyState.view(app, {
 			title = "Artist not found",
@@ -90,7 +90,7 @@ function artistPage.view(app, page, window)
 		top[#top + 1] = trackRow.view(app, {
 			track = track,
 			index = index,
-			current = current ~= nil and current.id == track.id,
+			current = current?.id == track.id,
 			playing = app.services.playback.player:isPlaying(),
 			onClick = { type = "playTrack", trackId = track.id, artistId = artist.id},
 			width = content,

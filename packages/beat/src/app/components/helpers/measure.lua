@@ -36,7 +36,7 @@ function measure.estimate(value, size, latin)
 			and previous >= 0x1F1E6 and previous <= 0x1F1FF) then
 				-- A joined emoji or the second half of a flag is the same picture.
 			else
-				width = width + size
+				width += size
 			end
 			joined = false
 		elseif (codepoint >= 0x1100 and codepoint <= 0x115F)
@@ -46,10 +46,10 @@ function measure.estimate(value, size, latin)
 		or (codepoint >= 0xFE30 and codepoint <= 0xFE4F)
 		or (codepoint >= 0xFF00 and codepoint <= 0xFF60)
 		or (codepoint >= 0xFFE0 and codepoint <= 0xFFE6) then
-			width = width + size
+			width += size
 			joined = false
 		else
-			width = width + size * latin
+			width += size * latin
 			joined = false
 		end
 		previous = codepoint
@@ -83,7 +83,7 @@ end
 ---@return number?
 function measure.width(app, value, style)
 	local run = measure.run(app, value, style)
-	return run and run.width or nil
+	return run?.width
 end
 
 -- Wrapped strings by width, size and text. A toast is drawn every frame while it fades, and its
@@ -114,7 +114,7 @@ function measure.wrap(app, value, style, size, width, most)
 	for piece in value:gmatch("[^ \\/]*[ \\/]*") do
 		if piece ~= "" then
 			if line == "" or fits(trimmed(line .. piece)) then
-				line = line .. piece
+				line ..= piece
 			else
 				lines[#lines + 1] = trimmed(line)
 				line = piece

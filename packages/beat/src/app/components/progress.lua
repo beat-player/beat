@@ -37,7 +37,7 @@ function progress.view(app, props)
 			value = position,
 			min = 0,
 			max = duration > 0 and duration or 1,
-			onchange = function(value) return { type = "seek", seconds = value} end,
+			onchange = |value| -> { type = "seek", seconds = value},
 			trackColour = theme:color("text", 0.12),
 			fillColour = theme:color("text"),
 			thumbColour = theme:color("text"),

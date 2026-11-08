@@ -39,13 +39,12 @@ end
 ---@param preset beat.EqualizerPreset
 ---@param width number
 ---@param height number
----@return wonderland.Element
 local function equalizerChip(app, preset, width, height)
 	local theme = app.services.appearance.theme
 	local selected = app.services.equalizer:selected() == preset.id
 	local textColour = selected and theme.accentInk or theme:color("muted")
-	local resting = selected and theme:color("accent") or theme:color("surface")
-	local hover = selected and theme:color("accent", 0.86) or theme:color("hover")
+	local resting = selected ? (theme:color("accent")) : (theme:color("surface"))
+	local hover = selected ? (theme:color("accent", 0.86)) : (theme:color("hover"))
 	local chip = div()
 	:style(sty():row():w(width):h(height):align("center"):justify("center")
 	:radius(theme:radius("full")):bg(resting))
@@ -69,20 +68,20 @@ function equalizer.view(app, _overlay, window)
 	local service = app.services.equalizer
 	local compact = window.height < theme:px(520)
 	local width = math.min(theme:px(460), window.width - theme:px(24))
-	local padding = compact and theme:px(10) or theme:px(18)
-	local gap = compact and theme:px(6) or theme:px(8)
+	local padding = compact ? (theme:px(10)) : (theme:px(18))
+	local gap = compact ? (theme:px(6)) : (theme:px(8))
 	local content = width - padding * 2
-	local chipWidth = compact and theme:px(72) or theme:px(78)
-	local chipHeight = compact and theme:px(22) or theme:px(24)
+	local chipWidth = compact ? (theme:px(72)) : (theme:px(78))
+	local chipHeight = compact ? (theme:px(22)) : (theme:px(24))
 	local presets = service:presets()
 	local columns = math.max(1, math.floor((content + gap) / (chipWidth + gap)))
 	local presetRows = math.ceil(#presets / columns)
 	local presetHeight = presetRows * chipHeight + (presetRows - 1) * gap
-	local rowHeight = compact and theme:px(26) or theme:px(30)
+	local rowHeight = compact ? (theme:px(26)) : (theme:px(30))
 	local bandGap = theme:px(3)
 	local bandsHeight = #service.frequencies * rowHeight
 	+(#service.frequencies - 1) * bandGap
-	local headerHeight = compact and theme:px(22) or theme:px(24)
+	local headerHeight = compact ? (theme:px(22)) : (theme:px(24))
 	local height = padding * 2 + headerHeight + gap + presetHeight + gap + bandsHeight
 	local panels = {}
 
@@ -120,7 +119,7 @@ function equalizer.view(app, _overlay, window)
 		local band = at
 		local gain = gains[at] or 0
 		local shown = math.floor(gain + 0.5)
-		local value = shown == 0 and "0 dB" or string.format("%+d dB", shown)
+		local value = shown == 0 ? "0 dB" : string.format("%+d dB", shown)
 		panels[#panels + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)
 		:align("center")):children({
 			text(service.labels[at]):style(theme:s():w(labelWidth):text(theme:type("xs"))
@@ -131,7 +130,7 @@ function equalizer.view(app, _overlay, window)
 				min = service.minimum,
 				max = service.maximum,
 				origin = 0.5,
-				onchange = function(value_) return { type = "equalizerGain", band = band, value = value_} end,
+				onchange = |value_| -> { type = "equalizerGain", band = band, value = value_},
 				trackColour = theme:color("text", 0.12),
 				fillColour = theme:color("accent"),
 				thumbColour = theme:color("text"),

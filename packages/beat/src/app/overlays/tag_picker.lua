@@ -17,8 +17,7 @@ local tagPicker = {}
 ---@param app beat.App
 function tagPicker.new(app, params)
 	local library = app.services.library.current
-	local track = params.id ~= nil and library ~= nil and library:track(params.id)
-	or app.services.playback:current()
+	local track = params.id ~= nil and library ~= nil and library:track(params.id) or app.services.playback:current()
 	if track == nil then return nil end
 	---@type beat.TagPickerState
 	return { trackId = track.id}
@@ -64,9 +63,7 @@ function tagPicker.view(app, overlay, window)
 	local pills = tagPills.view(app, {
 		tags = tags,
 		selected = selected,
-		action = function(tag)
-			return { type = "toggleTrackTag", id = tag.id}
-		end,
+		action = |tag| -> { type = "toggleTrackTag", id = tag.id},
 		width = content,
 		columns = 2,
 	})

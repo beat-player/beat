@@ -1,5 +1,6 @@
 -- The library the app browses: what a scan found, the covers and search built on it, every screen
 -- that lists it, and the menu entries that start or queue what is on one of those screens.
+local beat = require("beat")
 local library = require("beat.app.services.library")
 local covers = require("beat.app.services.covers")
 local scan = require("beat.app.services.scan")
@@ -15,67 +16,62 @@ local albumPage = require("beat.app.pages.album")
 
 local sortMenu = require("beat.app.overlays.sort_menu")
 
-return {
+return beat.plugin({
 	name = "library",
 	version = "1.0.0",
 	requires = { core = "^1.0.0" },
-	---@param beat beat.PluginHandle
-	setup = function(beat)
-		beat.service("library", library)
-		beat.service("covers", covers)
-		beat.service("scan", scan)
-		beat.service("search", search)
+	setup = function(handle)
+		handle.service("library", library)
+		handle.service("covers", covers)
+		handle.service("scan", scan)
+		handle.service("search", search)
 
-		beat.page("home", homePage)
-		beat.page("library", libraryPage)
-		beat.page("folders", foldersPage)
-		beat.page("search", searchPage)
-		beat.page("searchAll", searchAllPage)
-		beat.page("artist", artistPage)
-		beat.page("album", albumPage)
+		handle.page("home", homePage)
+		handle.page("library", libraryPage)
+		handle.page("folders", foldersPage)
+		handle.page("search", searchPage)
+		handle.page("searchAll", searchAllPage)
+		handle.page("artist", artistPage)
+		handle.page("album", albumPage)
 
-		beat.overlay("sort_menu", sortMenu)
+		handle.overlay("sort_menu", sortMenu)
 
-		beat.action({
+		handle.action({
 			menu = "album",
 			title = "Play album",
 			order = 10,
-			message = function(ctx) return { type = "playAlbum", id = ctx.album.id, restart = true } end,
+			message = |ctx| -> ctx.message.playAlbum(assert(ctx.album).id, true),
 		})
-		beat.action({
+		handle.action({
 			menu = "album",
 			title = "Add to playlist",
 			order = 20,
-			message = function(ctx)
-				return { type = "open", overlay = "playlist_picker", kind = "album", id = ctx.album.id }
-			end,
+			message = |ctx| -> ctx.message.openPlaylistPicker("album", assert(ctx.album).id),
 		})
-		beat.action({
+		handle.action({
 			menu = "album",
 			title = "Play next",
 			order = 30,
-			message = function(ctx) return { type = "queueAlbum", id = ctx.album.id, next = true } end,
+			message = |ctx| -> ctx.message.queueAlbum(assert(ctx.album).id, true),
 		})
-		beat.action({
+		handle.action({
 			menu = "album",
 			title = "Add to queue",
 			order = 40,
-			message = function(ctx) return { type = "queueAlbum", id = ctx.album.id } end,
+			message = |ctx| -> ctx.message.queueAlbum(assert(ctx.album).id),
 		})
 
-		beat.action({
+		handle.action({
 			menu = "track",
 			title = "Play now",
 			order = 10,
-			message = function(ctx) return { type = "playTrack", trackId = ctx.track.id, restart = true } end,
+			message = |ctx| -> ctx.message.playTrack(assert(ctx.track).id, nil, nil, true),
 		})
-		beat.action({
+		handle.action({
 			menu = "track",
 			title = "Add to playlist",
 			order = 20,
-			message = function(ctx)
-				return { type = "open", overlay = "playlist_picker", kind = "track", id = ctx.track.id }
-			end,
+			message = |ctx| -> ctx.message.openPlaylistPicker("track", assert(ctx.track).id),
 		})
 	end,
-}
+})

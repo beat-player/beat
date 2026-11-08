@@ -9,7 +9,6 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@param hue number # From nought to one
 ---@param saturation number
 ---@param value number
----@return string
 local function hsvColour(hue, saturation, value)
 	local at = hue * 6
 	local index = math.floor(at) % 6
@@ -32,7 +31,7 @@ local ACCENT_GRID = {}
 for tone = 1, 3 do
 	for hue = 0, 11 do
 		local saturation = tone == 1 and 0.45 or tone == 2 and 0.72 or 0.94
-		local value = tone == 3 and 0.72 or 1
+		local value = tone == 3 ? 0.72 : 1
 		ACCENT_GRID[#ACCENT_GRID + 1] = hsvColour(hue / 12, saturation, value)
 	end
 end
@@ -58,14 +57,13 @@ end
 ---@param message beat.Message
 function accentPicker.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "pickAccent" then
+	if message.type == "pickAccent" then
 		local value = message.value
 		if type(value) == "string" and value:match("^#%x%x%x%x%x%x$") then
 			state.draft = value:lower()
 			app:refresh()
 		end
-	elseif kind == "confirmAccent" then
+	elseif message.type == "confirmAccent" then
 		if state.draft ~= nil and state.draft:match("^#%x%x%x%x%x%x$") then
 			app.services.settings.values.accent = state.draft
 			app.services.appearance:change(false)
@@ -86,10 +84,10 @@ function accentPicker.view(app, overlay, window)
 	local theme = app.services.appearance.theme
 	local draft = state.draft
 	local narrow = window.width < 560
-	local columns = narrow and 6 or 12
+	local columns = narrow ? 6 : 12
 	local rows = math.ceil(#ACCENT_GRID / columns)
-	local swatch = theme:px(narrow and 24 or 26)
-	local gap = theme:px(narrow and 6 or 8)
+	local swatch = (theme:px(narrow ? 24 : 26))
+	local gap = (theme:px(narrow ? 6 : 8))
 	local pad = theme:px(20)
 	local headerHeight = theme:px(44)
 	local footerHeight = theme:px(36)
@@ -108,11 +106,11 @@ function accentPicker.view(app, overlay, window)
 				row[#row + 1] = div()
 				:style(sty():size(swatch, swatch):radius(theme:radius("sm"))
 				:bg(colour):align("center"):justify("center")
-				:border(theme:px(selected and 2 or 1),
-				selected and theme:color("text") or theme:color("border")))
+				:border((theme:px(selected ? 2 : 1)),
+				selected ? (theme:color("text")) : (theme:color("border"))))
 				:onClick({ type = "pickAccent", value = colour})
-				:children(selected and icon.view(app, { name = "check", size = theme:px(14),
-					colour = app.services.appearance:accentInk(colour) }) or div())
+				:children(selected ? icon.view(app, { name = "check", size = (theme:px(14)),
+					colour = app.services.appearance:accentInk(colour) }) : div())
 			end
 		end
 		cells[#cells + 1] = div():style(sty():row():h(swatch):gap(gap)):children(row)

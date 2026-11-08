@@ -40,23 +40,22 @@ end
 ---@param message beat.Message
 function playlistDialog.update(app, overlay, message)
 	local state = overlay.state
-	local kind = message.type
-	if kind == "playlistDraft" then
+	if message.type == "playlistDraft" then
 		state.name = message.value or ""
 		app:refresh()
 		return true
-	elseif kind == "playlistDraftTag" then
+	elseif message.type == "playlistDraftTag" then
 		if message.id ~= nil then
 			if state.tagIds[message.id] then state.tagIds[message.id] = nil
 			else state.tagIds[message.id] = true end
 			app:refresh()
 		end
 		return true
-	elseif kind == "playlistDraftMatch" then
-		state.match = message.value == "any" and "any" or "all"
+	elseif message.type == "playlistDraftMatch" then
+		state.match = message.value == "any" ? "any" : "all"
 		app:refresh()
 		return true
-	elseif kind == "createPlaylist" then
+	elseif message.type == "createPlaylist" then
 		local tagIds = {}
 		for id in pairs(state.tagIds) do tagIds[#tagIds + 1] = id end
 		table.sort(tagIds)
@@ -94,19 +93,17 @@ function playlistDialog.view(app, overlay, window)
 			name = "playlistName",
 			value = state.name,
 			placeholder = "Playlist name",
-			oninput = function(value) return { type = "playlistDraft", value = value} end,
-			onsubmit = function() return { type = "createPlaylist"} end,
+			oninput = |value| -> { type = "playlistDraft", value = value},
+			onsubmit = || -> { type = "createPlaylist"},
 		}),
 	}
 
 	local pills = tagPills.view(app, {
 		tags = tags,
 		selected = state.tagIds,
-		action = function(tag)
-			return { type = "playlistDraftTag", id = tag.id}
-		end,
+		action = |tag| -> { type = "playlistDraftTag", id = tag.id},
 		width = content,
-		columns = metrics.mobile(app, window.width) and 2 or 3,
+		columns = metrics.mobile(app, window.width) ? 2 : 3,
 	})
 	children[#children + 1] = pills or text("Create a tag to make this playlist smart too."):style(
 	theme:s():text(theme:type("sm")):fg(theme:color("faint")))
@@ -149,7 +146,7 @@ function playlistDialog.view(app, overlay, window)
 	local tagRows = math.max(1, math.ceil(math.min(#tags, 12) / 3))
 	local pillsHeight = #tags > 0 and (tagRows * theme:px(28) + math.max(0, tagRows - 1) * theme:px(8)
 	+(#tags > 12 and theme:px(18) or 0)) or theme:px(20)
-	local rowCount = state.smart and 6 or 4
+	local rowCount = state.smart ? 6 : 4
 	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32)
 	+theme:px(10) * (rowCount - 1) + (state.smart and pillsHeight + theme:px(28) or 0)
 	local panel = div()

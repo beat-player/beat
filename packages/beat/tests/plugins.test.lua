@@ -7,6 +7,7 @@ local wonderland = require("wonderland")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local App = require("beat.app")
+local beat = require("beat")
 
 -- Settings, tags and the library cache are written under `paths.directory`; a test must not put
 -- its fixtures where the person's real library cache lives.
@@ -72,25 +73,25 @@ local function reported(text)
 	return false
 end
 
----@param ctx { album: beat.Album }
+---@param ctx beat.MenuContext
 ---@return beat.Message
 local function openInRateYourMusic(ctx)
-	return { type = "openURL", url = "https://rateyourmusic.com/album/" .. ctx.album.id }
+	local album = assert(ctx.album)
+	return ctx.message.openURL("https://rateyourmusic.com/album/" .. album.id)
 end
 
 test.it("adds an album action whose message reaches the service it names", function()
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "rym",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.action({
+		setup = function(handle)
+			handle.action({
 				menu = "album",
 				title = "Open in Rate Your Music",
 				message = openInRateYourMusic,
 			})
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 	App.services.library.current = fixture()
 	local album = App.services.library.current.albums[1]
@@ -126,14 +127,13 @@ test.it("lets an interceptor cancel a message and send another one", function()
 		end
 		proceed(message)
 	end
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "shuffler",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.intercept("playAlbum", shuffleFirst)
+		setup = function(handle)
+			handle.intercept("playAlbum", shuffleFirst)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 	App.services.library.current = fixture()
 	local album = App.services.library.current.albums[1]
@@ -157,14 +157,13 @@ test.it("tells listeners about a message after it has been delivered", function(
 	local function noteStart(message, app)
 		heard[#heard + 1] = message.track.title .. "@" .. tostring(app ~= nil)
 	end
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "listener",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.on("trackStarted", noteStart)
+		setup = function(handle)
+			handle.on("trackStarted", noteStart)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "trackStarted", track = { title = "A Track" }, position = 0})
@@ -178,14 +177,13 @@ end)
 local function panelCard(_, params) return { value = params.value} end
 
 test.it("opens an overlay a plugin named after itself", function()
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "panel",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.overlay("panel:card", { new = panelCard })
+		setup = function(handle)
+			handle.overlay("panel:card", { new = panelCard })
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "open", overlay = "panel:card", value = 7})
@@ -217,19 +215,18 @@ test.it("leaves out a plugin whose version requirement does not match", function
 end)
 
 test.it("refuses a page that is not named after its plugin", function()
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "sloppy",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.action({
+		setup = function(handle)
+			handle.action({
 				menu = "album",
 				title = "Should be rolled back",
 				message = { type = "toast", text = "never" },
 			})
-			beat.page("home", { view = function() return wonderland.div() end })
+			handle.page("home", { view = function() return wonderland.div() end })
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Should be rolled back"), nil,
@@ -239,17 +236,16 @@ test.it("refuses a page that is not named after its plugin", function()
 end)
 
 test.it("adds a page a plugin named after itself", function()
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "panel",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.page("panel:page", {
+		setup = function(handle)
+			handle.page("panel:page", {
 				new = function() return { hello = true } end,
 				view = function() return wonderland.div() end,
 			})
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "navigate", page = { kind = "panel:page" }})
@@ -270,12 +266,11 @@ test.it("builds a service a plugin added and lets it answer its own messages", f
 		update = onPing,
 	}
 
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "counter",
 		version = "1.0.0",
-		setup = function(beat) beat.service("counter:service", service) end,
-	}
+		setup = function(handle) handle.service("counter:service", service) end,
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "counter:ping", by = 2 })
@@ -298,12 +293,11 @@ test.it("switches off a service whose update raises", function()
 		update = explode,
 	}
 
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "bad",
 		version = "1.0.0",
-		setup = function(beat) beat.service("bad:service", service) end,
-	}
+		setup = function(handle) handle.service("bad:service", service) end,
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "bad:ping" })
@@ -318,17 +312,16 @@ end)
 
 test.it("switches off a plugin whose hook raises, after one report, and carries on", function()
 	local calls = 0
-	---@type beat.PluginModule
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "broken",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.wrap("page:home", function()
+		setup = function(handle)
+			handle.wrap("page:home", function()
 				calls = calls + 1
 				error("the hook exploded")
 			end)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	local home = App.registry:page("home")

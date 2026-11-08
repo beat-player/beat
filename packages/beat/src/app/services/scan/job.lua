@@ -107,8 +107,8 @@ function ScanJob:read()
 	file:close()
 	if data == "" then return false end
 
-	self.offset = self.offset + #data
-	self.buffer = self.buffer .. data
+	self.offset += #data
+	self.buffer ..= data
 
 	while true do
 		local line, rest = self.buffer:match("^(.-)\r?\n(.*)$")
@@ -116,9 +116,9 @@ function ScanJob:read()
 		self.buffer = rest
 
 		if line ~= "" then
-			local ok, event = pcall(function() return json.decode(line):unpack() end)
+			local ok, event = pcall(|| -> json.decode(line):unpack())
 			if not ok then
-				self.decodeErrors = self.decodeErrors + 1
+				self.decodeErrors += 1
 				if self.decodeErrors <= 3 then
 					Log.write("error", "scan output could not be read: " .. tostring(event))
 				end

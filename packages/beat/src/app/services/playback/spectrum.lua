@@ -73,12 +73,12 @@ local function fft(real, imag)
 				local ti = wr * imag[odd] + wi * real[odd]
 				real[odd] = real[even] - tr
 				imag[odd] = imag[even] - ti
-				real[even] = real[even] + tr
-				imag[even] = imag[even] + ti
+				real[even] += tr
+				imag[even] += ti
 				wr, wi = wr * stepReal - wi * stepImag, wr * stepImag + wi * stepReal
 			end
 		end
-		size = size * 2
+		size *= 2
 	end
 end
 
@@ -102,7 +102,7 @@ function Spectrum:feed(samples, frames, channels)
 	for at = 0, count - 1 do
 		local sum = 0
 		local sampleAt = base + at * channels
-		for channel = 0, channels - 1 do sum = sum + data[sampleAt + channel] end
+		for channel = 0, channels - 1 do sum += data[sampleAt + channel] end
 		self.real[at] = sum * scale * self.window[at]
 	end
 
@@ -133,7 +133,7 @@ local function bandsInto(real, imag, levels, peaks, spectrum)
 		-- Pink-ish tilt: a mix has far less energy at 10 kHz than at 100 Hz, so without it the
 		-- right half of the strip is almost always dark. The boost is gentle and bounded.
 		local fraction = (band - 1) / (BANDS - 1)
-		peak = peak * (1 + 5 * fraction ^ 1.3)
+		peak *= 1 + 5 * fraction ^ 1.3
 
 		peaks[band] = peak
 		if peak > top then top = peak end
@@ -177,7 +177,7 @@ function Spectrum:step(_now)
 		if not self.shown then
 			shown = target
 		else
-			shown = shown + (target - shown) * 0.3
+			shown += (target - shown) * 0.3
 		end
 
 		if math.abs(shown - self.display[band]) > 0.0005 then changed = true end

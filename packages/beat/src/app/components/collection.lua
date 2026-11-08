@@ -47,7 +47,7 @@ function collection.view(app, props)
 	else
 		coverSize = math.min(theme:px(224), math.floor(content * 0.32))
 	end
-	local titleSize = theme:type(mobile and "xxl" or "hero")
+	local titleSize = (theme:type(mobile ? "xxl" : "hero"))
 	local labelHeight = theme:px(16)
 	local titleHeight = math.floor(titleSize * 1.25)
 	local subtitleHeight = math.floor(theme:type("md") * 1.3)
@@ -56,7 +56,7 @@ function collection.view(app, props)
 	local infoHeight = labelHeight + titleHeight + subtitleHeight + metaHeight + actionsHeight
 	+theme:px(8) * 4
 	local heroHeight = stacked and (coverSize + theme:space(16) + infoHeight)
-	or (coverSize + theme:space(mobile and 70 or 90))
+	or (coverSize + (theme:space(mobile ? 70 : 90)))
 	local hasTracks = #props.tracks > 0
 	local rowsHeight = hasTracks and #props.tracks * theme:px(48)
 	or (props.empty ~= nil and theme:px(120) or 0)
@@ -138,11 +138,11 @@ function collection.view(app, props)
 	for at = first, last do
 		local track = props.tracks[at]
 		if track ~= nil then
-			local number = props.trackIndex ~= nil and props.trackIndex(track, at) or at
+			local number = props.trackIndex ~= nil ? props.trackIndex(track, at) : at
 			rows[#rows + 1] = trackRow.view(app, {
 				track = track,
 				index = number,
-				current = current ~= nil and current.id == track.id,
+				current = current?.id == track.id,
 				playing = playing,
 				onClick = props.trackAction(track, at),
 				width = content,

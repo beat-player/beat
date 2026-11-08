@@ -1,4 +1,4 @@
--- Background workers are copies of beat itself: `src/init.lua` reads BEAT_WORKER and runs the
+-- Background workers are copies of beat itself: `src/main.lua` reads BEAT_WORKER and runs the
 -- worker it names instead of the window.
 --
 -- A source run is the `lde` runtime with beat's modules linked into a package's `target/`, so the

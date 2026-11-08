@@ -1,24 +1,20 @@
-local env = require("env")
-local worker = env.var("BEAT_WORKER")
+-- The package's public Lua API: what a plugin written outside beat requires. The application's
+-- own entry point is `src/main.lua` (lde.json's `bin`), so requiring `beat` gives a plugin the
+-- typed constructor below and nothing that opens a window.
+local api = {}
 
--- The scan workers are this same program started again: the app starts a coordinator with
--- BEAT_WORKER=scan, and that coordinator starts its inspectors with BEAT_WORKER=inspect. See
--- `beat.workers.process` for how a compiled executable and a source run each start the copy.
-local function main()
-	if worker == "scan" then
-		require("beat.workers.scan")
-	elseif worker == "inspect" then
-		require("beat.workers.inspect")
-	else
-		require("beat.app"):run()
-	end
+-- `beat.PluginModule` is the shape the loader reads; `setup` receives `beat.PluginHandle`, so a
+-- plugin writes the handle's name and gets its methods typed without annotating the parameter.
+---@class beat.PluginApi
+---@field plugin fun(definition: beat.PluginModule): beat.PluginModule
+
+--- The one way to write a plugin: `return require("beat").plugin({ … })`. The value is the
+--- definition itself; loading and checking it stays in `beat.app.plugins`, which is where a
+--- plugin that does not fit is reported.
+---@param definition beat.PluginModule
+---@return beat.PluginModule
+function api.plugin(definition)
+	return definition
 end
 
-local ok, err = xpcall(main, debug.traceback)
-
-if not ok then
-	pcall(function()
-		require("beat.log").write("fatal", err)
-	end)
-	error(err, 0)
-end
+return api

@@ -99,7 +99,6 @@ end
 --- and a JSON event decodes its own copy of each.
 ---@param self beat.Library
 ---@param value string?
----@return string?
 local function intern(self, value)
 	if value == nil then return nil end
 
@@ -210,8 +209,8 @@ function Library:add(info, entry, cover, coverCache)
 
 	album.tracks[#album.tracks + 1] = track
 	track.albumId = album.id
-	album.trackCount = album.trackCount + 1
-	album.duration = album.duration + duration
+	album.trackCount += 1
+	album.duration += duration
 
 	local artistKey = albumArtist
 	local profile = self.artistByName[artistKey]
@@ -239,7 +238,7 @@ function Library:add(info, entry, cover, coverCache)
 
 	self.tracks[id] = track
 	self.trackById[id] = track
-	self.version = self.version + 1
+	self.version += 1
 
 	return track, gainedCover
 end
@@ -269,7 +268,7 @@ function Library:finish()
 		album.trackCount = #album.tracks
 		album.duration = 0
 		for _, track in ipairs(album.tracks) do
-			album.duration = album.duration + track.duration
+			album.duration += track.duration
 			if album.coverTrack == nil and track.hasPicture then album.coverTrack = track end
 			if album.coverPath == nil then album.coverPath = track.coverPath end
 		end
@@ -289,11 +288,11 @@ function Library:finish()
 		table.sort(artist.tracks, trackOrder)
 		orderedArtists[#orderedArtists + 1] = artist
 	end
-	table.sort(orderedArtists, function(a, b) return a.hash < b.hash end)
+	table.sort(orderedArtists,|a, b| -> a.hash < b.hash)
 	self.artists = orderedArtists
 
 	self.ready = true
-	self.version = self.version + 1
+	self.version += 1
 end
 
 ---@param id number

@@ -8,7 +8,6 @@ local log = {}
 
 local LIMIT = 1024 * 1024
 
----@return string
 local function file()
 	return paths.file("beat.log")
 end

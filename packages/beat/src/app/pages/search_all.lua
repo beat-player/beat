@@ -31,13 +31,11 @@ local function searchTagFilter(app, width)
 	if #tags == 0 then return nil, 0 end
 	local theme = app.services.appearance.theme
 	local search = app.services.search
-	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
+	local columns = width >= 900 ? 6 : width >= 600 and 4 or 3
 	local pills = tagPills.view(app, {
 		tags = tags,
 		selected = search.tagFilter,
-		action = function(tag)
-			return { type = "toggleTagFilter", id = tag.id}
-		end,
+		action = |tag| -> { type = "toggleTagFilter", id = tag.id},
 		width = width,
 		columns = columns,
 	})
@@ -46,11 +44,9 @@ local function searchTagFilter(app, width)
 	local headerActions = {}
 	if next(search.tagFilter) ~= nil then
 		headerActions[#headerActions + 1] = text("All"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(search.match == "all" and theme:color("accent")
-		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "all"})
+		:weight("semibold"):fg(search.match == "all" ? (theme:color("accent")) : (theme:color("muted")))):onClick({ type = "tagFilterMatch", value = "all"})
 		headerActions[#headerActions + 1] = text("Any"):style(theme:s():text(theme:type("xs"))
-		:weight("semibold"):fg(search.match == "any" and theme:color("accent")
-		or theme:color("muted"))):onClick({ type = "tagFilterMatch", value = "any"})
+		:weight("semibold"):fg(search.match == "any" ? (theme:color("accent")) : (theme:color("muted")))):onClick({ type = "tagFilterMatch", value = "any"})
 		headerActions[#headerActions + 1] = text("Clear"):style(theme:s():text(theme:type("xs"))
 		:weight("semibold"):fg(theme:color("accent"))):onClick({ type = "clearTagFilter"})
 	end
@@ -117,7 +113,7 @@ function searchAll.view(app, page, window)
 	end
 
 	local count = #items
-	local totalRows = category == "albums" and math.ceil(count / columns) or count
+	local totalRows = category == "albums" ? math.ceil(count / columns) : count
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
 	local scroll = app.services.scroll:offset(app:pageKey())
 	local first, last, top = app.services.scroll.slices(count, perRow, rowHeight, math.max(0, scroll - listStart), viewport)

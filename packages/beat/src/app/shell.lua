@@ -24,7 +24,6 @@ local transitionCache = {}
 local TRANSITION_STEPS = 16
 
 ---@param theme beat.Theme
----@return { forward: wonderland.StyleBuilder[], back: wonderland.StyleBuilder[] }
 local function transitionStyles(theme)
 	local cached = transitionCache[theme.scale]
 	if cached ~= nil then return cached end
@@ -54,7 +53,6 @@ end
 ---@param app beat.App
 ---@param window wonderland.RenderWindow
 ---@param from number
----@return wonderland.Element[]
 local function overlays(app, window, from)
 	---@type wonderland.Element[]
 	local elements = {}
@@ -80,7 +78,7 @@ function shell.view(app, window)
 	local width = window.width
 	local height = window.height
 	local mobile = metrics.mobile(app, width)
-	local bar = app.services.playback:current() ~= nil and theme:px(mobile and 64 or 88) or 0
+	local bar = (app.services.playback:current()) ~= nil ? (theme:px(mobile ? 64 : 88)) : 0
 	local page = app:currentPage()
 
 	-- A full-screen overlay is the screen, not a panel over one: the page, the sidebar and the bar
@@ -146,7 +144,7 @@ function shell.view(app, window)
 	:style(sty():column():wrel(1.0):h(bodyHeight):pad(theme:space(20), metrics.pad(app, width), 0,
 	metrics.pad(app, width)):gap(theme:space(18)):bar(theme:px(8), theme:px(40), theme:color("faint")))
 	:scroll(scroll)
-	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
+	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
 	:children({ content})
 
 	-- The page is moved by a wrapper whose styles are made once per scale, not by a style that
@@ -157,7 +155,7 @@ function shell.view(app, window)
 
 	-- Clipped so a page arriving from the side cannot draw over the sidebar during its travel.
 	local pageClip = div():style(sty():column():wrel(1.0):h(bodyHeight)):scroll(0)
-	:onScroll(function(by, to) return { type = "scroll", key = app:pageKey(), by = by, to = to} end)
+	:onScroll(|by, to| -> { type = "scroll", key = app:pageKey(), by = by, to = to})
 	:children({ moving})
 
 	local rightWidth = width - metrics.sidebarWidth(app, width)

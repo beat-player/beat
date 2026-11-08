@@ -42,7 +42,7 @@ function settings.view(app, page, window)
 			onClick = { type = "theme", name = name},
 			primary = app.services.settings.values.theme == name,
 			height = theme:px(30),
-			width = theme:px(narrowTheme and 120 or 92),
+			width = (theme:px(narrowTheme ? 120 : 92)),
 		})
 	end
 	local themeRow
@@ -56,16 +56,16 @@ function settings.view(app, page, window)
 	for _, name in ipairs(app.services.appearance:accents()) do
 		local active = app.services.settings.values.accent == name
 		accents[#accents + 1] = div()
-		:style(sty():size(theme:px(narrowTheme and 20 or 28), theme:px(narrowTheme and 20 or 28))
+		:style(sty():size((theme:px(narrowTheme ? 20 : 28)), (theme:px(narrowTheme ? 20 : 28)))
 		:radius(theme:radius("full"))
 		:bg(app.services.appearance:accentColour(name))
 		:align("center"):justify("center"))
 		:onClick({ type = "accent", name = name})
-		:children(active and icon.view(app, { name = "check", size = theme:px(14),
-			colour = app.services.appearance:accentInk(name) }) or div())
+		:children(active ? icon.view(app, { name = "check", size = (theme:px(14)),
+			colour = app.services.appearance:accentInk(name) }) : div())
 	end
-	local accentRow = div():style(sty():row():h(theme:px(narrowTheme and 20 or 28))
-	:gap(theme:px(narrowTheme and 5 or 8))):children(accents)
+	local accentRow = div():style(sty():row():h((theme:px(narrowTheme ? 20 : 28)))
+	:gap((theme:px(narrowTheme ? 5 : 8)))):children(accents)
 
 	local customButton = div()
 	:style(sty():row():w(theme:px(110)):h(theme:px(32)):radius(theme:radius("full"))
@@ -77,27 +77,27 @@ function settings.view(app, page, window)
 	local customRow = div():style(sty():row():h(theme:px(32)):align("center")):children({ customButton})
 
 	local scaleRow = div():style(sty():row():h(theme:px(32))
-	:gap(theme:px(narrowTheme and 4 or 8)):align("center")):children({
+	:gap((theme:px(narrowTheme ? 4 : 8))):align("center")):children({
 		text("Scale"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 		button.view(app, {
 			label = "90%",
 			onClick = { type = "uiScale", value = 0.9},
 			height = theme:px(28),
-			width = theme:px(narrowTheme and 38 or 60),
+			width = (theme:px(narrowTheme ? 38 : 60)),
 			primary = app.services.settings.values.uiScale == 0.9,
 		}),
 		button.view(app, {
 			label = "100%",
 			onClick = { type = "uiScale", value = 1},
 			height = theme:px(28),
-			width = theme:px(narrowTheme and 40 or 62),
+			width = (theme:px(narrowTheme ? 40 : 62)),
 			primary = app.services.settings.values.uiScale == 1,
 		}),
 		button.view(app, {
 			label = "125%",
 			onClick = { type = "uiScale", value = 1.25},
 			height = theme:px(28),
-			width = theme:px(narrowTheme and 40 or 62),
+			width = (theme:px(narrowTheme ? 40 : 62)),
 			primary = app.services.settings.values.uiScale == 1.25,
 		}),
 	})
@@ -105,17 +105,17 @@ function settings.view(app, page, window)
 	local motionRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")):children({
 		text("Motion"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 		button.view(app, {
-			label = app.services.settings.values.reduceMotion and "Motion reduced" or "Reduce motion",
+			label = app.services.settings.values.reduceMotion ? "Motion reduced" : "Reduce motion",
 			onClick = { type = "reduceMotion", value = not app.services.settings.values.reduceMotion},
 			height = theme:px(28),
-			width = theme:px(narrowTheme and 130 or 150),
+			width = (theme:px(narrowTheme ? 130 : 150)),
 			primary = app.services.settings.values.reduceMotion,
 		}),
 	})
 
 	local mobileSidebar = metrics.mobile(app, window.width)
 	local sidebarControls = {
-		text(mobileSidebar and "Hidden on phones" or "Width"):style(theme:s():text(theme:type("sm"))
+		text(mobileSidebar ? "Hidden on phones" : "Width"):style((theme:s()):text((theme:type("sm")))
 		:fg(theme:color("muted"))),
 	}
 	if mobileSidebar then
@@ -143,7 +143,7 @@ function settings.view(app, page, window)
 			primary = app.services.settings.values.sidebarWidth == 320,
 		})
 		sidebarControls[#sidebarControls + 1] = button.view(app, {
-			label = app.services.settings.values.sidebarCollapsed and "Expand" or "Collapse",
+			label = app.services.settings.values.sidebarCollapsed ? "Expand" : "Collapse",
 			onClick = { type = "toggleSidebar"},
 			height = theme:px(28),
 			width = theme:px(76),
@@ -167,13 +167,13 @@ function settings.view(app, page, window)
 					onClick = { type = "chooseFolder"},
 					primary = true,
 					height = theme:px(32),
-					width = theme:px(narrowTheme and 160 or 150),
+					width = (theme:px(narrowTheme ? 160 : 150)),
 				}),
 				button.view(app, {
 					label = "Rescan",
 					onClick = { type = "rescan"},
 					height = theme:px(32),
-					width = theme:px(narrowTheme and 160 or 90),
+					width = (theme:px(narrowTheme ? 160 : 90)),
 				}),
 			}
 			if narrowTheme then
@@ -197,7 +197,7 @@ function settings.view(app, page, window)
 
 	local audioRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(12)):align("center")):children({
 		text("Volume"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-		volume.view(app, { width = theme:px(narrowTheme and 80 or 200) }),
+		volume.view(app, { width = (theme:px(narrowTheme ? 80 : 200)) }),
 		text(tostring(math.floor((app.services.settings.values.isMuted and 0 or app.services.settings.values.volume) * 100)) .. "%"):style(
 		theme:s():text(theme:type("xs")):fg(theme:color("faint"))
 		),
@@ -205,12 +205,11 @@ function settings.view(app, page, window)
 
 	local lastfm = app.services.lastfm.client
 	local lastfmTone = lastfm:statusTone()
-	local lastfmColour = lastfmTone == "success" and theme:color("success")
-	or (lastfmTone == "danger" and theme:color("danger") or theme:color("muted"))
+	local lastfmColour = lastfmTone == "success" ? (theme:color("success")) : lastfmTone == "danger" and (theme:color("danger")) or (theme:color("muted"))
 	local lastfmButton
 	local lastfmActionWidth
 	if lastfm:isConnected() then
-		lastfmActionWidth = theme:px(narrowTheme and 92 or 110)
+		lastfmActionWidth = (theme:px(narrowTheme ? 92 : 110))
 		lastfmButton = button.view(app, {
 			label = "Disconnect",
 			onClick = { type = "lastfmDisconnect"},
@@ -218,13 +217,13 @@ function settings.view(app, page, window)
 			width = lastfmActionWidth,
 		})
 	elseif lastfm:isAuthorizing() then
-		lastfmActionWidth = theme:px(narrowTheme and 78 or 88) + theme:px(6) + theme:px(70)
+		lastfmActionWidth = (theme:px(narrowTheme ? 78 : 88)) + (theme:px(6)) + (theme:px(70))
 		lastfmButton = div():style(sty():row():h(theme:px(28)):gap(theme:px(6))):children({
 			button.view(app, {
 				label = "Open page",
 				onClick = { type = "lastfmOpenAuth"},
 				height = theme:px(28),
-				width = theme:px(narrowTheme and 78 or 88),
+				width = (theme:px(narrowTheme ? 78 : 88)),
 			}),
 			button.view(app, {
 				label = "Cancel",
@@ -234,7 +233,7 @@ function settings.view(app, page, window)
 			}),
 		})
 	else
-		lastfmActionWidth = theme:px(narrowTheme and 84 or 96)
+		lastfmActionWidth = (theme:px(narrowTheme ? 84 : 96))
 		lastfmButton = button.view(app, {
 			label = "Connect",
 			onClick = { type = "lastfmConnect"},
@@ -257,10 +256,10 @@ function settings.view(app, page, window)
 	:children({
 		text("Scrobbling"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
 		button.view(app, {
-			label = app.services.settings.values.lastfmEnabled and "Enabled" or "Paused",
+			label = app.services.settings.values.lastfmEnabled ? "Enabled" : "Paused",
 			onClick = { type = "lastfmEnabled", value = not app.services.settings.values.lastfmEnabled},
 			height = theme:px(28),
-			width = theme:px(narrowTheme and 76 or 88),
+			width = (theme:px(narrowTheme ? 76 : 88)),
 			primary = app.services.settings.values.lastfmEnabled,
 		}),
 	})
@@ -275,13 +274,13 @@ function settings.view(app, page, window)
 			icon = "github",
 			primary = true,
 			height = theme:px(32),
-			width = theme:px(narrowTheme and 160 or 124),
+			width = (theme:px(narrowTheme ? 160 : 124)),
 		}),
 		button.view(app, {
 			label = "Issues",
 			onClick = { type = "openURL", url = GITHUB .. "/issues"},
 			height = theme:px(32),
-			width = theme:px(narrowTheme and 160 or 92),
+			width = (theme:px(narrowTheme ? 160 : 92)),
 		}),
 	}
 	local githubRow
@@ -294,7 +293,7 @@ function settings.view(app, page, window)
 	local appearanceHeight = (narrowTheme and 342 or 268) + 32 + 12
 	local libraryHeight = (narrowTheme and 210 or 170)
 	+(scan.skipped > 0 and (12 + math.min(#scan.errors, 3) * 16) or 0)
-	local aboutHeight = narrowTheme and 196 or 156
+	local aboutHeight = narrowTheme ? 196 : 156
 	return div():style(sty():column():wrel(1.0):h(theme:px(32 + appearanceHeight + 136 + libraryHeight
 	+134 + lastfmHeight + aboutHeight + 6 * 16 + 24))
 	:gap(theme:space(16))):children({

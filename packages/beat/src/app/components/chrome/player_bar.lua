@@ -40,9 +40,7 @@ function playerBar.view(app, props)
 	local art = cover.view(app, { album = album, size = theme:px(56), radius = theme:radius("sm") })
 	if album.id ~= 0 then
 		art:onClick({ type = "navigate", page = { kind = "album", id = album.id}})
-		art:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-			return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
-		end)
+		art:onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY})
 	end
 
 	local isPlaying = player:isPlaying()
@@ -51,31 +49,31 @@ function playerBar.view(app, props)
 			name = "shuffle",
 			size = theme:px(28),
 			onClick = { type = "shuffle"},
-			active = player.queue and player.queue.shuffle,
+			active = player.queue?.shuffle ?? false,
 		}),
 		iconButton.view(app, { name = "previous", size = theme:px(28), onClick = { type = "previous"} }),
 		div():style(sty():size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent"))
 		:align("center"):justify("center")):onClick({ type = "togglePlay"})
-		:children(icon.view(app, { name = isPlaying and "pause" or "play", size = theme:px(20), colour = theme.accentInk })),
+		:children(icon.view(app, { name = isPlaying ? "pause" : "play", size = (theme:px(20)), colour = theme.accentInk })),
 		iconButton.view(app, { name = "next", size = theme:px(28), onClick = { type = "next"} }),
 		iconButton.view(app, {
-			name = player.queue and player.queue.repeatMode == "one" and "repeatOne" or "repeat",
+			name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
 			size = theme:px(28),
 			onClick = { type = "repeat"},
 			active = player.queue and player.queue.repeatMode ~= "off",
 		}),
 	})
 
-	local cards = div():style(sty():row():w(width > 1180 and theme:px(300) or theme:px(220)):h("auto")
+	local cards = div():style(sty():row():w(width > 1180 ? (theme:px(300)) : (theme:px(220))):h("auto")
 	:align("center"):justify("center")):children(controls)
-	local progressWidth = width > 1180 and theme:px(240) or theme:px(160)
+	local progressWidth = width > 1180 ? (theme:px(240)) : (theme:px(160))
 
 	local sideWidth = math.max(theme:px(280), progressWidth + theme:px(44))
 	local left = div():style(sty():row():w(sideWidth):h("auto"):gap(theme:px(14)):align("center"))
 	:children({
 		art,
 		div():style(sty():w(210):h("auto"):column():justify("center"):gap(2))
-		:onClick(album.id ~= 0 and { type = "navigate", page = { kind = "album", id = album.id}} or nil)
+		:onClick(album.id ~= 0 ? { type = "navigate", page = { kind = "album", id = album.id}} : nil)
 		:children({
 			text(track.title):style(theme:s():w(210):text(theme:type("base")):weight("semibold")
 			:fg(theme:color("text")):ellipsis()),
@@ -145,7 +143,7 @@ function playerBar.mobile(app, props)
 	local playing = app.services.playback.player:isPlaying()
 	local duration = track.duration > 0 and track.duration or app.services.playback.player:duration()
 	local position = app.services.playback.player:position()
-	local fraction = duration > 0 and math.max(0, math.min(1, position / duration)) or 0
+	local fraction = duration > 0 ? math.max(0, math.min(1, position / duration)) : 0
 
 	return div()
 	:style(sty():row():wrel(1.0):h(height):pad(0, pad, 0, pad):gap(gap)
@@ -170,7 +168,7 @@ function playerBar.mobile(app, props)
 		}),
 		div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent"))
 		:align("center"):justify("center")):onClick({ type = "togglePlay"})
-		:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(19), colour = theme.accentInk })),
+		:children(icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(19)), colour = theme.accentInk })),
 		iconButton.view(app, { name = "next", size = nextSize, onClick = { type = "next"} }),
 	})
 end
