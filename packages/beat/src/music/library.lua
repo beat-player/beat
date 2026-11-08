@@ -86,6 +86,11 @@ function Library.new(root)
 		strings = {},
 		version = 0,
 		ready = false,
+		-- Ids are handed out from counters rather than from the list length: removing the tracks of
+		-- a folder leaves gaps, and a later add must not reuse an id something still refers to.
+		nextTrackId = 1,
+		nextAlbumId = 1,
+		nextArtistId = 1,
 	}, Library)
 end
 
@@ -136,7 +141,8 @@ function Library:add(info, entry, cover, coverCache)
 
 	local date = tags.date
 	local disc = tags.disc or 1
-	local id = #self.tracks + 1
+	local id = self.nextTrackId
+	self.nextTrackId = id + 1
 	local duration = info.duration or 0
 
 	---@type beat.Track
@@ -174,7 +180,8 @@ function Library:add(info, entry, cover, coverCache)
 	local album = self.albumByKey[key]
 	local gainedCover = false
 	if album == nil then
-		local albumId = #self.albums + 1
+		local albumId = self.nextAlbumId
+		self.nextAlbumId = albumId + 1
 		album = {
 			id = albumId,
 			key = key,
@@ -191,7 +198,7 @@ function Library:add(info, entry, cover, coverCache)
 			hash = names.fold(albumTitle .. "\0" .. albumArtist),
 		}
 
-		self.albums[albumId] = album
+		self.albums[#self.albums + 1] = album
 		self.albumById[albumId] = album
 		self.albumByKey[key] = album
 		self.recent[#self.recent + 1] = album
@@ -215,7 +222,8 @@ function Library:add(info, entry, cover, coverCache)
 	local artistKey = albumArtist
 	local profile = self.artistByName[artistKey]
 	if profile == nil then
-		local artistId = #self.artists + 1
+		local artistId = self.nextArtistId
+		self.nextArtistId = artistId + 1
 		profile = {
 			id = artistId,
 			name = artistKey,
@@ -224,7 +232,7 @@ function Library:add(info, entry, cover, coverCache)
 			hash = names.fold(artistKey),
 		}
 
-		self.artists[artistId] = profile
+		self.artists[#self.artists + 1] = profile
 		self.artistById[artistId] = profile
 		self.artistByName[artistKey] = profile
 	end
@@ -236,11 +244,104 @@ function Library:add(info, entry, cover, coverCache)
 		profile.albums[album.id] = album
 	end
 
-	self.tracks[id] = track
+	self.tracks[#self.tracks + 1] = track
 	self.trackById[id] = track
 	self.version += 1
 
 	return track, gainedCover
+end
+
+--- Whether a track's file is inside a folder. Paths from the scan and from a plugin's dialog can
+--- differ in separators or, on Windows, in case, so both sides are normalized first.
+---@param base string # The folder, normalized and folded
+---@param prefix string # `base` with its trailing separator
+---@param fold boolean
+---@param file string
+---@return boolean
+local function under(base, prefix, fold, file)
+	local target = path.normalize(file)
+	if fold then target = target:lower() end
+	return target == base or target:sub(1, #prefix) == prefix
+end
+
+--- Drops every track under a folder, and the albums and artists that only those tracks made. A
+--- folder added again is then replaced rather than duplicated. The ids are not reused; a queue or
+--- a page that still holds an old track keeps a stable number.
+---@param folder string
+---@return boolean removed # False when the folder held no track, so nothing changed
+function Library:removeUnder(folder)
+	local fold = path.separator == "\\"
+	local base = path.normalize(folder)
+	if fold then base = base:lower() end
+	local prefix = base:sub(-1) == path.separator and base or base .. path.separator
+
+	local tracks = {}
+	local removed = false
+	for _, track in ipairs(self.tracks) do
+		if under(base, prefix, fold, track.path) then
+			self.trackById[track.id] = nil
+			removed = true
+		else
+			tracks[#tracks + 1] = track
+		end
+	end
+	if not removed then return false end
+	self.tracks = tracks
+
+	local albums = {}
+	for _, album in ipairs(self.albums) do
+		local kept = {}
+		for _, track in ipairs(album.tracks) do
+			if not under(base, prefix, fold, track.path) then kept[#kept + 1] = track end
+		end
+
+		if #kept > 0 then
+			album.tracks = kept
+			album.trackCount = #kept
+			album.duration = 0
+			for _, track in ipairs(kept) do album.duration = album.duration + track.duration end
+			-- Rebuilt by `finish` from what is left, rather than left pointing into the folder
+			-- that is gone.
+			album.coverTrack = nil
+			album.coverPath = nil
+			albums[#albums + 1] = album
+		else
+			self.albumById[album.id] = nil
+			self.albumByKey[album.key] = nil
+		end
+	end
+	self.albums = albums
+
+	local recent = {}
+	for _, album in ipairs(self.recent) do
+		if self.albumById[album.id] ~= nil then recent[#recent + 1] = album end
+	end
+	self.recent = recent
+
+	local artists = {}
+	for _, artist in ipairs(self.artists) do
+		local kept = {}
+		for _, track in ipairs(artist.tracks) do
+			if not under(base, prefix, fold, track.path) then kept[#kept + 1] = track end
+		end
+
+		if #kept > 0 then
+			artist.tracks = kept
+			local albumsOf = {}
+			for _, album in ipairs(self.albums) do
+				if album.artistId == artist.id then albumsOf[#albumsOf + 1] = album end
+			end
+			artist.albums = albumsOf
+			artists[#artists + 1] = artist
+		else
+			self.artistById[artist.id] = nil
+			self.artistByName[artist.name] = nil
+		end
+	end
+	self.artists = artists
+
+	self.version = self.version + 1
+	return true
 end
 
 ---@param a beat.Track

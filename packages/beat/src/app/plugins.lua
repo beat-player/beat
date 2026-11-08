@@ -168,6 +168,8 @@ local function handleFor(registry, plugin, undo)
 	function handle.overlay(name, surface) record(registry:addOverlay(name, surface, plugin)) end
 	---@param action beat.Action
 	function handle.action(action) record(registry:addAction(action, plugin)) end
+	---@param entry beat.NavEntry
+	function handle.nav(entry) record(registry:addNav(entry, plugin)) end
 	---@param kind string
 	---@param listener fun(message: table, app: beat.App)
 	function handle.on(kind, listener) record(registry:addListener(kind, listener, plugin)) end

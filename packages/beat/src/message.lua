@@ -108,6 +108,8 @@
 ---@field type "queueChanged"
 ---@class beat.LibraryReplacedMessage: beat.MessageFields
 ---@field type "libraryReplaced"
+---@class beat.LibraryChangedMessage: beat.MessageFields
+---@field type "libraryChanged"
 ---@class beat.SearchMessage: beat.MessageFields
 ---@field type "search"
 ---@field value string
@@ -183,6 +185,13 @@
 ---@field type "chooseFolder"
 ---@class beat.CancelScanMessage: beat.MessageFields
 ---@field type "cancelScan"
+---@class beat.PickFolderMessage: beat.MessageFields
+---@field type "pickFolder"
+---@field reply string # The message type the chosen folder comes back as, with `path` nil when cancelled
+---@field start string?
+---@class beat.LibraryAddFolderMessage: beat.MessageFields
+---@field type "libraryAddFolder"
+---@field path string
 ---@class beat.HideScanIslandMessage: beat.MessageFields
 ---@field type "hideScanIsland"
 ---@class beat.ShowScanIslandMessage: beat.MessageFields
@@ -366,6 +375,7 @@
 --- | beat.TrackEndedMessage
 --- | beat.QueueChangedMessage
 --- | beat.LibraryReplacedMessage
+--- | beat.LibraryChangedMessage
 --- | beat.SearchMessage
 --- | beat.ClearSearchMessage
 --- | beat.OpenSearchMessage
@@ -391,6 +401,8 @@
 --- | beat.RescanMessage
 --- | beat.ChooseFolderMessage
 --- | beat.CancelScanMessage
+--- | beat.PickFolderMessage
+--- | beat.LibraryAddFolderMessage
 --- | beat.HideScanIslandMessage
 --- | beat.ShowScanIslandMessage
 --- | beat.DismissScanSummaryMessage
@@ -512,6 +524,8 @@
 ---@field deleteTag fun(id: number): beat.DeleteTagMessage
 ---@field toast fun(text: string, tone: string?): beat.ToastMessage
 ---@field openURL fun(url: string): beat.OpenURLMessage
+---@field pickFolder fun(reply: string, start: string?): beat.PickFolderMessage
+---@field libraryAddFolder fun(path: string): beat.LibraryAddFolderMessage
 ---@field scroll fun(key: string, fields: beat.ScrollFields?): beat.ScrollMessage
 ---@field custom fun(kind: string, fields: beat.CustomFields?): beat.CustomMessage
 
@@ -722,6 +736,15 @@ function messages.scroll(key, fields)
 	for field, value in pairs(fields or {}) do message[field] = value end
 	return message
 end
+
+---@param reply string
+---@param start string?
+---@return beat.PickFolderMessage
+function messages.pickFolder(reply, start) return { type = "pickFolder", reply = reply, start = start} end
+
+---@param path string
+---@return beat.LibraryAddFolderMessage
+function messages.libraryAddFolder(path) return { type = "libraryAddFolder", path = path} end
 
 ---@param kind string
 ---@param fields beat.CustomFields?

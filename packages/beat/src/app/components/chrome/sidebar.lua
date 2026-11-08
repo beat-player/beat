@@ -31,12 +31,17 @@ function sidebar.view(app, props)
 		{ kind = "library", icon = "library", label = "Library"},
 		{ kind = "playlists", icon = "playlists", label = "Playlists"},
 	}
+	-- A plugin's destinations come after the app's own, in the order they asked for.
+	for _, entry in ipairs(app.registry:nav()) do
+		nav[#nav + 1] = { page = entry.page, icon = entry.icon, label = entry.title}
+	end
 
 	local navRowHeight = (theme:px(collapsed ? 44 : 42))
 	local navHeight = navRowHeight * #nav + math.max(0, #nav - 1) * theme:px(2) + theme:px(20)
 	local navChildren = {}
 	for _, item in ipairs(nav) do
-		local active = current.kind == item.kind
+		local route = item.page or { kind = item.kind}
+		local active = current.kind == route.kind and (route.id == nil or current.id == route.id)
 		local fg = active ? (theme:color("text")) : (theme:color("muted"))
 		local bg = active ? (theme:color("elevated")) : (theme:color("sidebar", 0))
 		local rowStyle = sty():row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10))
@@ -48,7 +53,7 @@ function sidebar.view(app, props)
 			rowHover:justify("center")
 		end
 		local row = div():style(rowStyle):hover(rowHover)
-		:onClick({ type = "navigate", page = { kind = item.kind}})
+		:onClick({ type = "navigate", page = route})
 
 		row:children(icon.view(app, { name = item.icon, size = theme:px(19),
 			colour = active ? (theme:color("accent")) : fg }))

@@ -13,7 +13,11 @@ local ScanJob = require("beat.app.services.scan.job")
 
 ---@class beat.ScanService: beat.Service
 ---@field job beat.ScanJob? # The worker reading the folder, while there is one
+---@field addJob beat.ScanJob? # The worker reading one folder into the existing library, while there is one
+---@field addFolder string? # The folder that worker is reading
 ---@field pick beat.FolderPick? # The system folder dialog, while it is open
+---@field pickRequest { reply: string? }? # Who the open dialog's answer goes to; nil reply is a library root
+---@field pickQueue { reply: string? }[] # Dialogs asked for while one was open
 ---@field islandOpen boolean # Whether the reading island was left showing
 ---@field summary beat.ScanSummary? # What the last finished scan added, until it is dismissed
 ---@field skipped number # Files the last finished scan could not read
@@ -30,7 +34,7 @@ local Scan = {}
 Scan.__index = Scan
 Scan.needs = { "settings", "library", "covers", "playback", "toasts", "emit", "window", "options" }
 Scan.handles = {
-	"startScan", "rescan", "chooseFolder", "cancelScan",
+	"startScan", "rescan", "chooseFolder", "pickFolder", "libraryAddFolder", "cancelScan",
 	"hideScanIsland", "showScanIsland", "dismissScanSummary",
 }
 
@@ -48,7 +52,11 @@ Scan.handles = {
 function Scan.new(deps)
 	return setmetatable({
 		job = nil,
+		addJob = nil,
+		addFolder = nil,
 		pick = nil,
+		pickRequest = nil,
+		pickQueue = {},
 		islandOpen = true,
 		summary = nil,
 		skipped = 0,
@@ -111,7 +119,81 @@ function Scan:start(root)
 	self.settings.values.root = root
 	self.settings:save()
 
-	self:emit({ type = "reset", page = { kind = "home"}})
+	self.emit({ type = "reset", page = { kind = "home"}})
+end
+
+--- Adds one folder to the library that is already there. The tracks under it are dropped first,
+--- so a folder downloaded again replaces what the library had rather than appearing twice. The
+--- rest of the library -- and what is playing, and the queue -- is left alone.
+---@param folder string
+function Scan:addFolder(folder)
+	if self.job ~= nil then
+		self.toasts:show("Wait for the library scan to finish", "error")
+		return
+	end
+	if self.addJob ~= nil then
+		self.addJob:cancel()
+		self.addJob:close()
+		self.addJob = nil
+	end
+
+	local library = self.library
+	if library.current == nil then
+		-- A plugin can download before a library exists. The library still needs a root, and the
+		-- settings' one is what a later full scan would use; the folder itself is the fallback.
+		local root = self.settings.values.root or folder
+		library:replace(root)
+		self.settings.values.root = root
+		self.settings:save()
+	end
+
+	library:forgetFolder(folder)
+	self.addFolder = folder
+	self.addJob = ScanJob.start(folder)
+end
+
+--- Starts the folder dialog, or waits for the one already open. A request with a reply is a
+--- plugin's; one without is the library's own root choice.
+---@param request { reply: string? }
+function Scan:startPick(request)
+	if self.pick ~= nil then
+		self.pickQueue[#self.pickQueue + 1] = request
+		return
+	end
+
+	self.pickRequest = request
+	local title = request.reply ~= nil and "Choose a folder" or "Choose music folder"
+	self.pick = Picker.start(self.window(), { title = title })
+end
+
+--- The next dialog asked for while one was open, if any.
+function Scan:nextPick()
+	local request = table.remove(self.pickQueue, 1)
+	if request ~= nil then self:startPick(request) end
+end
+
+--- One inspected file into the library. A full scan also keeps the failures for the settings
+--- screen; a folder added by a plugin only says so in a toast.
+---@param event table
+---@param errors { path: string, message: string }[]?
+function Scan:addTrack(event, errors)
+	local library = self.library
+	if library.current == nil then return end
+
+	local track, gainedCover
+	-- One unreadable file must not stop the scan: it is a toast and a line in the settings
+	-- screen's list, not the end of the folder.
+	local ok, err = pcall(function()
+		track, gainedCover = library:add(event.info, event.entry, event.cover, event.coverCache)
+	end)
+	if not ok then
+		self.toasts:show("Could not read a scanned track", "error")
+		if errors ~= nil then
+			errors[#errors + 1] = { path = event.entry.path, message = tostring(err)}
+		end
+	elseif track ~= nil and (track.hasPicture or gainedCover) then
+		self.covers:forget(track.albumId)
+	end
 end
 
 function Scan:update(message)
@@ -121,7 +203,19 @@ function Scan:update(message)
 		local root = self.settings.values.root
 		if root ~= nil then self:start(root) end
 	elseif message.type == "chooseFolder" then
-		if self.pick == nil then self.pick = Picker.start(self.window()) end
+		self:startPick({})
+	elseif message.type == "pickFolder" then
+		if type(message.reply) ~= "string" or message.reply == "" then
+			self.toasts:show("A folder pick needs a reply message type", "error")
+		else
+			self:startPick({ reply = message.reply })
+		end
+	elseif message.type == "libraryAddFolder" then
+		if type(message.path) ~= "string" or message.path == "" then
+			self.toasts:show("Adding a folder needs a path", "error")
+		else
+			self:addFolder(message.path)
+		end
 	elseif message.type == "cancelScan" then
 		if self.job ~= nil then
 			self.job:cancel()
@@ -146,14 +240,27 @@ function Scan:step(now)
 	if self.pick ~= nil then
 		local chosen, status = Picker.poll(self.pick)
 		if chosen ~= nil then
+			local request = self.pickRequest
 			self.pick = nil
-			self:start(chosen)
+			self.pickRequest = nil
+			if request ~= nil and request.reply ~= nil then
+				self.emit({ type = request.reply, path = chosen})
+			else
+				self:start(chosen)
+			end
+			self:nextPick()
 			changed = true
 		elseif status ~= nil then
+			local request = self.pickRequest
 			self.pick = nil
+			self.pickRequest = nil
 			if status == "no-picker" then
 				self.toasts:show("No system folder dialog is available on this machine", "error")
 			end
+			if request ~= nil and request.reply ~= nil then
+				self.emit({ type = request.reply, path = nil})
+			end
+			self:nextPick()
 			changed = true
 		end
 	end
@@ -166,19 +273,7 @@ function Scan:step(now)
 		for _, event in ipairs(events) do
 			---@cast event table
 			if event.type == "track" and library.current ~= nil then
-				local track, gainedCover
-				-- One unreadable file must not stop the scan: it is a toast and a line in the
-				-- settings screen's list, not the end of the folder.
-				local ok, err = pcall(function()
-					track, gainedCover = library:add(event.info, event.entry, event.cover,
-					event.coverCache)
-				end)
-				if not ok then
-					self.toasts:show("Could not read a scanned track", "error")
-					self.errors[#self.errors + 1] = { path = event.entry.path, message = tostring(err)}
-				elseif track ~= nil and (track.hasPicture or gainedCover) then
-					self.covers:forget(track.albumId)
-				end
+				self:addTrack(event, self.errors)
 				changed = true
 			end
 		end
@@ -209,13 +304,52 @@ function Scan:step(now)
 		end
 	end
 
+	local addJob = self.addJob
+	if addJob ~= nil then
+		local library = self.library
+		local events, progressed = addJob:poll(32)
+		if progressed then changed = true end
+		for _, event in ipairs(events) do
+			---@cast event table
+			if event.type == "track" and library.current ~= nil then
+				self:addTrack(event, nil)
+				changed = true
+			end
+		end
+
+		if addJob:isDone() and not addJob:hasPending() then
+			local progress = addJob:progress()
+			if progress.phase == "done" then
+				---@cast library.current -nil
+				library:finish()
+				local saved, saveErr = library:save()
+				if not saved then self.toasts:show(saveErr or "Could not save the library", "error") end
+				self.emit({ type = "libraryChanged"})
+				local tracks = tonumber(progress.tracks) or 0
+				self.toasts:show("Added " .. tracks .. " track" .. (tracks == 1 and "" or "s")
+					.. " to the library")
+				if (progress.skipped or 0) > 0 then
+					self.toasts:show(progress.skipped .. " files could not be read", "error")
+				end
+			elseif addJob.error ~= nil then
+				self.toasts:show(addJob.error or "Could not add the folder", "error")
+			else
+				self.toasts:show("Adding the folder was cancelled", "error")
+			end
+			addJob:close()
+			self.addJob = nil
+			self.addFolder = nil
+			changed = true
+		end
+	end
+
 	-- The summary is a glance, not a report: it goes by itself after a moment.
 	if self.summary ~= nil and now - self.summary.at >= 5 then
 		self.summary = nil
 		changed = true
 	end
 
-	return changed, self.job ~= nil or self.pick ~= nil
+	return changed, self.job ~= nil or self.addJob ~= nil or self.pick ~= nil
 end
 
 --- The app is being set up again, so nothing will read this job's events any more: tell the
@@ -227,8 +361,14 @@ function Scan:close()
 		self.job:cancel()
 		self.job = nil
 	end
+	if self.addJob ~= nil then
+		self.addJob:cancel()
+		self.addJob = nil
+	end
 	Picker.cancel(self.pick)
 	self.pick = nil
+	self.pickRequest = nil
+	self.pickQueue = {}
 end
 
 return Scan

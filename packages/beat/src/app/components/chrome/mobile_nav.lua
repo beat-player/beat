@@ -23,18 +23,28 @@ function mobileNav.view(app, props)
 		{ kind = "search", icon = "search", label = "Search"},
 		{ kind = "playlists", icon = "playlists", label = "Playlists"},
 	}
+	-- A plugin's destinations come after the app's own, in the order they asked for.
+	for _, entry in ipairs(app.registry:nav()) do
+		items[#items + 1] = { page = entry.page, icon = entry.icon, label = entry.title}
+	end
 	local tabWidth = math.floor(width / #items)
 	local tabs = {}
 	for _, item in ipairs(items) do
-		local active = app.page.kind == item.kind
-		or (item.kind == "search" and app.page.kind == "searchAll")
-		or (item.kind == "playlists" and app.page.kind == "playlist")
+		local route = item.page or { kind = item.kind}
+		local active
+		if item.page ~= nil then
+			active = app.page.kind == route.kind and (route.id == nil or app.page.id == route.id)
+		else
+			active = app.page.kind == item.kind
+			or (item.kind == "search" and app.page.kind == "searchAll")
+			or (item.kind == "playlists" and app.page.kind == "playlist")
+		end
 		local colour = active ? (theme:color("accent")) : (theme:color("muted"))
 		tabs[#tabs + 1] = div()
 		:style(sty():w(tabWidth):hrel(1.0):column():align("center"):justify("center"):gap(2))
 		:hover(sty():w(tabWidth):hrel(1.0):column():align("center"):justify("center"):gap(2)
 		:bg(theme:color("hover")))
-		:onClick({ type = "navigate", page = { kind = item.kind}})
+		:onClick({ type = "navigate", page = route})
 		:children({
 			icon.view(app, { name = item.icon, size = theme:px(21), colour = colour }),
 			text(item.label):style(theme:s():text(theme:type("xs")):weight("semibold"):fg(colour)),
