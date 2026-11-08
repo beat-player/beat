@@ -2,7 +2,7 @@
 -- them. It is opened over the page rather than replacing it, so what is left of the app stays
 -- underneath while a transition runs.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local iconButton = require("beat.app.components.icon_button")
 local cover = require("beat.app.components.cover")
 local playingBars = require("beat.app.components.playing_bars")
@@ -128,14 +128,14 @@ local nowPlaying = { fullscreen = true}
 nowPlaying.toolPanel = toolPanel
 
 function nowPlaying.new(app)
-	app.services.motion.clock:animate("nowPlaying", 1, 0.28, ui.motion.ease.outBack)
+	app.services.motion.clock:animate("nowPlaying", 1, 0.28, app.services.motion.ease.outBack)
 	return {}
 end
 
 ---@param app beat.App
 ---@param _overlay beat.OverlayInstance
 function nowPlaying.close(app, _overlay)
-	app.services.motion.clock:animate("nowPlaying", 0, 0.28, ui.motion.ease.inCubic)
+	app.services.motion.clock:animate("nowPlaying", 0, 0.28, app.services.motion.ease.inCubic)
 end
 
 function nowPlaying.update(app, overlay, message)
@@ -285,8 +285,8 @@ function nowPlaying.view(app, _overlay, window)
 		:radius(theme:radius("full")):bg(theme:color("accent"))
 		:align("center"):justify("center"))
 		:onClick({ type = "togglePlay"})
-		:children(ui.icons.element(app.services.playback.player:isPlaying() and "pause" or "play",
-		theme:px(24 * transport), theme.accentInk)),
+		:children(icon.view(app, { name = app.services.playback.player:isPlaying() and "pause" or "play",
+		size = theme:px(24 * transport), colour = theme.accentInk })),
 		iconButton.view(app, { name = "next", size = skipSize, onClick = { type = "next"} }),
 		}),
 		div():style(sty():w("auto"):h(controlHeight)),

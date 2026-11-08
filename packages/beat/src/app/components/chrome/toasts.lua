@@ -1,7 +1,7 @@
 -- The messages that slide in over the top right corner: a failure and what it was about, or what
 -- just happened.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local measure = require("beat.app.components.helpers.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -18,6 +18,7 @@ function toasts.view(app, props)
 	local window = props.window
 	if #app.services.toasts.list == 0 then return nil end
 	local theme = app.services.appearance.theme
+	local motion = app.services.motion
 	local now = wonderland.time.now()
 	local children = {}
 	local width = math.min(320, window.width - theme:space(16))
@@ -33,12 +34,12 @@ function toasts.view(app, props)
 
 	local y = top
 	for _, toast in ipairs(app.services.toasts.list) do
-			local enter = app.services.motion.clock.reduce and 1
-			or ui.motion.progress(toast.at, 0.18, now, ui.motion.ease.outCubic)
+			local enter = motion.clock.reduce and 1
+			or motion:progress(toast.at, 0.18, now, motion.ease.outCubic)
 			local life = toast.tone == "error" and 8 or 4.5
 			local expires = toast.expires or (toast.at + life)
-			local exit = app.services.motion.clock.reduce and 1
-			or 1 - ui.motion.progress(expires - 0.3, 0.3, now, ui.motion.ease.inCubic)
+			local exit = motion.clock.reduce and 1
+			or 1 - motion:progress(expires - 0.3, 0.3, now, motion.ease.inCubic)
 			-- Both the fade and the lift are quantised so they reuse styles instead of interning
 			-- one per frame.
 			local enterStep = math.floor(enter * 16 + 0.5) / 16
@@ -67,7 +68,7 @@ function toasts.view(app, props)
 			:shadow(0, theme:px(8), theme:px(24), "#00000040"))
 			:onClick({ type = "dismissToast", at = toast.at})
 			:children({
-			ui.icons.element(toast.tone == "error" and "close" or "check", theme:px(18), tone),
+			icon.view(app, { name = toast.tone == "error" and "close" or "check", size = theme:px(18), colour = tone }),
 			text(message):style(theme:s():w(lineWidth):h(textHeight):text(size)
 			:fg(theme:color("text", alpha))),
 			})

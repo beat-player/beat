@@ -3,7 +3,7 @@
 -- is the whole screen instead. Views are functions of state and window; they return elements and
 -- messages, and never change the app themselves.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local logo = require("beat.app.components.logo")
 local metrics = require("beat.app.components.helpers.metrics")
 local surfaces = require("beat.app.surfaces")
 local sidebar = require("beat.app.components.chrome.sidebar")
@@ -24,7 +24,7 @@ local shell = {}
 local transitionCache = {}
 local TRANSITION_STEPS = 16
 
----@param theme beat.ui.Theme
+---@param theme beat.Theme
 ---@return { forward: wonderland.StyleBuilder[], back: wonderland.StyleBuilder[] }
 local function transitionStyles(theme)
 	local cached = transitionCache[theme.scale]
@@ -109,7 +109,7 @@ function shell.view(app, window)
 		div():style(sty():w(math.min(theme:px(620), width - metrics.pad(app, width) * 2))
 		:h(theme:px(600)):column():gap(theme:space(18))):children({
 		div():style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center")):children({
-		ui.icons.element("logo", theme:px(28), theme:color("accent")),
+		logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
 		text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold")
 		:fg(theme:color("text"))),
 		}),

@@ -1,6 +1,6 @@
 -- A small confirmable colour grid, opened by the Appearance section's Custom button.
 local wonderland = require("wonderland")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local button = require("beat.app.components.button")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -48,7 +48,7 @@ local accentPicker = {}
 --- name otherwise -- so the grid starts where the app already is.
 function accentPicker.new(app)
 	local draft = app.services.settings.values.accent:match("#") and app.services.settings.values.accent
-	or ui.theme.accentColour(app.services.settings.values.accent)
+	or app.services.appearance:accentColour(app.services.settings.values.accent)
 	---@type beat.AccentPickerState
 	return { draft = draft}
 end
@@ -108,8 +108,8 @@ function accentPicker.view(app, overlay, window)
 						:border(theme:px(selected and 2 or 1),
 						selected and theme:color("text") or theme:color("border")))
 						:onClick({ type = "pickAccent", value = colour})
-						:children(selected and ui.icons.element("check", theme:px(14),
-						ui.theme.accentInk(colour)) or div())
+						:children(selected and icon.view(app, { name = "check", size = theme:px(14),
+						colour = app.services.appearance:accentInk(colour) }) or div())
 					end
 				end
 			cells[#cells + 1] = div():style(sty():row():h(swatch):gap(gap)):children(row)
@@ -145,7 +145,7 @@ function accentPicker.view(app, overlay, window)
 	:radius(theme:radius("full")):bg(draft):align("center"):justify("center"))
 	:onClick({ type = "confirmAccent"})
 	:children(text("Use colour"):style(theme:s():text(theme:type("sm"))
-	:weight("semibold"):fg(ui.theme.accentInk(draft)))),
+	:weight("semibold"):fg(app.services.appearance:accentInk(draft)))),
 	}),
 	})
 

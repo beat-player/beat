@@ -2,7 +2,7 @@
 -- marks for how it fills, and when it was last edited.
 local wonderland = require("wonderland")
 local utf8 = require("utf8")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -178,10 +178,10 @@ function PlaylistArt.icons(app, props)
 	local theme = app.services.appearance.theme
 	local children = {}
 	if playlist.smart and #playlist.tagIds > 0 then
-		children[#children + 1] = ui.icons.element("tag", theme:px(13), theme:color("accent"))
+		children[#children + 1] = icon.view(app, { name = "tag", size = theme:px(13), colour = theme:color("accent") })
 	end
 	if playlist.manual then
-		children[#children + 1] = ui.icons.element("hand", theme:px(13), theme:color("muted"))
+		children[#children + 1] = icon.view(app, { name = "hand", size = theme:px(13), colour = theme:color("muted") })
 	end
 	return div():style(sty():row():w(theme:px(#children * 17)):h(theme:px(16)):gap(theme:px(4))
 	:align("center")):children(children)

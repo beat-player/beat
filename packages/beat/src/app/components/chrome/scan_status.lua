@@ -2,7 +2,7 @@
 -- the summary that replaces it once the scan is done.
 local wonderland = require("wonderland")
 local path = require("path")
-local ui = require("beat-ui")
+local icon = require("beat.app.components.icon")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
 local button = require("beat.app.components.button")
@@ -266,7 +266,7 @@ function scanStatus.summary(app, props)
 	end)
 	:children({
 	div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({
-	ui.icons.element("check", theme:px(18), theme:color("accent")),
+	icon.view(app, { name = "check", size = theme:px(18), colour = theme:color("accent") }),
 	text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold")
 	:fg(theme:color("text"))),
 	}),
