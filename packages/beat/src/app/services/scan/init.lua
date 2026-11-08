@@ -99,7 +99,7 @@ function Scan:start(root)
 	self.pick = nil
 	if self.job ~= nil then self.job:cancel() end
 
-	self.playback:stop()
+	self.playback:reset()
 	self.covers:releaseAll()
 	self.library:replace(root)
 	self.job = ScanJob.start(root)

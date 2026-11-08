@@ -238,3 +238,75 @@ test.it("queues the next album without touching the current audio", function()
 	test.equal(player.queue.order[2], 4, "but the next track is queued after the current one")
 	test.equal(player.pendingNextAt, 2, "and applied when the current track ends")
 end)
+
+-- A device that knows whether it is playing and what it was handed, for the tests that start and
+-- stop it: the stand-in above is always playing.
+local function device(player)
+	local calls = { closes = 0, enqueued = {}}
+	local playing = false
+	player.player = {
+	close = function()
+		calls.closes = calls.closes + 1
+		calls.enqueued = {}
+	end,
+	enqueue = function(_, path) calls.enqueued[#calls.enqueued + 1] = path end,
+	play = function() playing = true end,
+	pause = function() playing = false end,
+	stop = function() playing = false end,
+	update = function() end,
+	position = function() return 0 end,
+	isPlaying = function() return playing end,
+	setVolume = function() end,
+	}
+	return calls
+end
+
+local album = {
+{ id = 1, path = "/tmp/one.wav", title = "One", artist = "Artist", album = "Album", duration = 120},
+{ id = 2, path = "/tmp/two.wav", title = "Two", artist = "Artist", album = "Album", duration = 120},
+{ id = 3, path = "/tmp/three.wav", title = "Three", artist = "Artist", album = "Album", duration = 120},
+}
+
+test.it("stops with the queue kept, and plays the same track again from the top", function()
+	local player = Player.new()
+	local calls = device(player)
+	player:playTracks(album, 2)
+	test.truthy(player:isPlaying())
+
+	player:stop()
+	test.falsy(player:isPlaying())
+	test.equal(player.queue:current().id, 2, "the track stays current")
+
+	local closes = calls.closes
+	player:play()
+	test.truthy(player:isPlaying())
+	test.equal(calls.closes, closes + 1, "the queue is staged again rather than resumed")
+	test.equal(calls.enqueued[1], "/tmp/two.wav", "from the track that was stopped")
+	test.equal(#calls.enqueued, 2, "with the rest of the queue behind it")
+end)
+
+test.it("goes on from a pause without staging the queue again", function()
+	local player = Player.new()
+	local calls = device(player)
+	player:playTracks(album, 1)
+	local closes = calls.closes
+
+	player:pause()
+	test.falsy(player:isPlaying())
+	player:play()
+	test.truthy(player:isPlaying())
+	test.equal(calls.closes, closes, "a resume is not a restart")
+
+	player:play()
+	test.truthy(player:isPlaying(), "play while playing changes nothing")
+	test.equal(calls.closes, closes)
+end)
+
+test.it("opens no audio device for controls with nothing queued", function()
+	local player = Player.new()
+	player:pause()
+	player:stop()
+	player:play()
+	test.equal(player.player, nil)
+	test.falsy(player:isPlaying())
+end)

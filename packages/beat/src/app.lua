@@ -19,6 +19,15 @@ local SERVICES = {
 	"equalizer", "lastfm", "system",
 }
 
+local MEDIA_MESSAGES = {
+   playPause = "togglePlay",
+   play = "play",
+   pause = "pause",
+   stop = "stop",
+   next = "next",
+   previous = "previous",
+}
+
 --- Where a navigation goes: a page kind and what picks the one page of that kind. `App:go` turns
 --- it into a `beat.PageInstance`, which is what `App.page` and the history hold.
 ---@alias beat.Route
@@ -43,6 +52,7 @@ local SERVICES = {
 ---@field overlays beat.OverlayInstance[] # Open over the page, the last one on top
 ---@field ticker table?
 ---@field iconSet boolean
+---@field mediaKeysTaken boolean?
 ---@field services table<string, table> # The app's services by name: `app.services.search`
 ---@field serviceOrder table[] # Every service, each after everything it needs
 ---@field owners table<string, table> # The service that answers each message type
@@ -152,6 +162,16 @@ function App:setIcon(window)
 
 	window:setIcon(icon.width, icon.height, ffi.string(icon.pixels, icon.width * icon.height * 4))
 	self.iconSet = true
+end
+
+function App:takeMediaKeys(window)
+	if self.mediaKeysTaken or window.captureMediaKeys == nil then return end
+	self.mediaKeysTaken = true
+
+	local refused = window:captureMediaKeys()
+	if #refused > 0 then
+		self:act({type = "toast", tone = "error", text = "Another application is using the media keys: " .. table.concat(refused, ", ")})
+	end
 end
 
 ---@param opts { scan: boolean? }?
@@ -404,6 +424,12 @@ function App:event(event, _handler)
 		return nil
 	end
 
+	if event.name == "mediaKey" then
+		local messageType = MEDIA_MESSAGES[event.action]
+		if messageType ~= nil then self:act({ type = messageType}) end
+		return nil
+	end
+
 	if event.name ~= "keyPress" then return nil end
 	local key = event.key
 	local modifiers = event.modifiers or {}
@@ -458,6 +484,7 @@ end
 function App:view(window, assets)
 	self.window = window
 	self:setIcon(window)
+	self:takeMediaKeys(window)
 	self.assets = assets
 	self.services.covers:use(assets)
 	return shell.view(self, window)
