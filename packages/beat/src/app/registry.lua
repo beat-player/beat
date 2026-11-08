@@ -552,17 +552,15 @@ local function resolve(self, field, name)
 end
 
 ---@param kind string
----@return beat.PageSurface
 function Registry:page(kind)
-	local surface = resolve(self, "pages", kind)
+	local surface = resolve(self, "pages", kind) --[[@as beat.PageSurface?]]
 	if surface == nil then error("no page is registered for " .. tostring(kind), 2) end
 	return surface
 end
 
 ---@param name string
----@return beat.OverlaySurface
 function Registry:overlay(name)
-	local surface = resolve(self, "overlays", name)
+	local surface = resolve(self, "overlays", name) --[[@as beat.OverlaySurface?]]
 	if surface == nil then error("no overlay is registered as " .. tostring(name), 2) end
 	return surface
 end

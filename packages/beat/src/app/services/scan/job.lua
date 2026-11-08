@@ -184,7 +184,7 @@ function ScanJob:poll(limit)
 
 	local events = {}
 	while #events < limit and #self.queued > 0 do
-		events[#events + 1] = table.remove(self.queued, 1)
+		events[#events + 1] = table.remove(self.queued, 1) --[[@as table]]
 	end
 
 	local changed = self.changed or #events > 0

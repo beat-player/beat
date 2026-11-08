@@ -135,13 +135,13 @@ end
 --- The id of the shape the bands currently are, for the panel to mark it.
 ---@return string
 function Equalizer:selected()
-	return self.settings.values.equalizerPreset
+	return self.settings.values.equalizerPreset or "flat"
 end
 
 --- The five gains the panel's faders show.
 ---@return number[]
 function Equalizer:gains()
-	return self.settings.values.equalizerGains
+	return self.settings.values.equalizerGains or {}
 end
 
 -- ────────────────────────────────────────────────────────────────

@@ -88,7 +88,9 @@ end
 
 -- Wrapped strings by width, size and text. A toast is drawn every frame while it fades, and its
 -- lines are only worth working out once.
-local wrapCache, wrapCached = {}, 0
+---@type table<string, string[]>
+local wrapCache = {}
+local wrapCached = 0
 
 --- The lines a string breaks into to fit `width`: after a space or a path separator, and inside a
 --- word only where the word alone is wider than the line. Wonderland draws the lines it is given
@@ -110,7 +112,9 @@ function measure.wrap(app, value, style, size, width, most)
 	end
 	local function trimmed(line) return (line:gsub(" +$", "")) end
 
-	local lines, line = {}, ""
+	---@type string[]
+	local lines = {}
+	local line = ""
 	for piece in value:gmatch("[^ \\/]*[ \\/]*") do
 		if piece ~= "" then
 			if line == "" or fits(trimmed(line .. piece)) then

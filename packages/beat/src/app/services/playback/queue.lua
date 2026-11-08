@@ -49,9 +49,10 @@ end
 
 ---@return beat.Track[]
 function Queue:upcoming(limit)
+	---@type beat.Track[]
 	local list = {}
 	for at = self.position + 1, #self.order do
-		local track = self.tracks[self.order[at]]
+		local track = self.tracks[self.order[at]] --[[@as beat.Track?]]
 		if track ~= nil then
 			list[#list + 1] = track
 			if limit ~= nil and #list >= limit then break end
