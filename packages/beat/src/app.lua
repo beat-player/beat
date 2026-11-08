@@ -4,20 +4,17 @@ local artwork = require("beat.music.artwork")
 local fs = require("fs")
 
 local shell = require("beat.app.shell")
-local surfaces = require("beat.app.surfaces")
+local Registry = require("beat.app.registry")
+local Plugins = require("beat.app.plugins")
 local ServiceCollection = require("beat.app.service_collection")
 local Signal = require("beat.app.signal")
 
 -- Written by build.lua from assets/icon-256.png, so a compiled binary carries it too.
 local iconData = require("beat.app.icon")
 
--- The app's services, by name: `beat.app.services.<name>`. The order they are made in is worked
--- out from what each one needs, so this is a set -- the order it is written in does nothing.
-local SERVICES = {
-	"settings", "motion", "appearance", "toasts", "scroll",
-	"library", "covers", "collections", "sidebar", "playback", "scan", "search",
-	"equalizer", "lastfm", "system",
-}
+-- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
+-- overlays of one feature; outside plugins are loaded after them, through `opts.plugins`.
+local BUILT_IN = { "core", "library", "collections", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
    playPause = "togglePlay",
@@ -53,6 +50,7 @@ local MEDIA_MESSAGES = {
 ---@field ticker table?
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
+---@field registry beat.Registry # What plugins registered, and what the app asks it for
 ---@field services table<string, table> # The app's services by name: `app.services.search`
 ---@field serviceOrder table[] # Every service, each after everything it needs
 ---@field owners table<string, table> # The service that answers each message type
@@ -66,7 +64,7 @@ local App = wonderland.app("Beat")
 ---@param page beat.Route|beat.PageInstance
 ---@return string
 function App:keyOf(page)
-	local surface = surfaces.page(page.kind)
+	local surface = self.registry:page(page.kind)
 	return surface.key ~= nil and surface.key(page --[[@as beat.PageInstance]]) or page.kind
 end
 
@@ -77,7 +75,7 @@ function App:pageFor(route)
 	---@type beat.PageInstance
 	local page = { kind = route.kind, state = {}}
 	for field, value in pairs(route) do page[field] = value end
-	local surface = surfaces.page(page.kind)
+	local surface = self.registry:page(page.kind)
 	page.state = surface.new ~= nil and surface.new(self, page) or {}
 	return page
 end
@@ -88,7 +86,7 @@ end
 function App:currentPage()
 	local page = self.page
 	if page.state == nil then
-		local surface = surfaces.page(page.kind)
+		local surface = self.registry:page(page.kind)
 		page.state = surface.new ~= nil and surface.new(self, page) or {}
 	end
 	return page
@@ -100,7 +98,7 @@ end
 ---@param params table?
 ---@return beat.OverlayInstance?
 function App:open(name, params)
-	local state = surfaces.overlay(name).new(self, params or {})
+	local state = self.registry:overlay(name).new(self, params or {})
 	if state == nil then return nil end
 	---@type beat.OverlayInstance
 	local overlay = { name = name, state = state}
@@ -117,7 +115,7 @@ function App:close(which)
 			if overlay == which or overlay.name == which then
 				for above = #self.overlays, at, -1 do
 						local closing = table.remove(self.overlays, above)
-						local surface = surfaces.overlay(closing.name)
+						local surface = self.registry:overlay(closing.name)
 						if surface.close ~= nil then surface.close(self, closing) end
 					end
 				self:refresh()
@@ -146,7 +144,7 @@ function App:closeTransient()
 	self:closeOverlays()
 	local page = self.page
 	if page ~= nil then
-		local surface = surfaces.page(page.kind)
+		local surface = self.registry:page(page.kind)
 		if surface.leave ~= nil then surface.leave(self, self:currentPage()) end
 	end
 end
@@ -174,7 +172,7 @@ function App:takeMediaKeys(window)
 	end
 end
 
----@param opts { scan: boolean? }?
+---@param opts { scan: boolean?, plugins: table[]? }?
 function App:init(opts)
 	for _, service in ipairs(self.serviceOrder or {}) do
 			if service.close ~= nil then service:close() end
@@ -182,8 +180,10 @@ function App:init(opts)
 	self.queue = {}
 	self.delivering = false
 	self.messages = Signal.new()
+	self.registry = Registry.new(self)
+	Plugins.load(self.registry, BUILT_IN, opts ~= nil and opts.plugins or nil)
 	local collection = ServiceCollection.new()
-	for _, name in ipairs(SERVICES) do collection:add(name, require("beat.app.services." .. name)) end
+	for name, module in pairs(self.registry:serviceModules()) do collection:add(name, module) end
 	-- What services are given besides each other. `emit` sends a message the way a click does;
 	-- it is delivered after the one being handled. `pointer` is where the pointer is in the window,
 	-- and `window` is the one a native dialog is shown over: the two pieces of the shell a service
@@ -204,6 +204,8 @@ function App:init(opts)
 	self.services = services.byName
 	self.serviceOrder = services.order
 	self.owners = services.owners
+	-- From here a plugin that fails can say so in the window rather than only in the log.
+	self.registry:attach(self.services)
 
 	local values = self.services.settings.values
 
@@ -332,39 +334,51 @@ end
 --- one service that answers its type, then the router. A light overlay a message passes over is
 --- closed by it -- a menu goes away when anything else is pressed -- and a dialog stays. `keep` is
 --- a press on an overlay's own panel, which does nothing; `dismiss` is a press beside it, which
---- closes the top one. Not `dispatch`: that is wonderland's, and it is what turns the window's
---- events into messages.
+--- closes the top one. A local function rather than a method: `dispatch` is wonderland's, and it
+--- is what turns the window's events into messages.
+---@param app beat.App
 ---@param message table
-function App:deliver(message)
+local function deliverTo(app, message)
 	local kind = message.type
 	if kind == "keep" then return end
-	if kind == "dismiss" or (kind == "escape" and #self.overlays > 0) then
-		local top = self.overlays[#self.overlays]
-		if top ~= nil then self:close(top) end
+	if kind == "dismiss" or (kind == "escape" and #app.overlays > 0) then
+		local top = app.overlays[#app.overlays]
+		if top ~= nil then app:close(top) end
 		return
 	end
 
-	local at = #self.overlays
+	local at = #app.overlays
 	while at >= 1 do
-			local overlay = self.overlays[at]
-			local surface = surfaces.overlay(overlay.name)
-			if surface.update ~= nil and surface.update(self, overlay, message) then return end
-			if surface.light and self.overlays[at] == overlay then self:close(overlay) end
-			at = math.min(at - 1, #self.overlays)
+			local overlay = app.overlays[at]
+			local surface = app.registry:overlay(overlay.name)
+			if surface.update ~= nil and surface.update(app, overlay, message) then return end
+			if surface.light and app.overlays[at] == overlay then app:close(overlay) end
+			at = math.min(at - 1, #app.overlays)
 		end
 
-	local page = self:currentPage()
-	local surface = surfaces.page(page.kind)
-	if surface.update ~= nil and surface.update(self, page, message) then return end
+	local page = app:currentPage()
+	local surface = app.registry:page(page.kind)
+	if surface.update ~= nil and surface.update(app, page, message) then return end
 
-	local owner = self.owners[kind]
+	local owner = app.owners[kind]
 	if owner ~= nil then
 		owner:update(message)
-		self:refresh()
+		app:refresh()
 		return
 	end
 
-	self:route(message)
+	app:route(message)
+end
+
+--- Takes a message through the interceptors that asked to see its type, then hands it to whatever
+--- it is for, then tells the listeners that it has been delivered. An interceptor that does not
+--- call `continue` stops the message before it reaches anything.
+---@param message table
+function App:deliver(message)
+	local proceed, current = self.registry:intercept(message, self)
+	if not proceed then return end
+	deliverTo(self, current)
+	self.registry:notify(current, self)
 end
 
 --- The router's own messages: where the app is, not what it is about.

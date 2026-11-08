@@ -47,7 +47,7 @@ function albumCard.view(app, props)
 	:hover(sty():w(width):h(height):column():bright(1.08))
 	:onClick(props.onOpen)
 	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
+		return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 	end)
 	:children({
 	div():style(sty():size(width, width)):children({

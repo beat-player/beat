@@ -43,7 +43,7 @@ function playerBar.view(app, props)
 	if album.id ~= 0 then
 		art:onClick({ type = "navigate", page = { kind = "album", id = album.id}})
 		art:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-			return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
+			return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 		end)
 	end
 

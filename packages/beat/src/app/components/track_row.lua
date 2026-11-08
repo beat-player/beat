@@ -75,7 +75,7 @@ function trackRow.view(app, props)
 	:align("center"):radius(theme:radius("sm")):bg(hoverBg))
 	:onClick(onClick)
 	:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "track_menu", id = track.id, x = windowX, y = windowY}
+		return { type = "open", overlay = "menu", menu = "track", id = track.id, x = windowX, y = windowY}
 	end)
 	:children(children)
 end

@@ -12,16 +12,17 @@ local Signal = require("beat.app.signal")
 ---@field sortedAlbums beat.Album[]?
 ---@field sortedFor string?
 ---@field settings beat.SettingsService
+---@field emit fun(message: table) # Sends an event to whoever is listening
 ---@field replaced beat.Signal # Fired with the new library, after the old one is gone
 ---@field changed beat.Signal # Tracks were added or the scan finished
 local LibraryService = {}
 LibraryService.__index = LibraryService
-LibraryService.needs = { "settings", "options" }
+LibraryService.needs = { "settings", "options", "emit" }
 
 --- The cache from the last complete scan is loaded here, before anything is scanned again, so a
 --- launch draws songs instead of the first-scan page. A scan is only started when there is
 --- nothing to draw, which is what `App:init` used to decide.
----@param deps { settings: beat.SettingsService, options: { scan: boolean? }? }
+---@param deps { settings: beat.SettingsService, options: { scan: boolean? }?, emit: fun(message: table) }
 ---@return beat.LibraryService
 function LibraryService.new(deps)
 	local self = setmetatable({
@@ -29,6 +30,7 @@ function LibraryService.new(deps)
 		sortedAlbums = nil,
 		sortedFor = nil,
 		settings = deps.settings,
+		emit = deps.emit,
 		replaced = Signal.new(),
 		changed = Signal.new(),
 	}, LibraryService)
@@ -53,6 +55,7 @@ function LibraryService:replace(root)
 	self.current = Library.new(root)
 	dropSorted(self)
 	self.replaced:fire(self.current)
+	self.emit({ type = "libraryReplaced"})
 end
 
 --- A track the scan read. The caller guards the call, because one unreadable file must not stop

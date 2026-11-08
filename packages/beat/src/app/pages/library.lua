@@ -172,7 +172,7 @@ function libraryPage.view(app, page, window)
 				:radius(theme:radius("sm")):bg(theme:color("hover")))
 				:onClick({ type = "navigate", page = { kind = "album", id = album.id}})
 				:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-					return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
+					return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 				end)
 				:children({
 				cover.view(app, { album = album, size = theme:px(48), radius = theme:radius("sm") }),

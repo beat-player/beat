@@ -13,6 +13,7 @@ local Signal = require("beat.app.signal")
 local Collections = {}
 Collections.__index = Collections
 Collections.needs = { "library", "toasts" }
+Collections.handles = { "deletePlaylist" }
 
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
@@ -57,6 +58,15 @@ function Collections:deletePlaylist(playlistId)
 	self.taxonomy:removePlaylist(playlistId)
 	self:save()
 	self.toasts:show("Playlist deleted · " .. playlist.name)
+end
+
+--- The playlist menu's one entry arrives as a message rather than a call, because the menu is a
+--- list of actions now. The overlay that sent it is light and closes as the message passes.
+---@param message table
+function Collections:update(message)
+	if message.type == "deletePlaylist" then
+		self:deletePlaylist(message.id)
+	end
 end
 
 --- The tracks a playlist holds, in library order. Built from the library showing: a path that is

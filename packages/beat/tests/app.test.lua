@@ -433,6 +433,40 @@ test.it("records a listen when playback starts a track", function()
 	App.services.playback.player:close()
 end)
 
+test.it("starts an album from its menu even while it is the one playing", function()
+	App:init({ scan = false})
+	local library = fixture()
+	App.services.library.current = library
+	App.page = { kind = "home"}
+	local album = library.albums[1]
+	local player = App.services.playback.player
+	local playing, closes = false, 0
+	player.player = {
+	isPlaying = function() return playing end,
+	play = function() playing = true end,
+	pause = function() playing = false end,
+	stop = function() playing = false end,
+	position = function() return 0 end,
+	enqueue = function() end,
+	seek = function() end,
+	setVolume = function() end,
+	update = function() end,
+	close = function() closes = closes + 1 end,
+	}
+	player:playTracks(album.tracks, 2)
+	local before = closes
+
+	local play
+	for _, action in ipairs(App.registry:actions("album", { album = album})) do
+		if action.title == "Play album" then play = action.message end
+	end
+	App:act(assert(play))
+	test.truthy(player:isPlaying(), "the menu's play does not pause the album that is playing")
+	test.equal(closes, before + 1, "it starts it again")
+	test.equal(player:current().id, album.tracks[1].id, "from its first track")
+	player:close()
+end)
+
 test.it("plays, pauses, stops and skips from the media keys", function()
 	App:init({ scan = false})
 	local library = fixture()
@@ -505,6 +539,7 @@ test.it("carries on after a restart from the track and the place it was left at"
 	library = App.services.library,
 	collections = App.services.collections,
 	toasts = App.services.toasts,
+	emit = function() end,
 	})
 	test.equal(again:current().path, tracks[2].path, "the same track is current")
 	test.falsy(again.player:isPlaying(), "it comes back paused")
@@ -552,11 +587,11 @@ test.it("deletes a playlist from its row menu", function()
 	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Temporary", false))
-	App:act({ type = "open", overlay = "playlist_menu", id = playlist.id, x = 20, y = 20})
-	test.truthy(App:overlay("playlist_menu") ~= nil, "the row opens a playlist menu")
+	App:act({ type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = 20, y = 20})
+	test.truthy(App:overlay("menu") ~= nil, "the row opens a playlist menu")
 	App:act({ type = "deletePlaylist", id = playlist.id})
 	test.equal(App.services.collections.taxonomy:playlist(playlist.id), nil)
-	test.equal(App:overlay("playlist_menu"), nil, "deleting closes the menu")
+	test.equal(App:overlay("menu"), nil, "deleting closes the menu")
 end)
 
 test.it("confirms deleting a tag only when it has been applied", function()
@@ -1389,17 +1424,17 @@ test.it("opens an album context menu and dispatches its actions", function()
 	local album = App.services.library.current.albums[1]
 	local queued
 
-	App:act({ type = "open", overlay = "album_menu", id = album.id, x = 40, y = 50})
-	test.truthy(App:overlay("album_menu"), "the right click opened a menu")
-	test.equal(App:overlay("album_menu").state.id, album.id)
+	App:act({ type = "open", overlay = "menu", menu = "album", id = album.id, x = 40, y = 50})
+	test.truthy(App:overlay("menu"), "the right click opened a menu")
+	test.equal(App:overlay("menu").state.id, album.id)
 
 	local real = App.services.playback.player
 	App.services.playback.player = {
 	playNext = function(_, tracks) queued = #tracks end,
 	}
-	App:act({ type = "albumMenuNext", id = album.id})
+	App:act({ type = "queueAlbum", id = album.id, next = true})
 	test.equal(queued, #album.tracks, "Play next receives the album's tracks")
-	test.equal(App:overlay("album_menu"), nil, "and the menu closes")
+	test.equal(App:overlay("menu"), nil, "and the menu closes")
 	App.services.playback.player = real
 
 	App.services.playback.player:close()
