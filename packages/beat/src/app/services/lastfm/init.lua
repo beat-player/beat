@@ -6,7 +6,7 @@
 local Scrobbler = require("beat.app.services.lastfm.scrobbler")
 local LastfmClient = require("beat.app.services.lastfm.client")
 
----@class beat.LastfmService
+---@class beat.LastfmService: beat.Service
 ---@field client beat.LastfmClient
 ---@field scrobbler beat.Scrobbler
 ---@field settings beat.SettingsService

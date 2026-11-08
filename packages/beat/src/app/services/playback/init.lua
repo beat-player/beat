@@ -14,7 +14,7 @@ local Spectrum = require("beat.app.services.playback.spectrum")
 local SESSION_DELAY = 1
 local SESSION_STRIDE = 10
 
----@class beat.PlaybackService
+---@class beat.PlaybackService: beat.Service
 ---@field player beat.Player
 ---@field spectrum beat.Spectrum
 ---@field lastListenedTrackId number? # The track a listen has already been counted for
@@ -56,9 +56,13 @@ function Playback.new(deps)
 
 	-- The samples the audio device hands back are what the spectrum is made of; the player has no
 	-- other reason to know the spectrum exists.
-	self.player.onSamples = function(samples, frames, channels)
+	---@param samples ffi.cdata*
+	---@param frames number
+	---@param channels number
+	local function onSamples(samples, frames, channels)
 		self.spectrum:feed(samples, frames, channels)
 	end
+	self.player.onSamples = onSamples
 
 	local values = self.settings.values
 	self.player:setVolume(values.volume)

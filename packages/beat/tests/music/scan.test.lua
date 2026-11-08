@@ -16,6 +16,8 @@ local function tempDir()
 	return dir
 end
 
+---@param from string
+---@param to string
 local function copy(from, to)
 	assert(fs.copy(from, to))
 end
@@ -37,13 +39,13 @@ local function removeTree(root)
 	local iterator = fs.readdir(root)
 	if iterator ~= nil then
 		for entry in iterator do
-				local child = path.join(root, entry.name)
-				if entry.type == "dir" then
-					removeTree(child)
-				else
-					fs.delete(child)
-				end
+			local child = path.join(root, entry.name)
+			if entry.type == "dir" then
+				removeTree(child)
+			else
+				fs.delete(child)
 			end
+		end
 	end
 	fs.rmdir(root)
 end
@@ -52,8 +54,8 @@ end
 ---@param title string
 local function albumNamed(library, title)
 	for _, album in ipairs(library.albums) do
-			if album.title == title then return album end
-		end
+		if album.title == title then return album end
+	end
 	error("no album named " .. title)
 end
 
@@ -83,11 +85,11 @@ test.it("enumerates a tree without inspecting the files", function()
 
 	local covered = false
 	for _, entry in ipairs(entries) do
-			if entry.path == path.join(first, "01 tone.wav") then
-				test.equal(entry.cover, path.join(first, "cover.png"))
-				covered = true
-			end
+		if entry.path == path.join(first, "01 tone.wav") then
+			test.equal(entry.cover, path.join(first, "cover.png"))
+			covered = true
 		end
+	end
 	test.truthy(covered, "the folder cover is carried in the manifest")
 
 	removeTree(root)
@@ -115,7 +117,7 @@ test.it("scans folders, groups albums, reads the cover beside them", function()
 	fs.write(path.join(root, "notes.txt"), "not music")
 
 	local scanner = scanAll(root)
-	local library = scanner.library
+	local library = assert(scanner.library)
 
 	test.equal(#library.tracks, 4, "four playable files")
 	test.equal(#library.albums, 3, "the tagged file is its own album")
@@ -179,7 +181,8 @@ test.it("reports a corrupt file and keeps scanning", function()
 	copy(TONE, path.join(root, "good.wav"))
 
 	local scanner = scanAll(root)
-	test.equal(#scanner.library.tracks, 1)
+	local library = assert(scanner.library)
+	test.equal(#library.tracks, 1)
 	test.equal(scanner.skipped, 1)
 	test.equal(#scanner.errors, 1)
 	test.includes(scanner.errors[1].path, "broken.flac")
@@ -187,20 +190,23 @@ test.it("reports a corrupt file and keeps scanning", function()
 	removeTree(root)
 end)
 
+---@param root string
+---@param prefix string?
+---@param into string[]?
 local function listing(root, prefix, into)
-	prefix = prefix or ""
-	into = into or {}
+	local base = prefix or ""
+	local collected = into or {}
 	local iterator = fs.readdir(root)
-	if iterator == nil then return into end
+	if iterator == nil then return collected end
 	for entry in iterator do
-			local name = prefix .. entry.name
-			if entry.type == "dir" then
-				listing(path.join(root, entry.name), name .. "/", into)
-			else
-				into[#into + 1] = name
-			end
+		local name = base .. entry.name
+		if entry.type == "dir" then
+			listing(path.join(root, entry.name), name .. "/", collected)
+		else
+			collected[#collected + 1] = name
 		end
-	return into
+	end
+	return collected
 end
 
 test.it("writes nothing into the library it scans", function()
@@ -229,7 +235,7 @@ test.it("searches titles, albums and artists", function()
 	assert(fs.isdir(dir))
 	copy(TONE, path.join(dir, "01 Night Drive.wav"))
 
-	local library = scanAll(root).library
+	local library = assert(scanAll(root).library)
 	local albums, _, tracks = library:search("night")
 
 	test.equal(#albums, 1)

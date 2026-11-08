@@ -42,26 +42,26 @@ ScanJob.__index = ScanJob
 ---@return beat.ScanJob
 function ScanJob.new(root, output, cancelFile)
 	return setmetatable({
-	root = root,
-	output = output,
-	cancelFile = cancelFile,
-	offset = 0,
-	buffer = "",
-	queued = {},
-	latest = {
-	phase = "enumerate",
-	files = 0,
-	inspected = 0,
-	tracks = 0,
-	skipped = 0,
-	errors = {},
-	current = nil,
-	},
-	done = false,
-	cancelled = false,
-	error = nil,
-	changed = false,
-	decodeErrors = 0,
+		root = root,
+		output = output,
+		cancelFile = cancelFile,
+		offset = 0,
+		buffer = "",
+		queued = {},
+		latest = {
+			phase = "enumerate",
+			files = 0,
+			inspected = 0,
+			tracks = 0,
+			skipped = 0,
+			errors = {},
+			current = nil,
+		},
+		done = false,
+		cancelled = false,
+		error = nil,
+		changed = false,
+		decodeErrors = 0,
 	}, ScanJob)
 end
 
@@ -196,13 +196,13 @@ end
 ---@return beat.ScanProgress
 function ScanJob:progress()
 	return self.latest or {
-	phase = "enumerate",
-	files = 0,
-	inspected = 0,
-	tracks = 0,
-	skipped = 0,
-	errors = {},
-	current = nil,
+		phase = "enumerate",
+		files = 0,
+		inspected = 0,
+		tracks = 0,
+		skipped = 0,
+		errors = {},
+		current = nil,
 	}
 end
 

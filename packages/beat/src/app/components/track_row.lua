@@ -46,16 +46,16 @@ function trackRow.view(app, props)
 	local infoWidth = math.max(theme:px(100),
 	width - (albumColumn and theme:px(324) or theme:px(122)))
 	local info = {
-	text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium")
-	:fg(titleColour):ellipsis()),
+		text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium")
+		:fg(titleColour):ellipsis()),
 	}
 	if not props.titleOnly then
 		info[#info + 1] = text(track.artist):style(theme:s():w(infoWidth):text(theme:type("sm"))
 		:fg(muted):ellipsis())
 	end
 	local children = {
-	div():style(sty():w(24):align("center")):children(marker),
-	div():style(sty():w(infoWidth):h(48):column():justify("center"):gap(1)):children(info),
+		div():style(sty():w(24):align("center")):children(marker),
+		div():style(sty():w(infoWidth):h(48):column():justify("center"):gap(1)):children(info),
 	}
 
 	if albumColumn then

@@ -44,6 +44,7 @@ else
 end
 
 local file = assert(io.open(output, "wb"))
+---@param value beat.Message
 local function emit(value)
 	file:write(json.encode(value), "\n")
 	file:flush()
@@ -62,6 +63,7 @@ local function sendable(value)
 end
 
 --- A name that can be shown and sent, with every byte that kept it from being UTF-8 replaced.
+---@overload fun(value: string): string
 ---@param value string?
 ---@return string?
 local function printable(value)
@@ -74,8 +76,8 @@ end
 local function printableFailures(failures)
 	local out = {}
 	for at, failure in ipairs(failures) do
-			out[at] = { path = printable(failure.path), message = printable(failure.message)}
-		end
+		out[at] = { path = printable(failure.path), message = printable(failure.message)}
+	end
 	return out
 end
 
@@ -107,7 +109,9 @@ local MAX_DIRECTORY_UNIT = 64
 ---@param count number
 ---@return beat.ScanEntry[][]
 local function shard(entries, count)
+	---@type table<string, beat.ScanEntry[]>
 	local byDir = {}
+	---@type string[]
 	local dirs = {}
 
 	for _, entry in ipairs(entries) do
@@ -120,6 +124,7 @@ local function shard(entries, count)
 		list[#list + 1] = entry
 	end
 
+	---@type beat.ScanEntry[][]
 	local units = {}
 	for _, dir in ipairs(dirs) do
 		local list = byDir[dir]
@@ -127,6 +132,7 @@ local function shard(entries, count)
 			units[#units + 1] = list
 		else
 			for at = 1, #list, MAX_DIRECTORY_UNIT do
+				---@type beat.ScanEntry[]
 				local chunk = {}
 				for index = at, math.min(#list, at + MAX_DIRECTORY_UNIT - 1) do
 					chunk[#chunk + 1] = list[index]
@@ -138,6 +144,7 @@ local function shard(entries, count)
 
 	table.sort(units, function(a, b) return #a > #b end)
 
+	---@type beat.ScanEntry[][]
 	local shards = {}
 	local loads = {}
 	for at = 1, count do
@@ -286,13 +293,13 @@ local ok, err = pcall(function()
 	local enumSkipped = scanner.skipped
 	local enumErrors = printableFailures(scanner.errors)
 	for _, entry in ipairs(scanner:entries()) do
-			if sendable(entry.path) then
-				entries[#entries + 1] = entry
-			else
-				enumSkipped = enumSkipped + 1
-				enumErrors[#enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8}
-			end
+		if sendable(entry.path) then
+			entries[#entries + 1] = entry
+		else
+			enumSkipped = enumSkipped + 1
+			enumErrors[#enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8}
 		end
+	end
 	emit({ type = "progress", phase = "inspect", files = #entries, inspected = 0, tracks = 0,
 		skipped = enumSkipped, errors = {}, current = nil})
 

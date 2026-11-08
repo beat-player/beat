@@ -15,6 +15,7 @@ local menu = require("beat.app.overlays.menu")
 return {
 	name = "core",
 	version = "1.0.0",
+	---@param beat beat.PluginHandle
 	setup = function(beat)
 		beat.service("settings", settings)
 		beat.service("motion", motion)

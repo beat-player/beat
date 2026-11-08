@@ -11,7 +11,7 @@ local ScanJob = require("beat.app.services.scan.job")
 ---@field skipped number
 ---@field at number
 
----@class beat.ScanService
+---@class beat.ScanService: beat.Service
 ---@field job beat.ScanJob? # The worker reading the folder, while there is one
 ---@field pick beat.FolderPick? # The system folder dialog, while it is open
 ---@field islandOpen boolean # Whether the reading island was left showing

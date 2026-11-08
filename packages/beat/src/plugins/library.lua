@@ -19,6 +19,7 @@ return {
 	name = "library",
 	version = "1.0.0",
 	requires = { core = "^1.0.0" },
+	---@param beat beat.PluginHandle
 	setup = function(beat)
 		beat.service("library", library)
 		beat.service("covers", covers)

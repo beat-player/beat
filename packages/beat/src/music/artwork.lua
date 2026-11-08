@@ -53,48 +53,48 @@ function artwork.fit(source, maxSide)
 		-- the row after the crop from wherever the previous row left off. Each row is copied
 		-- from its own start instead.
 		for row = 0, side - 1 do
-				ffi.copy(into + row * side * 4, from + ((top + row) * source.width + left) * 4, side * 4)
-			end
+			ffi.copy(into + row * side * 4, from + ((top + row) * source.width + left) * 4, side * 4)
+		end
 		return result
 	end
 
 	for y = 0, target - 1 do
-			local y0 = top + math.floor(y * side / target)
-			local y1 = top + math.floor((y + 1) * side / target)
-			if y1 <= y0 then y1 = y0 + 1 end
+		local y0 = top + math.floor(y * side / target)
+		local y1 = top + math.floor((y + 1) * side / target)
+		if y1 <= y0 then y1 = y0 + 1 end
 
-			for x = 0, target - 1 do
-					local x0 = left + math.floor(x * side / target)
-					local x1 = left + math.floor((x + 1) * side / target)
-					if x1 <= x0 then x1 = x0 + 1 end
+		for x = 0, target - 1 do
+			local x0 = left + math.floor(x * side / target)
+			local x1 = left + math.floor((x + 1) * side / target)
+			if x1 <= x0 then x1 = x0 + 1 end
 
-					local r, g, b, a = 0, 0, 0, 0
-					local count = 0
-					-- A 3000-pixel cover down to a 160-pixel card would average hundreds of source
-					-- pixels per destination pixel in Lua. Sixteen samples per cell is plenty once
-					-- the texture is sampled linearly, and it keeps a cover from stalling a frame.
-					local stepX = math.max(1, math.floor((x1 - x0) / 4))
-					local stepY = math.max(1, math.floor((y1 - y0) / 4))
+			local r, g, b, a = 0, 0, 0, 0
+			local count = 0
+			-- A 3000-pixel cover down to a 160-pixel card would average hundreds of source
+			-- pixels per destination pixel in Lua. Sixteen samples per cell is plenty once
+			-- the texture is sampled linearly, and it keeps a cover from stalling a frame.
+			local stepX = math.max(1, math.floor((x1 - x0) / 4))
+			local stepY = math.max(1, math.floor((y1 - y0) / 4))
 
-					for sy = y0, y1 - 1, stepY do
-							local row = sy * source.width
-							for sx = x0, x1 - 1, stepX do
-									local at = (row + sx) * channels
-									r = r + from[at]
-									g = g + from[at + 1]
-									b = b + from[at + 2]
-									a = a + (channels >= 4 and from[at + 3] or 255)
-									count = count + 1
-								end
-						end
-
-					local at = (y * target + x) * 4
-					into[at] = math.floor(r / count + 0.5)
-					into[at + 1] = math.floor(g / count + 0.5)
-					into[at + 2] = math.floor(b / count + 0.5)
-					into[at + 3] = math.floor(a / count + 0.5)
+			for sy = y0, y1 - 1, stepY do
+				local row = sy * source.width
+				for sx = x0, x1 - 1, stepX do
+					local at = (row + sx) * channels
+					r = r + from[at]
+					g = g + from[at + 1]
+					b = b + from[at + 2]
+					a = a + (channels >= 4 and from[at + 3] or 255)
+					count = count + 1
 				end
+			end
+
+			local at = (y * target + x) * 4
+			into[at] = math.floor(r / count + 0.5)
+			into[at + 1] = math.floor(g / count + 0.5)
+			into[at + 2] = math.floor(b / count + 0.5)
+			into[at + 3] = math.floor(a / count + 0.5)
 		end
+	end
 
 	return result
 end
@@ -111,14 +111,14 @@ function artwork.dominant(source)
 	local r, g, b, count = 0, 0, 0, 0
 
 	for y = 0, source.height - 1, step do
-			for x = 0, source.width - 1, step do
-					local at = (y * source.width + x) * source.channels
-					r = r + pixels[at]
-					g = g + pixels[at + 1]
-					b = b + pixels[at + 2]
-					count = count + 1
-				end
+		for x = 0, source.width - 1, step do
+			local at = (y * source.width + x) * source.channels
+			r = r + pixels[at]
+			g = g + pixels[at + 1]
+			b = b + pixels[at + 2]
+			count = count + 1
 		end
+	end
 
 	if count == 0 then return 0.2, 0.2, 0.2 end
 	return (r / count) / 255, (g / count) / 255, (b / count) / 255

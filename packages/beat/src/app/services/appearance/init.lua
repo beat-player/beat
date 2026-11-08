@@ -13,7 +13,9 @@ local time = wonderland.time
 
 local FADE_TIME = 0.22
 
----@class beat.AppearanceService
+---@class beat.AppearanceService: beat.Service
+---@field settings beat.SettingsService
+---@field motion beat.MotionService
 ---@field theme beat.Theme
 ---@field fade { start: number }?
 local Appearance = {}

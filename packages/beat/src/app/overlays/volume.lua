@@ -15,7 +15,7 @@ local div, sty = wonderland.div, wonderland.sty
 ---@class beat.VolumeState
 ---@field anchor beat.VolumeAnchor?
 
----@type beat.OverlaySurface
+---@class beat.VolumeOverlay: beat.OverlaySurface
 local volume = { light = true, anchored = true}
 
 function volume.new()
@@ -23,6 +23,9 @@ function volume.new()
 	return {}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.VolumeState>
+---@param message beat.Message
 function volume.update(app, overlay, message)
 	local kind = message.type
 	if kind == "toggleVolume" then
@@ -42,11 +45,11 @@ function volume.update(app, overlay, message)
 end
 
 ---@param app beat.App
----@param overlay beat.OverlayInstance
+---@param overlay beat.OverlayInstance<beat.VolumeState>
 ---@param _window wonderland.RenderWindow
 ---@return wonderland.Element?
 function volume.view(app, overlay, _window)
-	local state = overlay.state --[[@as beat.VolumeState]]
+	local state = overlay.state
 	local opts = state.anchor
 	if opts == nil then return nil end
 	local theme = app.services.appearance.theme
@@ -63,18 +66,18 @@ function volume.view(app, overlay, _window)
 	:border(theme:px(1), theme:color("border")))
 	:onClick({ type = "keep"})
 	:children({
-	iconButton.view(app, { name = muted and "mute" or "volume", size = muteSize, onClick = { type = "mute"} }),
-	slider.view(app, {
-	width = sliderWidth,
-	value = muted and 0 or app.services.settings.values.volume,
-	min = 0,
-	max = 1,
-	onchange = function(value) return { type = "volume", value = value} end,
-	trackColour = theme:color("text", 0.12),
-	fillColour = theme:color("muted"),
-	thumbColour = theme:color("text"),
-	thumbSize = theme:px(12),
-	}),
+		iconButton.view(app, { name = muted and "mute" or "volume", size = muteSize, onClick = { type = "mute"} }),
+		slider.view(app, {
+			width = sliderWidth,
+			value = muted and 0 or app.services.settings.values.volume,
+			min = 0,
+			max = 1,
+			onchange = function(value) return { type = "volume", value = value} end,
+			trackColour = theme:color("text", 0.12),
+			fillColour = theme:color("muted"),
+			thumbColour = theme:color("text"),
+			thumbSize = theme:px(12),
+		}),
 	})
 end
 

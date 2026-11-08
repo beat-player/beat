@@ -39,10 +39,10 @@ function slider.view(app, props)
 
 	local sliderElement = div():style(sty():w(width):h(height):row():align("center"))
 	:slider({
-	value = props.value,
-	min = min,
-	max = max,
-	onchange = props.onchange,
+		value = props.value,
+		min = min,
+		max = max,
+		onchange = props.onchange,
 	})
 	-- The nub is a styled box, not a canvas polygon: the renderer antialiases rounded
 	-- corners, while a small fan of triangles reads as a pixelated circle.

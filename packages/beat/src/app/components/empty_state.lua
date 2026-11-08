@@ -54,10 +54,10 @@ function emptyState.view(app, props)
 
 	if actionLabel ~= nil and action ~= nil then
 		children[#children + 1] = button.view(app, {
-		label = actionLabel,
-		onClick = action,
-		primary = true,
-		width = theme:px(160),
+			label = actionLabel,
+			onClick = action,
+			primary = true,
+			width = theme:px(160),
 		})
 	end
 

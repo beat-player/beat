@@ -26,14 +26,18 @@ function playlists.new()
 end
 
 --- Leaving puts an edited tag's pill back: the edit is about this page while it is looked at.
+---@param page beat.PageInstance<beat.PlaylistsState>
 function playlists.leave(_, page)
-	local state = page.state --[[@as beat.PlaylistsState]]
+	local state = page.state
 	state.tagEditId = nil
 	state.hoverTagId = nil
 end
 
+---@param app beat.App
+---@param page beat.PageInstance<beat.PlaylistsState>
+---@param message beat.Message
 function playlists.update(app, page, message)
-	local state = page.state --[[@as beat.PlaylistsState]]
+	local state = page.state
 	local kind = message.type
 	if kind == "editTag" then
 		local tag = app.services.collections.taxonomy.tagById[tonumber(message.id)]
@@ -100,32 +104,31 @@ function playlists.update(app, page, message)
 end
 
 ---@param app beat.App
----@param page beat.PageInstance
+---@param page beat.PageInstance<beat.PlaylistsState>
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function playlists.view(app, page, window)
-	local state = page.state --[[@as beat.PlaylistsState]]
+	local state = page.state
 	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, window.width)
 	local taxonomy = app.services.collections.taxonomy
 	local content = metrics.contentWidth(app, window.width)
 	local tags = taxonomy:visibleTags()
-	---@cast tags beat.Tag[]
 
 	local headerActions = {
-	button.view(app, {
-	label = "New playlist",
-	onClick = { type = "open", overlay = "playlist_dialog", smart = false},
-	primary = true,
-	height = theme:px(30),
-	width = theme:px(128),
-	}),
-	button.view(app, {
-	label = "New tag",
-	onClick = { type = "open", overlay = "tag_dialog"},
-	height = theme:px(30),
-	width = theme:px(92),
-	}),
+		button.view(app, {
+			label = "New playlist",
+			onClick = { type = "open", overlay = "playlist_dialog", smart = false},
+			primary = true,
+			height = theme:px(30),
+			width = theme:px(128),
+		}),
+		button.view(app, {
+			label = "New tag",
+			onClick = { type = "open", overlay = "tag_dialog"},
+			height = theme:px(30),
+			width = theme:px(92),
+		}),
 	}
 	local headerHeight = theme:px(mobile and 92 or 44)
 	local actionRow = div():style(sty():row():wrel(1.0):h(theme:px(30)):gap(theme:px(8))
@@ -135,15 +138,15 @@ function playlists.view(app, page, window)
 	local header
 	if mobile then
 		header = div():style(sty():column():wrel(1.0):h(headerHeight):gap(theme:px(10))):children({
-		title,
-		actionRow,
+			title,
+			actionRow,
 		})
 	else
 		header = div():style(sty():row():wrel(1.0):h(headerHeight):gap(theme:px(8))
 		:align("center"):justify("space-between")):children({
-		title,
-		div():style(sty():row():w(theme:px(230)):h(theme:px(30)):gap(theme:px(8))
-		:align("center"):justify("end")):children(headerActions),
+			title,
+			div():style(sty():row():w(theme:px(230)):h(theme:px(30)):gap(theme:px(8))
+			:align("center"):justify("end")):children(headerActions),
 		})
 	end
 
@@ -165,21 +168,21 @@ function playlists.view(app, page, window)
 			return { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY}
 		end)
 		:children({
-		PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }),
-		div():style(sty():column():w(infoWidth):hrel(1.0):justify("center")
-		:gap(theme:px(4))):children({
-		-- The type marks sit against the end of the name rather than at the far edge of
-		-- the row. The estimate only caps an unusually long name; real names measure short.
-		div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({
-		text(playlist.name):style(theme:s():w(nameWidth)
-		:text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-		PlaylistArt.icons(app, { playlist = playlist }),
-		}),
-		text(format.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(
-		theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs"))
-		:fg(theme:color("muted")):ellipsis()),
-		}),
-		iconButton.view(app, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id} }),
+			PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }),
+			div():style(sty():column():w(infoWidth):hrel(1.0):justify("center")
+			:gap(theme:px(4))):children({
+				-- The type marks sit against the end of the name rather than at the far edge of
+				-- the row. The estimate only caps an unusually long name; real names measure short.
+				div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({
+					text(playlist.name):style(theme:s():w(nameWidth)
+					:text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
+					PlaylistArt.icons(app, { playlist = playlist }),
+				}),
+				text(format.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(
+				theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs"))
+				:fg(theme:color("muted")):ellipsis()),
+			}),
+			iconButton.view(app, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id} }),
 		})
 	end
 
@@ -200,7 +203,6 @@ function playlists.view(app, page, window)
 	local pillPadLeft = theme:px(10)
 	local pillPadRight = theme:px(6)
 	local gaps = theme:px(12)
-	local pillBorder = theme:px(1)
 	local closeWidth = theme:px(mobile and 28 or 22)
 	local nameSize = theme:type(mobile and "sm" or "base")
 
@@ -213,56 +215,56 @@ function playlists.view(app, page, window)
 	end
 
 	for _, tag in ipairs(tags) do
-			local countText = tostring(tag.count)
-			local countStyle = theme:s():text(theme:type("xs"))
-			local countFallback = math.floor(#countText * theme:type("xs") * 0.7)
-			local countWidth = math.max(theme:px(12),
-			math.ceil(math.max(measure.width(app, countText, countStyle) or 0, countFallback)) + 1)
-			local nameStyle = theme:s():text(nameSize):weight("semibold")
-			local nameFallback = measure.estimate(tag.name, nameSize, 0.54)
-			local nameWidth = math.max(theme:px(16), math.ceil(
-			math.max(measure.width(app, tag.name, nameStyle) or 0, nameFallback)) + 1)
-			-- The row break is manual because Wonderland has no wrap container, but each pill's
-			-- width comes from the same measured runs the text is drawn with.
-			local estimatedWidth = pillPadLeft + pillPadRight + countWidth + nameWidth
-			+closeWidth + gaps
-			estimatedWidth = math.min(content, math.max(theme:px(64), estimatedWidth))
-			nameWidth = math.max(theme:px(16), estimatedWidth - pillPadLeft - pillPadRight
-			-countWidth - closeWidth - gaps)
+		local countText = tostring(tag.count)
+		local countStyle = theme:s():text(theme:type("xs"))
+		local countFallback = math.floor(#countText * theme:type("xs") * 0.7)
+		local countWidth = math.max(theme:px(12),
+		math.ceil(math.max(measure.width(app, countText, countStyle) or 0, countFallback)) + 1)
+		local nameStyle = theme:s():text(nameSize):weight("semibold")
+		local nameFallback = measure.estimate(tag.name, nameSize, 0.54)
+		local nameWidth = math.max(theme:px(16), math.ceil(
+		math.max(measure.width(app, tag.name, nameStyle) or 0, nameFallback)) + 1)
+		-- The row break is manual because Wonderland has no wrap container, but each pill's
+		-- width comes from the same measured runs the text is drawn with.
+		local estimatedWidth = pillPadLeft + pillPadRight + countWidth + nameWidth
+		+closeWidth + gaps
+		estimatedWidth = math.min(content, math.max(theme:px(64), estimatedWidth))
+		nameWidth = math.max(theme:px(16), estimatedWidth - pillPadLeft - pillPadRight
+		-countWidth - closeWidth - gaps)
 
-			local editing = state.tagEditId == tag.id
-			local pill
-			local usedWidth = estimatedWidth
-			if editing then
-				local editWidth = math.min(content, math.max(estimatedWidth, theme:px(190)))
-				usedWidth = editWidth
-				local fieldWidth = math.max(theme:px(80),
-				editWidth - theme:px(20) - theme:px(24) * 2 - theme:px(8))
-				local nameField = field.view(app, {
+		local editing = state.tagEditId == tag.id
+		local pill
+		local usedWidth = estimatedWidth
+		if editing then
+			local editWidth = math.min(content, math.max(estimatedWidth, theme:px(190)))
+			usedWidth = editWidth
+			local fieldWidth = math.max(theme:px(80),
+			editWidth - theme:px(20) - theme:px(24) * 2 - theme:px(8))
+			local nameField = field.view(app, {
 				name = "tagName",
 				value = state.tagEditDraft,
 				placeholder = tag.name,
 				oninput = function(value) return { type = "tagEditDraft", value = value} end,
 				onsubmit = function() return { type = "renameTag"} end,
 				width = fieldWidth,
-				})
-				pill = div():style(sty():row():w(editWidth):h(theme:px(34)):gap(theme:px(4))
-				:pad(0, theme:px(8), 0, theme:px(8)):align("center"):radius(theme:radius("full"))
-				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))):children({
+			})
+			pill = div():style(sty():row():w(editWidth):h(theme:px(34)):gap(theme:px(4))
+			:pad(0, theme:px(8), 0, theme:px(8)):align("center"):radius(theme:radius("full"))
+			:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))):children({
 				nameField,
 				iconButton.view(app, { name = "check", size = theme:px(24), onClick = { type = "renameTag"} }),
 				iconButton.view(app, { name = "close", size = theme:px(22), onClick = { type = "cancelTagEdit"} }),
-				})
-			else
-				pill = div()
-				:style(sty():row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6))
-				:pad(0, pillPadRight, 0, pillPadLeft):align("center"):radius(theme:radius("full"))
-				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border")))
-				:hover(sty():row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6))
-				:pad(0, pillPadRight, 0, pillPadLeft):align("center"):radius(theme:radius("full"))
-				:bg(theme:color("hover")):border(theme:px(1), theme:color("border")))
-				:onMouseMove(function() return { type = "hoverTag", id = tag.id} end)
-				:children({
+			})
+		else
+			pill = div()
+			:style(sty():row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6))
+			:pad(0, pillPadRight, 0, pillPadLeft):align("center"):radius(theme:radius("full"))
+			:bg(theme:color("elevated")):border(theme:px(1), theme:color("border")))
+			:hover(sty():row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6))
+			:pad(0, pillPadRight, 0, pillPadLeft):align("center"):radius(theme:radius("full"))
+			:bg(theme:color("hover")):border(theme:px(1), theme:color("border")))
+			:onMouseMove(function() return { type = "hoverTag", id = tag.id} end)
+			:children({
 				text(countText):style(countStyle:w(countWidth):fg(theme:color("faint")):ellipsis()),
 				text(tag.name):style(nameStyle:w(nameWidth):fg(theme:color("text")):ellipsis())
 				:onClick({ type = "editTag", id = tag.id}),
@@ -271,13 +273,13 @@ function playlists.view(app, page, window)
 				:onClick({ type = "deleteTag", id = tag.id})
 				:children(text("×"):style(theme:s():text(theme:type("lg")):weight("semibold")
 				:fg(theme:color("muted")))),
-				})
-			end
-
-			if lineWidth > 0 and lineWidth + pillGap + usedWidth > content then flushTagLine() end
-			tagLine[#tagLine + 1] = pill
-			lineWidth = lineWidth + (lineWidth > 0 and pillGap or 0) + usedWidth
+			})
 		end
+
+		if lineWidth > 0 and lineWidth + pillGap + usedWidth > content then flushTagLine() end
+		tagLine[#tagLine + 1] = pill
+		lineWidth = lineWidth + (lineWidth > 0 and pillGap or 0) + usedWidth
+	end
 	flushTagLine()
 	if #tagRows == 0 then
 		tagRows[#tagRows + 1] = text("No tags yet. A tag is also a smart playlist."):style(
@@ -294,10 +296,10 @@ function playlists.view(app, page, window)
 	+theme:space(18) * 3 + theme:px(24)
 
 	return div():style(sty():column():wrel(1.0):h(height):gap(theme:space(18))):children({
-	header,
-	div():style(sty():column():wrel(1.0):h(playlistHeight):gap(theme:px(8))):children(rows),
-	section.view(app, { title = "Tags" }),
-	div():style(sty():column():wrel(1.0):h(tagHeight):gap(theme:px(8))):children(tagRows),
+		header,
+		div():style(sty():column():wrel(1.0):h(playlistHeight):gap(theme:px(8))):children(rows),
+		section.view(app, { title = "Tags" }),
+		div():style(sty():column():wrel(1.0):h(tagHeight):gap(theme:px(8))):children(tagRows),
 	})
 end
 

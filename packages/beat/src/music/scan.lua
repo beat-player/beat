@@ -12,33 +12,33 @@ local Library = require("beat.music.library")
 local audio = require("treble.audio")
 
 local AUDIO = {
-flac = true,
-mp3 = true,
-opus = true,
-ogg = true,
-wav = true,
+	flac = true,
+	mp3 = true,
+	opus = true,
+	ogg = true,
+	wav = true,
 }
 
 local IMAGES = {
-jpg = true,
-jpeg = true,
-png = true,
-gif = true,
-bmp = true,
+	jpg = true,
+	jpeg = true,
+	png = true,
+	gif = true,
+	bmp = true,
 }
 
 local COVER_NAMES = {
-cover = true,
-folder = true,
-front = true,
-album = true,
+	cover = true,
+	folder = true,
+	front = true,
+	album = true,
 }
 
 local JUNK = {
-["@eaDir"] = true,
-["#recycle"] = true,
-["System Volume Information"] = true,
-["$RECYCLE.BIN"] = true,
+	["@eaDir"] = true,
+	["#recycle"] = true,
+	["System Volume Information"] = true,
+	["$RECYCLE.BIN"] = true,
 }
 
 ---@class beat.ScanProgress
@@ -76,19 +76,19 @@ function Scanner.new(root, opts)
 	local keepLibrary = opts == nil or opts.library ~= false
 
 	return setmetatable({
-	root = normalized,
-	library = keepLibrary and Library.new(normalized) or nil,
-	phase = "enumerate",
-	files = {},
-	trackCount = 0,
-	dirs = { normalized},
-	dirIndex = 1,
-	fileIndex = 1,
-	dirCovers = {},
-	skipped = 0,
-	errors = {},
-	current = nil,
-	version = 0,
+		root = normalized,
+		library = keepLibrary and Library.new(normalized) or nil,
+		phase = "enumerate",
+		files = {},
+		trackCount = 0,
+		dirs = { normalized},
+		dirIndex = 1,
+		fileIndex = 1,
+		dirCovers = {},
+		skipped = 0,
+		errors = {},
+		current = nil,
+		version = 0,
 	}, Scanner)
 end
 
@@ -139,30 +139,30 @@ local function enumerateOne(self)
 	local entries = {}
 
 	for entry in iterator do
-			entries[#entries + 1] = entry
-		end
+		entries[#entries + 1] = entry
+	end
 
 	for _, entry in ipairs(entries) do
-			local name = entry.name
-			if not isJunk(name) then
-				local kind = entry.type
-				if kind == "unknown" then kind = entryType(dir, name) end
+		local name = entry.name
+		if not isJunk(name) then
+			local kind = entry.type
+			if kind == "unknown" then kind = entryType(dir, name) end
 
-				if kind == "dir" then
-					self.dirs[#self.dirs + 1] = path.join(dir, name)
-				elseif kind == "file" then
-					local ext = extensionOf(name)
-					if ext ~= nil and AUDIO[ext] then
-						self.files[#self.files + 1] = path.join(dir, name)
-					elseif ext ~= nil and IMAGES[ext] then
-						local base = names.stripExtension(name):lower()
-						if COVER_NAMES[base] and cover == nil then
-							cover = path.join(dir, name)
-						end
+			if kind == "dir" then
+				self.dirs[#self.dirs + 1] = path.join(dir, name)
+			elseif kind == "file" then
+				local ext = extensionOf(name)
+				if ext ~= nil and AUDIO[ext] then
+					self.files[#self.files + 1] = path.join(dir, name)
+				elseif ext ~= nil and IMAGES[ext] then
+					local base = names.stripExtension(name):lower()
+					if COVER_NAMES[base] and cover == nil then
+						cover = path.join(dir, name)
 					end
 				end
 			end
 		end
+	end
 
 	if cover ~= nil then self.dirCovers[dir] = cover end
 	self.current = dir
@@ -188,11 +188,11 @@ local function inspectOne(self)
 	local ext = extensionOf(name) or ""
 	local stat = fs.stat(entry)
 	local fileEntry = {
-	path = entry,
-	dir = dir,
-	name = name,
-	ext = ext,
-	modifyTime = stat and stat.modifyTime or nil,
+		path = entry,
+		dir = dir,
+		name = name,
+		ext = ext,
+		modifyTime = stat and stat.modifyTime or nil,
 	}
 
 	local ok, info = pcall(audio.inspect, entry)
@@ -200,8 +200,8 @@ local function inspectOne(self)
 		self.skipped = self.skipped + 1
 		if #self.errors < 100 then
 			self.errors[#self.errors + 1] = {
-			path = entry,
-			message = ok and "not an audio file this library reads" or tostring(info),
+				path = entry,
+				message = ok and "not an audio file this library reads" or tostring(info),
 			}
 		end
 	else
@@ -276,16 +276,16 @@ end
 function Scanner:entries()
 	local entries = {}
 	for _, file in ipairs(self.files) do
-			local dir = path.dirname(file)
-			local name = path.basename(file)
-			entries[#entries + 1] = {
+		local dir = path.dirname(file)
+		local name = path.basename(file)
+		entries[#entries + 1] = {
 			path = file,
 			dir = dir,
 			name = name,
 			ext = extensionOf(name) or "",
 			cover = self.dirCovers[dir],
-			}
-		end
+		}
+	end
 
 	return entries
 end
@@ -293,13 +293,13 @@ end
 ---@return beat.ScanProgress
 function Scanner:progress()
 	return {
-	phase = self.phase,
-	files = #self.files,
-	inspected = math.min(self.fileIndex - 1, #self.files),
-	tracks = self.trackCount,
-	skipped = self.skipped,
-	errors = self.errors,
-	current = self.current,
+		phase = self.phase,
+		files = #self.files,
+		inspected = math.min(self.fileIndex - 1, #self.files),
+		tracks = self.trackCount,
+		skipped = self.skipped,
+		errors = self.errors,
+		current = self.current,
 	}
 end
 

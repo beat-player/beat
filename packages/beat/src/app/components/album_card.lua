@@ -50,19 +50,19 @@ function albumCard.view(app, props)
 		return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 	end)
 	:children({
-	div():style(sty():size(width, width)):children({
-	cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
-	div()
-	:style(sty():size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
-	:offset(width - theme:px(44), width - theme:px(44))
-	:bg(theme:color("accent")):align("center"):justify("center"))
-	:onClick(onPlay)
-	:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(18), colour = theme.accentInk })),
-	}),
-	div():style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2))):children({
-	text(album.title):style(titleStyle),
-	text(album.artist):style(artistStyle),
-	}),
+		div():style(sty():size(width, width)):children({
+			cover.view(app, { album = album, size = width, radius = theme:radius("md"), sheen = true }),
+			div()
+			:style(sty():size(theme:px(36), theme:px(36)):radius(theme:radius("full"))
+			:offset(width - theme:px(44), width - theme:px(44))
+			:bg(theme:color("accent")):align("center"):justify("center"))
+			:onClick(onPlay)
+			:children(icon.view(app, { name = playing and "pause" or "play", size = theme:px(18), colour = theme.accentInk })),
+		}),
+		div():style(sty():column():pad(theme:px(11), 0, 0, 0):gap(theme:px(2))):children({
+			text(album.title):style(titleStyle),
+			text(album.artist):style(artistStyle),
+		}),
 	})
 end
 

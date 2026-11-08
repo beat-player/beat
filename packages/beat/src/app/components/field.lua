@@ -31,10 +31,10 @@ function field.view(app, props)
 	if props.width ~= nil then fieldStyle:w(props.width) else fieldStyle:wrel(1.0) end
 	local input = div():style(fieldStyle)
 	:input({
-	name = props.name,
-	value = props.value,
-	oninput = props.oninput,
-	onsubmit = props.onsubmit,
+		name = props.name,
+		value = props.value,
+		oninput = props.oninput,
+		onsubmit = props.onsubmit,
 	})
 	input:children(text(shown):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(colour):ellipsis()))
 	return input

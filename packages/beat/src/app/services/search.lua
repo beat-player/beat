@@ -9,7 +9,7 @@
 ---@field artists beat.Artist[]
 ---@field tracks beat.Track[]
 
----@class beat.SearchService
+---@class beat.SearchService: beat.Service
 ---@field query string
 ---@field tagFilter table<number, boolean>
 ---@field match "all"|"any"

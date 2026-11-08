@@ -15,6 +15,7 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 local searchAll = {}
 
 --- Two searches of different categories are different pages: they keep their own scroll.
+---@param page beat.PageKey
 function searchAll.key(page)
 	return "searchAll:" .. (page.category or "")
 end
@@ -32,13 +33,13 @@ local function searchTagFilter(app, width)
 	local search = app.services.search
 	local columns = width >= 900 and 6 or (width >= 600 and 4 or 3)
 	local pills = tagPills.view(app, {
-	tags = tags,
-	selected = search.tagFilter,
-	action = function(tag)
-		return { type = "toggleTagFilter", id = tag.id}
-	end,
-	width = width,
-	columns = columns,
+		tags = tags,
+		selected = search.tagFilter,
+		action = function(tag)
+			return { type = "toggleTagFilter", id = tag.id}
+		end,
+		width = width,
+		columns = columns,
 	})
 	if pills == nil then return nil, 0 end
 
@@ -54,22 +55,25 @@ local function searchTagFilter(app, width)
 		:weight("semibold"):fg(theme:color("accent"))):onClick({ type = "clearTagFilter"})
 	end
 	local headerChildren = {
-	text("Filter by tag"):style(theme:s():wrel(1.0):text(theme:type("xs")):weight("bold")
-	:fg(theme:color("muted"))),
-	div():style(sty():row():w(theme:px(120)):gap(theme:px(8)):align("center")
-	:justify("end")):children(headerActions),
+		text("Filter by tag"):style(theme:s():wrel(1.0):text(theme:type("xs")):weight("bold")
+		:fg(theme:color("muted"))),
+		div():style(sty():row():w(theme:px(120)):gap(theme:px(8)):align("center")
+		:justify("end")):children(headerActions),
 	}
 
 	local rows = math.ceil(#tags / columns)
 	local height = theme:px(18) + theme:px(8) + rows * theme:px(28)
 	+math.max(0, rows - 1) * theme:px(8) + theme:px(4)
 	return div():style(sty():column():wrel(1.0):h(height):gap(theme:px(8))):children({
-	div():style(sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")):children(
-	headerChildren),
-	pills,
+		div():style(sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")):children(
+		headerChildren),
+		pills,
 	}), height
 end
 
+---@param app beat.App
+---@param page beat.PageInstance
+---@param window wonderland.RenderWindow
 function searchAll.view(app, page, window)
 	local category = page.category
 	local theme = app.services.appearance.theme
@@ -77,16 +81,16 @@ function searchAll.view(app, page, window)
 	local library = app.services.library.current
 	if library == nil then
 		return emptyState.view(app, {
-		title = "Search your library",
-		copy = "Choose a folder first.",
-		actionLabel = "Choose a folder",
-		action = { type = "chooseFolder"},
+			title = "Search your library",
+			copy = "Choose a folder first.",
+			actionLabel = "Choose a folder",
+			action = { type = "chooseFolder"},
 		})
 	end
 	if search.query == "" then
 		return emptyState.view(app, {
-		title = "Search your library",
-		copy = "Artists, albums and tracks are all one field.",
+			title = "Search your library",
+			copy = "Artists, albums and tracks are all one field.",
 		})
 	end
 
@@ -124,10 +128,10 @@ function searchAll.view(app, page, window)
 	local label = category == "albums" and "All albums" or category == "artists" and "All artists"
 	or "All tracks"
 	local headerChildren = {
-	text(label):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-	text(format.count(count, category == "albums" and "album" or category == "artists" and "artist" or "track")
-	.. " for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("sm"))
-	:fg(theme:color("muted")):ellipsis()),
+		text(label):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
+		text(format.count(count, category == "albums" and "album" or category == "artists" and "artist" or "track")
+		.. " for \"" .. search.query .. "\""):style(theme:s():wrel(1.0):text(theme:type("sm"))
+		:fg(theme:color("muted")):ellipsis()),
 	}
 	if filter ~= nil then headerChildren[#headerChildren + 1] = filter end
 	local header = div():style(sty():column():wrel(1.0):h(headerHeight):gap(theme:px(4))):children(headerChildren)
@@ -138,64 +142,64 @@ function searchAll.view(app, page, window)
 	if category == "albums" then
 		local row = {}
 		for at = first, last do
-				local album = albums[at]
-				if album ~= nil then
-					row[#row + 1] = albumCard.view(app, {
+			local album = albums[at]
+			if album ~= nil then
+				row[#row + 1] = albumCard.view(app, {
 					album = album,
 					width = cardWidth,
 					onOpen = { type = "navigate", page = { kind = "album", id = album.id}},
 					onPlay = { type = "playAlbum", id = album.id},
-					})
-				end
-				if #row == columns or at == last then
-					list[#list + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)
-					row = {}
-				end
+				})
 			end
+			if #row == columns or at == last then
+				list[#list + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)
+				row = {}
+			end
+		end
 	elseif category == "artists" then
 		for at = first, last do
-				local artist = artists[at]
-				if artist ~= nil then
-					list[#list + 1] = div()
-					:style(sty():row():wrel(1.0):h(rowHeight):gap(theme:px(12)):align("center")
-					:radius(theme:radius("sm")))
-					:hover(sty():row():wrel(1.0):h(rowHeight):gap(theme:px(12)):align("center")
-					:radius(theme:radius("sm")):bg(theme:color("hover")))
-					:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
-					:children({
+			local artist = artists[at]
+			if artist ~= nil then
+				list[#list + 1] = div()
+				:style(sty():row():wrel(1.0):h(rowHeight):gap(theme:px(12)):align("center")
+				:radius(theme:radius("sm")))
+				:hover(sty():row():wrel(1.0):h(rowHeight):gap(theme:px(12)):align("center")
+				:radius(theme:radius("sm")):bg(theme:color("hover")))
+				:onClick({ type = "navigate", page = { kind = "artist", id = artist.id}})
+				:children({
 					artist.albums[1] ~= nil and cover.view(app, { album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") })
 					or div():style(sty():size(theme:px(44), theme:px(44))
 					:radius(theme:radius("full")):bg(theme:color("elevated"))),
 					text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold")
 					:fg(theme:color("text")):ellipsis()),
-					})
-				end
+				})
 			end
+		end
 	else
 		for at = first, last do
-				local track = tracks[at]
-				if track ~= nil then
-					list[#list + 1] = div():style(sty():wrel(1.0):h(rowHeight)):children({
+			local track = tracks[at]
+			if track ~= nil then
+				list[#list + 1] = div():style(sty():wrel(1.0):h(rowHeight)):children({
 					trackRow.view(app, {
-					track = track,
-					index = at,
-					current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
-					playing = app.services.playback.player:isPlaying(),
-					onClick = { type = "playTrack", trackId = track.id},
-					width = width,
-					showAlbum = true,
+						track = track,
+						index = at,
+						current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
+						playing = app.services.playback.player:isPlaying(),
+						onClick = { type = "playTrack", trackId = track.id},
+						width = width,
+						showAlbum = true,
 					}),
-					})
-				end
+				})
 			end
+		end
 	end
 
 	local contentHeight = listStart + totalRows * rowHeight
 	app.services.scroll:setLimit(app:pageKey(),
 	math.max(0, contentHeight - metrics.viewportHeight(app, window.width, window.height)))
 	return div():style(sty():column():wrel(1.0):h(contentHeight):gap(gap)):children({
-	header,
-	div():style(sty():column():wrel(1.0):h(totalRows * rowHeight)):children(list),
+		header,
+		div():style(sty():column():wrel(1.0):h(totalRows * rowHeight)):children(list),
 	})
 end
 

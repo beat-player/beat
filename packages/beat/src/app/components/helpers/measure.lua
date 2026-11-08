@@ -70,7 +70,7 @@ function measure.run(app, value, style)
 	local line = wonderland.text(value):style(style)
 	local ok = pcall(layout.textPlugin.measure, layout.textPlugin, line)
 	if not ok or line.run == 0 then return nil end
-	return wonderlandElement.runs[line.run]
+	return wonderlandElement.runOf(line)
 end
 
 --- The width Wonderland measures for a line. A style's automatic width means "fill the room I am
@@ -112,40 +112,40 @@ function measure.wrap(app, value, style, size, width, most)
 
 	local lines, line = {}, ""
 	for piece in value:gmatch("[^ \\/]*[ \\/]*") do
-			if piece ~= "" then
-				if line == "" or fits(trimmed(line .. piece)) then
-					line = line .. piece
-				else
-					lines[#lines + 1] = trimmed(line)
-					line = piece
+		if piece ~= "" then
+			if line == "" or fits(trimmed(line .. piece)) then
+				line = line .. piece
+			else
+				lines[#lines + 1] = trimmed(line)
+				line = piece
+			end
+			-- A word wider than a whole line is cut where it stops fitting.
+			while not fits(trimmed(line)) do
+				local at, cut = 1, nil
+				while at <= #line do
+					local _, nextAt = utf8.decode(line, at)
+					if cut ~= nil and not fits(line:sub(1, nextAt - 1)) then break end
+					cut, at = nextAt - 1, nextAt
 				end
-				-- A word wider than a whole line is cut where it stops fitting.
-				while not fits(trimmed(line)) do
-						local at, cut = 1, nil
-						while at <= #line do
-								local _, nextAt = utf8.decode(line, at)
-								if cut ~= nil and not fits(line:sub(1, nextAt - 1)) then break end
-								cut, at = nextAt - 1, nextAt
-							end
-						lines[#lines + 1] = line:sub(1, cut)
-						line = line:sub(cut + 1)
-					end
+				lines[#lines + 1] = line:sub(1, cut)
+				line = line:sub(cut + 1)
 			end
 		end
+	end
 	if trimmed(line) ~= "" then lines[#lines + 1] = trimmed(line) end
 
 	if #lines > most then
 		for at = #lines, most + 1, -1 do lines[at] = nil end
 		local last = lines[most]
 		while #last > 0 and not fits(last .. "…") do
-				local at, before = 1, 0
-				while at <= #last do
-						before = at
-						local _, nextAt = utf8.decode(last, at)
-						at = nextAt
-					end
-				last = last:sub(1, before - 1)
+			local at, before = 1, 0
+			while at <= #last do
+				before = at
+				local _, nextAt = utf8.decode(last, at)
+				at = nextAt
 			end
+			last = last:sub(1, before - 1)
+		end
 		lines[most] = trimmed(last) .. "…"
 	end
 

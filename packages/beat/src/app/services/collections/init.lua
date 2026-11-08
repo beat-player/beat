@@ -5,7 +5,7 @@
 local TagStore = require("beat.app.services.collections.store")
 local Signal = require("beat.app.signal")
 
----@class beat.CollectionsService
+---@class beat.CollectionsService: beat.Service
 ---@field taxonomy beat.Taxonomy
 ---@field library beat.LibraryService
 ---@field toasts beat.ToastsService

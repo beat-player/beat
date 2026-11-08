@@ -18,6 +18,7 @@ return {
 	name = "collections",
 	version = "1.0.0",
 	requires = { core = "^1.0.0", library = "^1.0.0" },
+	---@param beat beat.PluginHandle
 	setup = function(beat)
 		beat.service("collections", collections)
 		beat.service("sidebar", sidebar)

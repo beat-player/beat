@@ -6,6 +6,12 @@ local fs = require("fs")
 local paths = require("beat.paths")
 local Playback = require("beat.app.services.playback")
 local Queue = require("beat.app.services.playback.queue")
+local Library = require("beat.music.library")
+local LibraryService = require("beat.app.services.library")
+local Taxonomy = require("beat.app.services.collections.taxonomy")
+local Toasts = require("beat.app.services.toasts")
+local Signal = require("beat.app.signal")
+local treble = require("treble")
 
 -- A session restored while a test runs must not read or write the user's own.
 local configDirectory = os.tmpname() .. "-beat-playback-events"
@@ -20,6 +26,10 @@ test.afterAll(function()
 	fs.rmdir(configDirectory)
 end)
 
+---@param id number
+---@param albumId number
+---@param path string
+---@return beat.Track
 local function track(id, albumId, path)
 	return {
 		id = id,
@@ -28,85 +38,161 @@ local function track(id, albumId, path)
 		title = "Track " .. id,
 		artist = "Artist",
 		album = "Album",
+		albumArtist = "Artist",
+		artistId = 1,
+		disc = 1,
+		number = 1,
 		duration = 120,
+		format = "wav",
+		sampleRate = 44100,
+		channels = 2,
+		hasPicture = false,
+		modified = 0,
+		hash = "track-" .. id,
 	}
 end
 
+---@type beat.Album
 local albumA = {
 	id = 10,
+	key = "first",
 	title = "First",
+	artist = "Artist",
+	artistId = 1,
 	tracks = {
 		track(1, 10, "/tmp/a1.wav"),
 		track(2, 10, "/tmp/a2.wav"),
 	},
+	duration = 240,
+	trackCount = 2,
+	modified = 0,
+	hash = "first",
 }
 
+---@type beat.Album
 local albumB = {
 	id = 20,
+	key = "second",
 	title = "Second",
+	artist = "Artist",
+	artistId = 1,
 	tracks = {
 		track(3, 20, "/tmp/b1.wav"),
 		track(4, 20, "/tmp/b2.wav"),
 	},
+	duration = 240,
+	trackCount = 2,
+	modified = 0,
+	hash = "second",
 }
 
+---@param albums beat.Album[]
 local function libraryOf(albums)
-	local tracks = {}
-	local byId = {}
-	for _, album in ipairs(albums) do
-		byId[album.id] = album
-		for _, song in ipairs(album.tracks) do tracks[#tracks + 1] = song end
-	end
+	local service = LibraryService.new({
+		settings = { values = {} },
+		options = { scan = false },
+		emit = function() end,
+	})
 
-	local current = { tracks = tracks, albums = albums}
-	function current:album(id) return byId[id] end
-	function current:track(id)
-		for _, song in ipairs(self.tracks) do
-			if song.id == id then return song end
+	---@type beat.Library
+	local current = Library.new("/tmp/beat-playback-events")
+	current.albums = albums
+	for _, album in ipairs(albums) do
+		current.albumById[album.id] = album
+		for _, song in ipairs(album.tracks) do
+			current.tracks[#current.tracks + 1] = song
+			current.trackById[song.id] = song
 		end
-		return nil
 	end
-	return { current = current}
+	service.current = current
+	return service
 end
 
 -- A device that knows whether it plays, because a pause and a resume are not a track transition.
+---@param player beat.Player
+---@return { playing: boolean, enqueued: string[] }
 local function device(player)
-	local state = { playing = false, enqueued = {}}
-	player.player = {
-		close = function() state.enqueued = {} end,
-		enqueue = function(_, path) state.enqueued[#state.enqueued + 1] = path end,
-		play = function() state.playing = true end,
-		pause = function() state.playing = false end,
-		stop = function() state.playing = false end,
-		seek = function() end,
-		update = function() end,
-		position = function() return 0 end,
-		isPlaying = function() return state.playing end,
-		setVolume = function() end,
-	}
+	local state = { playing = false, enqueued = {} }
+
+	local hardware = treble.Player.new({})
+	hardware.close = function() state.enqueued = {} end
+	hardware.enqueue = function(_, path)
+		state.enqueued[#state.enqueued + 1] = path
+		return hardware
+	end
+	hardware.play = function()
+		state.playing = true
+		return hardware
+	end
+	hardware.pause = function()
+		state.playing = false
+		return hardware
+	end
+	hardware.stop = function()
+		state.playing = false
+		return hardware
+	end
+	hardware.seek = function() return true end
+	hardware.update = function() end
+	hardware.position = function() return 0 end
+	hardware.duration = function() return 0 end
+	hardware.isPlaying = function() return state.playing end
+	hardware.setVolume = function() return hardware end
+	player.player = hardware
 	return state
 end
 
+---@param albums beat.Album[]?
 local function start(albums)
+	---@type beat.Message[]
 	local messages = {}
-	local toasts = { shown = {}}
+
+	---@type beat.Settings
+	local settingsValues = {
+		root = nil,
+		theme = "night",
+		accent = "lime",
+		volume = 0.5,
+		isMuted = false,
+		sort = "title",
+		view = "grid",
+		sidebarWidth = 264,
+		sidebarCollapsed = false,
+		uiScale = 1,
+		reduceMotion = false,
+		lastfmSessionKey = "",
+		lastfmUsername = "",
+		lastfmEnabled = true,
+	}
+
+	local library = libraryOf(albums or { albumA, albumB })
+	local toasts = Toasts.new({ pointer = function() return nil end })
+	---@type beat.CollectionsService
+	local collections = {
+		taxonomy = Taxonomy.new(),
+		library = library,
+		toasts = toasts,
+		changed = Signal.new(),
+		recordListen = function() end,
+	}
 	local service = Playback.new({
-		settings = { values = { volume = 0.5, isMuted = false}, changed = function() end },
-		library = libraryOf(albums or { albumA, albumB}),
-		collections = { recordListen = function() end },
-		toasts = {
-			show = function(_, text, tone) toasts.shown[#toasts.shown + 1] = { text = text, tone = tone} end,
-		},
+		settings = { values = settingsValues },
+		library = library,
+		collections = collections,
+		toasts = toasts,
 		emit = function(message) messages[#messages + 1] = message end,
 	})
 	device(service.player)
 	return service, messages, toasts
 end
 
+---@param messages beat.Message[]
 local function clear(messages)
 	for at = #messages, 1, -1 do messages[at] = nil end
 end
 
+---@param messages beat.Message[]
+---@return string[]
 local function kinds(messages)
 	local list = {}
 	for _, message in ipairs(messages) do list[#list + 1] = message.type end
@@ -215,7 +301,7 @@ end)
 test.it("ends the last track of the queue without starting another", function()
 	local service, messages = start()
 	service:playAlbum(albumA.id, false)
-	service.player:jump(albumA.tracks[2].id)
+	service.player:jump(assert(albumA.tracks[2]).id)
 	clear(messages)
 
 	service.player.pending = "ended"
@@ -266,8 +352,8 @@ test.it("puts an album next and plays it when the current track ends", function(
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
-	test.equal(toasts.shown[1].text, "Playing next · Second")
-	test.equal(service.player.queue.order[2], 3, "the album's first track is after the current one")
+	test.equal(toasts.list[1].text, "Playing next · Second")
+	test.equal(assert(service.player.queue).order[2], 3, "the album's first track is after the current one")
 	test.equal(service.player.pendingNextAt, 2)
 
 	clear(messages)
@@ -289,8 +375,8 @@ test.it("adds an album to the end of the queue", function()
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
-	test.equal(toasts.shown[1].text, "Added to queue · Second")
+	test.equal(toasts.list[1].text, "Added to queue · Second")
 	test.falsy(service.player.pendingNextAt)
-	test.equal(service.player.queue.order[3], 3, "the album follows everything already queued")
-	test.equal(service.player.queue.order[4], 4)
+	test.equal(assert(service.player.queue).order[3], 3, "the album follows everything already queued")
+	test.equal(assert(service.player.queue).order[4], 4)
 end)

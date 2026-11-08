@@ -55,9 +55,9 @@ function cover.view(app, props)
 	return div()
 	:style(style:align("center"):justify("center"):bg(theme:color("elevated")))
 	:children({
-	text(initial):style(theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold")
-	:fg(theme:color("muted", 0.8))),
-	sheen,
+		text(initial):style(theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold")
+		:fg(theme:color("muted", 0.8))),
+		sheen,
 	})
 end
 

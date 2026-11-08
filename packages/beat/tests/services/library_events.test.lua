@@ -5,6 +5,7 @@ local test = require("lde-test")
 local LibraryService = require("beat.app.services.library")
 
 test.it("announces the library a scan starts from", function()
+	---@type beat.Message[]
 	local emitted = {}
 	local service = LibraryService.new({
 		settings = { values = {}},
@@ -16,10 +17,12 @@ test.it("announces the library a scan starts from", function()
 
 	test.equal(#emitted, 1)
 	test.equal(emitted[1].type, "libraryReplaced")
-	test.equal(service.current.root, "/roots/one")
+	local current = assert(service.current)
+	test.equal(current.root, "/roots/one")
 end)
 
 test.it("announces every replacement, not only the first", function()
+	---@type beat.Message[]
 	local emitted = {}
 	local service = LibraryService.new({
 		settings = { values = {}},
@@ -32,5 +35,6 @@ test.it("announces every replacement, not only the first", function()
 
 	test.equal(#emitted, 2)
 	test.equal(emitted[2].type, "libraryReplaced")
-	test.equal(service.current.root, "/roots/two")
+	local current = assert(service.current)
+	test.equal(current.root, "/roots/two")
 end)

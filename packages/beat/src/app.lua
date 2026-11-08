@@ -17,12 +17,12 @@ local iconData = require("beat.app.icon")
 local BUILT_IN = { "core", "library", "collections", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
-   playPause = "togglePlay",
-   play = "play",
-   pause = "pause",
-   stop = "stop",
-   next = "next",
-   previous = "previous",
+	playPause = "togglePlay",
+	play = "play",
+	pause = "pause",
+	stop = "stop",
+	next = "next",
+	previous = "previous",
 }
 
 --- Where a navigation goes: a page kind and what picks the one page of that kind. `App:go` turns
@@ -39,6 +39,32 @@ local MEDIA_MESSAGES = {
 --- | { kind: "playlists" }
 --- | { kind: "playlist", id: number }
 
+--- The app's services by name, each one made before everything that needs it.
+---@class beat.Services
+---@field appearance beat.AppearanceService
+---@field collections beat.CollectionsService
+---@field covers beat.CoversService
+---@field equalizer beat.EqualizerService
+---@field lastfm beat.LastfmService
+---@field library beat.LibraryService
+---@field motion beat.MotionService
+---@field playback beat.PlaybackService
+---@field scan beat.ScanService
+---@field scroll beat.ScrollService
+---@field search beat.SearchService
+---@field settings beat.SettingsService
+---@field sidebar beat.SidebarService
+---@field system beat.SystemService
+---@field toasts beat.ToastsService
+
+--- The window calls the app makes that the layout's own window alias does not name: a backend may
+--- have them or not, and the app asks for them where it can. Optional fields keep a plain
+--- `wonderland.RenderWindow` — a headless stand-in, a test's table — accepted where one is handed
+--- to a function that wants these.
+---@class beat.WindowCalls
+---@field setIcon (fun(self: wonderland.RenderWindow, width: number, height: number, rgba: string))?
+---@field captureMediaKeys (fun(self: wonderland.RenderWindow): string[])?
+
 ---@class beat.App: wonderland.App
 ---@field window wonderland.RenderWindow?
 ---@field layoutPlugin wonderland.plugin.Layout?
@@ -46,14 +72,14 @@ local MEDIA_MESSAGES = {
 ---@field page beat.PageInstance
 ---@field history beat.PageInstance[]
 ---@field future beat.PageInstance[]
----@field overlays beat.OverlayInstance[] # Open over the page, the last one on top
----@field ticker table?
+---@field overlays beat.OverlayInstance<beat.OverlayState>[] # Open over the page, the last one on top
+---@field ticker wonderland.plugin.UI.Ticker?
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
----@field services table<string, table> # The app's services by name: `app.services.search`
----@field serviceOrder table[] # Every service, each after everything it needs
----@field owners table<string, table> # The service that answers each message type
+---@field services beat.Services # The app's services by name: `app.services.search`
+---@field serviceOrder beat.ServiceInstance[] # Every service, each after everything it needs
+---@field owners table<string, beat.ServiceInstance> # The service that answers each message type
 ---@field messages beat.Signal # Every message, as it is delivered
 ---@field queue table[] # Messages waiting their turn
 ---@field delivering boolean
@@ -61,11 +87,11 @@ local App = wonderland.app("Beat")
 
 --- Which page a route or a page is: two with the same key are the same page, and share where
 --- they were scrolled to.
----@param page beat.Route|beat.PageInstance
+---@param page beat.PageKey
 ---@return string
 function App:keyOf(page)
 	local surface = self.registry:page(page.kind)
-	return surface.key ~= nil and surface.key(page --[[@as beat.PageInstance]]) or page.kind
+	return surface.key ~= nil and surface.key(page) or page.kind
 end
 
 --- A page for a route, with the state its module starts it with.
@@ -108,20 +134,21 @@ function App:open(name, params)
 end
 
 --- Closes an overlay, or the topmost overlay with a name, and what was opened over it.
----@param which beat.OverlayInstance|string
+---@generic S: beat.OverlayState
+---@param which beat.OverlayInstance<S>|string
 function App:close(which)
 	for at = #self.overlays, 1, -1 do
-			local overlay = self.overlays[at]
-			if overlay == which or overlay.name == which then
-				for above = #self.overlays, at, -1 do
-						local closing = table.remove(self.overlays, above)
-						local surface = self.registry:overlay(closing.name)
-						if surface.close ~= nil then surface.close(self, closing) end
-					end
-				self:refresh()
-				return
+		local overlay = self.overlays[at]
+		if overlay == which or overlay.name == which then
+			for above = #self.overlays, at, -1 do
+				local closing = assert(table.remove(self.overlays, above))
+				local surface = self.registry:overlay(closing.name)
+				if surface.close ~= nil then surface.close(self, closing) end
 			end
+			self:refresh()
+			return
 		end
+	end
 end
 
 function App:closeOverlays()
@@ -130,11 +157,11 @@ end
 
 --- The topmost open overlay with a name.
 ---@param name string
----@return beat.OverlayInstance?
+---@return beat.OverlayInstance<beat.OverlayState>?
 function App:overlay(name)
 	for at = #self.overlays, 1, -1 do
-			if self.overlays[at].name == name then return self.overlays[at] end
-		end
+		if self.overlays[at].name == name then return self.overlays[at] end
+	end
 	return nil
 end
 
@@ -151,7 +178,7 @@ end
 
 --- Gives the window the logo as its icon, where the backend can take one. X11 reads it from the
 --- `_NET_WM_ICON` property; a backend without `setIcon` leaves the window as it was.
----@param window wonderland.RenderWindow
+---@param window wonderland.RenderWindow & beat.WindowCalls
 function App:setIcon(window)
 	if self.iconSet or window.setIcon == nil then return end
 
@@ -162,11 +189,14 @@ function App:setIcon(window)
 	self.iconSet = true
 end
 
+--- The window calls the media keys answer. Not every backend has them, so they are asked for
+--- here rather than declared on the layout's window alias.
+---@param window wonderland.RenderWindow & beat.WindowCalls
 function App:takeMediaKeys(window)
 	if self.mediaKeysTaken or window.captureMediaKeys == nil then return end
 	self.mediaKeysTaken = true
 
-	local refused = window:captureMediaKeys()
+	local refused = window.captureMediaKeys()
 	if #refused > 0 then
 		self:act({type = "toast", tone = "error", text = "Another application is using the media keys: " .. table.concat(refused, ", ")})
 	end
@@ -175,15 +205,17 @@ end
 ---@param opts { scan: boolean?, plugins: table[]? }?
 function App:init(opts)
 	for _, service in ipairs(self.serviceOrder or {}) do
-			if service.close ~= nil then service:close() end
-		end
+		if service.close ~= nil then service:close() end
+	end
 	self.queue = {}
 	self.delivering = false
 	self.messages = Signal.new()
 	self.registry = Registry.new(self)
 	Plugins.load(self.registry, BUILT_IN, opts ~= nil and opts.plugins or nil)
 	local collection = ServiceCollection.new()
-	for name, module in pairs(self.registry:serviceModules()) do collection:add(name, module) end
+	---@type table<string, beat.Service>
+	local modules = self.registry:serviceModules()
+	for name, module in pairs(modules) do collection:add(name, module) end
 	-- What services are given besides each other. `emit` sends a message the way a click does;
 	-- it is delivered after the one being handled. `pointer` is where the pointer is in the window,
 	-- and `window` is the one a native dialog is shown over: the two pieces of the shell a service
@@ -201,7 +233,10 @@ function App:init(opts)
 		return context and context.pointer or nil
 	end)
 	local services = collection:build()
-	self.services = services.byName
+	-- The plugin system's boundary: the registry builds services by the names it was given, and
+	-- `beat.Services` is what those names mean to the rest of the app. Every built-in service is
+	-- named here; an outside plugin can add more without changing this view.
+	self.services = services.byName --[[@as beat.Services]]
 	self.serviceOrder = services.order
 	self.owners = services.owners
 	-- From here a plugin that fails can say so in the window rather than only in the log.
@@ -281,7 +316,7 @@ function App:travel(from, to, direction)
 	to[#to + 1] = self.page
 	self:closeTransient()
 	self:focusField(nil)
-	self.page = table.remove(from)
+	self.page = assert(table.remove(from))
 	self.services.motion:slide(direction)
 	self:wake()
 	self:refresh()
@@ -311,18 +346,18 @@ function App:act(message)
 	self.delivering = true
 	local delivered = 0
 	while #self.queue > 0 do
-			delivered = delivered + 1
-			-- Services asking each other for something forever is a bug, and it should say so.
-			if delivered > 64 then
-				local stuck = self.queue[1].type
-				self.queue = {}
-				self.delivering = false
-				error("messages kept causing messages: " .. tostring(stuck))
-			end
-			local next = table.remove(self.queue, 1)
-			self.messages:fire(next)
-			self:deliver(next)
+		delivered = delivered + 1
+		-- Services asking each other for something forever is a bug, and it should say so.
+		if delivered > 64 then
+			local stuck = self.queue[1].type
+			self.queue = {}
+			self.delivering = false
+			error("messages kept causing messages: " .. tostring(stuck))
 		end
+		local next = table.remove(self.queue, 1)
+		self.messages:fire(next)
+		self:deliver(next)
+	end
 	self.delivering = false
 
 	-- Whatever the message changed is worth a frame now rather than one at the idle interval,
@@ -349,12 +384,12 @@ local function deliverTo(app, message)
 
 	local at = #app.overlays
 	while at >= 1 do
-			local overlay = app.overlays[at]
-			local surface = app.registry:overlay(overlay.name)
-			if surface.update ~= nil and surface.update(app, overlay, message) then return end
-			if surface.light and app.overlays[at] == overlay then app:close(overlay) end
-			at = math.min(at - 1, #app.overlays)
-		end
+		local overlay = app.overlays[at]
+		local surface = app.registry:overlay(overlay.name)
+		if surface.update ~= nil and surface.update(app, overlay, message) then return end
+		if surface.light and app.overlays[at] == overlay then app:close(overlay) end
+		at = math.min(at - 1, #app.overlays)
+	end
 
 	local page = app:currentPage()
 	local surface = app.registry:page(page.kind)
@@ -373,7 +408,7 @@ end
 --- Takes a message through the interceptors that asked to see its type, then hands it to whatever
 --- it is for, then tells the listeners that it has been delivered. An interceptor that does not
 --- call `continue` stops the message before it reaches anything.
----@param message table
+---@param message beat.Message
 function App:deliver(message)
 	local proceed, current = self.registry:intercept(message, self)
 	if not proceed then return end
@@ -418,24 +453,24 @@ end
 
 --- What the window's own events mean to the app, as messages: the app decides nothing here.
 ---@param event winit.Event
----@param handler winit.EventManager
+---@param _handler winit.EventManager
 function App:event(event, _handler)
 	if event.name == "windowClose" then
 		-- The app goes with the window. What its services would have written a moment from now --
 		-- a setting still settling, where listening got to -- is written now.
 		for _, service in ipairs(self.serviceOrder) do
-				if service.flush ~= nil then service:flush() end
-			end
+			if service.flush ~= nil then service:flush() end
+		end
 		return nil
 	end
 
 	if event.name == "fileDrop" then
 		for _, drop in ipairs(event.paths or {}) do
-				if fs.isdir(drop) then
-					self:act({ type = "startScan", root = drop})
-					return nil
-				end
+			if fs.isdir(drop) then
+				self:act({ type = "startScan", root = drop})
+				return nil
 			end
+		end
 		self:act({ type = "toast", text = "Drop a folder to build a library", tone = "error"})
 		return nil
 	end
@@ -490,12 +525,12 @@ function App:tick(now, window)
 	-- Each service does what it does on its own -- a scan coming in, a toast fading -- in the
 	-- order they were made, so a service steps after everything it depends on.
 	for _, service in ipairs(self.serviceOrder) do
-			if service.step ~= nil then
-				local stepChanged, stepBusy = service:step(now)
-				if stepChanged then changed = true end
-				if stepBusy then serviceBusy = true end
-			end
+		if service.step ~= nil then
+			local stepChanged, stepBusy = service:step(now)
+			if stepChanged then changed = true end
+			if stepBusy then serviceBusy = true end
 		end
+	end
 
 	if changed then self:present(window) end
 	return serviceBusy and (1 / 60) or 0.5

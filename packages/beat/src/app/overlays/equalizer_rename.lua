@@ -13,10 +13,11 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@field name string # The preset as it is named now
 ---@field draft string
 
----@type beat.OverlaySurface
+---@class beat.EqualizerRenameOverlay: beat.OverlaySurface
 local equalizerRename = {}
 
 ---@param params { name: string? }
+---@param app beat.App
 function equalizerRename.new(app, params)
 	local preset = app.services.equalizer:find(params.name)
 	if preset == nil or not preset.custom then return nil end
@@ -27,15 +28,18 @@ function equalizerRename.new(app, params)
 end
 
 ---@param app beat.App
----@param _overlay beat.OverlayInstance
+---@param _overlay beat.OverlayInstance<beat.EqualizerRenameState>
 function equalizerRename.close(app, _overlay)
 	app:focusField(nil)
 end
 
 --- The field's own messages and the cancel button stay here. Save and delete are sent on to the
 --- equalizer service, which decides whether they are possible and closes the dialog when they are.
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.EqualizerRenameState>
+---@param message beat.Message
 function equalizerRename.update(app, overlay, message)
-	local state = overlay.state --[[@as beat.EqualizerRenameState]]
+	local state = overlay.state
 	local kind = message.type
 	if kind == "equalizerEditDraft" then
 		state.draft = message.value or ""
@@ -49,11 +53,11 @@ function equalizerRename.update(app, overlay, message)
 end
 
 ---@param app beat.App
----@param overlay beat.OverlayInstance
+---@param overlay beat.OverlayInstance<beat.EqualizerRenameState>
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function equalizerRename.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.EqualizerRenameState]]
+	local state = overlay.state
 	local name = state.name
 	local theme = app.services.appearance.theme
 	local width = math.min(theme:px(340), window.width - theme:px(32))
@@ -66,37 +70,37 @@ function equalizerRename.view(app, overlay, window)
 	:shadow(0, theme:px(14), theme:px(36), "#00000099"))
 	:onClick({ type = "keep"})
 	:children({
-	text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold")
-	:fg(theme:color("text"))),
-	field.view(app, {
-	name = "equalizerPresetName",
-	value = state.draft,
-	placeholder = "Preset name",
-	oninput = function(value) return { type = "equalizerEditDraft", value = value} end,
-	onsubmit = function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end,
-	}),
-	div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
-	:justify("end")):children({
-	button.view(app, {
-	label = "Cancel",
-	onClick = { type = "cancelEqualizerPresetRename"},
-	height = theme:px(30),
-	width = theme:px(80),
-	}),
-	button.view(app, {
-	label = "Save",
-	onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft},
-	primary = true,
-	height = theme:px(30),
-	width = theme:px(74),
-	}),
-	}),
-	button.view(app, {
-	label = "Delete preset",
-	onClick = { type = "deleteEqualizerPreset", name = name},
-	height = theme:px(30),
-	width = width - padding * 2,
-	}),
+		text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold")
+		:fg(theme:color("text"))),
+		field.view(app, {
+			name = "equalizerPresetName",
+			value = state.draft,
+			placeholder = "Preset name",
+			oninput = function(value) return { type = "equalizerEditDraft", value = value} end,
+			onsubmit = function() return { type = "saveEqualizerPresetRename", name = name, value = state.draft} end,
+		}),
+		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")
+		:justify("end")):children({
+			button.view(app, {
+				label = "Cancel",
+				onClick = { type = "cancelEqualizerPresetRename"},
+				height = theme:px(30),
+				width = theme:px(80),
+			}),
+			button.view(app, {
+				label = "Save",
+				onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft},
+				primary = true,
+				height = theme:px(30),
+				width = theme:px(74),
+			}),
+		}),
+		button.view(app, {
+			label = "Delete preset",
+			onClick = { type = "deleteEqualizerPreset", name = name},
+			height = theme:px(30),
+			width = width - padding * 2,
+		}),
 	})
 
 	return div()

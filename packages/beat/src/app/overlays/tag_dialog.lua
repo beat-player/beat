@@ -9,10 +9,11 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@class beat.TagDialogState
 ---@field draft string
 
----@type beat.OverlaySurface
+---@class beat.TagDialogOverlay: beat.OverlaySurface
 local tagDialog = {}
 
 ---@param params table
+---@param app beat.App
 function tagDialog.new(app, params)
 	-- One dialog is the one in front: creating a tag from the picker replaces it, as it did when
 	-- the picker was a flag the old chain turned off.
@@ -25,12 +26,17 @@ function tagDialog.new(app, params)
 	return { draft = ""}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagDialogState>
 function tagDialog.close(app, overlay)
 	app:focusField(nil)
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagDialogState>
+---@param message beat.Message
 function tagDialog.update(app, overlay, message)
-	local state = overlay.state --[[@as beat.TagDialogState]]
+	local state = overlay.state
 	local kind = message.type
 	if kind == "tagDraft" then
 		state.draft = message.value or ""
@@ -51,8 +57,11 @@ function tagDialog.update(app, overlay, message)
 	return false
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagDialogState>
+---@param window wonderland.RenderWindow
 function tagDialog.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.TagDialogState]]
+	local state = overlay.state
 	local theme = app.services.appearance.theme
 	local panelWidth = metrics.panelWidth(app, window, 360)
 	local pad = theme:px(18)
@@ -64,31 +73,31 @@ function tagDialog.view(app, overlay, window)
 	:shadow(0, theme:px(16), theme:px(42), "#00000080"))
 	:onClick({ type = "keep"})
 	:children({
-	text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-	text("Tag tracks so playlists and search can find them."):style(
-	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-	field.view(app, {
-	name = "newTag",
-	value = state.draft,
-	placeholder = "Tag name",
-	oninput = function(value) return { type = "tagDraft", value = value} end,
-	onsubmit = function() return { type = "createTag"} end,
-	}),
-	div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end")):children({
-	button.view(app, {
-	label = "Cancel",
-	onClick = { type = "dismiss"},
-	height = theme:px(30),
-	width = theme:px(80),
-	}),
-	button.view(app, {
-	label = "Create",
-	onClick = { type = "createTag"},
-	primary = true,
-	height = theme:px(30),
-	width = theme:px(86),
-	}),
-	}),
+		text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+		text("Tag tracks so playlists and search can find them."):style(
+		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+		field.view(app, {
+			name = "newTag",
+			value = state.draft,
+			placeholder = "Tag name",
+			oninput = function(value) return { type = "tagDraft", value = value} end,
+			onsubmit = function() return { type = "createTag"} end,
+		}),
+		div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end")):children({
+			button.view(app, {
+				label = "Cancel",
+				onClick = { type = "dismiss"},
+				height = theme:px(30),
+				width = theme:px(80),
+			}),
+			button.view(app, {
+				label = "Create",
+				onClick = { type = "createTag"},
+				primary = true,
+				height = theme:px(30),
+				width = theme:px(86),
+			}),
+		}),
 	})
 
 	return div():style(sty():fill():offset(0, 0):z(120):column():align("center"):justify("center")

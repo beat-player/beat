@@ -25,24 +25,24 @@ end
 ---@return table
 local function packed(track, key)
 	return {
-	path = track.path,
-	key = key,
-	title = track.title,
-	artist = track.artist,
-	album = track.album,
-	albumArtist = track.albumArtist,
-	number = track.number,
-	disc = track.disc,
-	year = track.year,
-	genre = track.genre,
-	duration = track.duration,
-	format = track.format,
-	sampleRate = track.sampleRate,
-	channels = track.channels,
-	hasPicture = track.hasPicture,
-	coverPath = track.coverPath,
-	coverCache = track.coverCache,
-	modified = track.modified,
+		path = track.path,
+		key = key,
+		title = track.title,
+		artist = track.artist,
+		album = track.album,
+		albumArtist = track.albumArtist,
+		number = track.number,
+		disc = track.disc,
+		year = track.year,
+		genre = track.genre,
+		duration = track.duration,
+		format = track.format,
+		sampleRate = track.sampleRate,
+		channels = track.channels,
+		hasPicture = track.hasPicture,
+		coverPath = track.coverPath,
+		coverCache = track.coverCache,
+		modified = track.modified,
 	}
 end
 
@@ -57,9 +57,9 @@ function LibraryCache.save(library)
 	end
 
 	local ok, encoded = pcall(json.encode, {
-	version = VERSION,
-	root = library.root,
-	tracks = tracks,
+		version = VERSION,
+		root = library.root,
+		tracks = tracks,
 	})
 	if not ok then return false, tostring(encoded) end
 
@@ -97,37 +97,37 @@ function LibraryCache.load(root)
 
 	local library = Library.new(root)
 	for _, item in ipairs(decoded.tracks) do
-			if type(item) ~= "table" or type(item.path) ~= "string" then return nil end
+		if type(item) ~= "table" or type(item.path) ~= "string" then return nil end
 
-			local dir = path.dirname(item.path)
-			local name = path.basename(item.path)
-			local ext = name:match("%.([^%.]+)$") or ""
-			local info = {
+		local dir = path.dirname(item.path)
+		local name = path.basename(item.path)
+		local ext = name:match("%.([^%.]+)$") or ""
+		local info = {
 			format = item.format or "unknown",
 			sampleRate = item.sampleRate or 0,
 			channels = item.channels or 0,
 			duration = item.duration or 0,
 			hasPicture = item.hasPicture == true,
 			tags = {
-			title = item.title,
-			artist = item.artist,
-			album = item.album,
-			albumArtist = item.albumArtist,
-			track = item.number,
-			disc = item.disc,
-			date = item.year and tostring(item.year) or nil,
-			genre = item.genre,
+				title = item.title,
+				artist = item.artist,
+				album = item.album,
+				albumArtist = item.albumArtist,
+				track = item.number,
+				disc = item.disc,
+				date = item.year and tostring(item.year) or nil,
+				genre = item.genre,
 			},
-			}
-			library:add(info, {
+		}
+		library:add(info, {
 			path = item.path,
 			dir = dir,
 			name = name,
 			ext = ext,
 			modifyTime = item.modified,
 			key = type(item.key) == "string" and item.key or nil,
-			}, item.coverPath, item.coverCache)
-		end
+		}, item.coverPath, item.coverCache)
+	end
 	library:finish()
 
 	return library

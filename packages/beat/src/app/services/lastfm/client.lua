@@ -75,33 +75,33 @@ Client.__index = Client
 local function new(settings, handlers, opts)
 	opts = opts or {}
 	local self = setmetatable({
-	settings = settings,
-	handlers = handlers or {},
-	apiKey = trim(opts.apiKey or credentials.apiKey),
-	apiSecret = trim(opts.apiSecret or credentials.apiSecret),
-	now = opts.now or os.time,
-	apiRoot = opts.apiRoot or API_ROOT,
-	authPage = opts.authPage or AUTH_PAGE,
-	-- What opens the authorization page comes from outside: the client is the network, not the
-	-- desktop. A caller that leaves it out simply cannot open one.
-	openBrowser = opts.openBrowser or function() return false end,
-	curl = opts.curl or (curlOk and curl or nil),
-	batch = nil,
-	pending = {},
-	pendingCount = 0,
-	state = "idle",
-	token = nil,
-	authUrl = nil,
-	error = nil,
-	authInFlight = false,
-	authEpoch = 0,
-	nextAuthPoll = 0,
-	authStartedAt = 0,
-	scrobbles = {},
-	scrobbling = false,
-	scrobbleError = nil,
-	retryAt = 0,
-	nowPlayingTrackId = nil,
+		settings = settings,
+		handlers = handlers or {},
+		apiKey = trim(opts.apiKey or credentials.apiKey),
+		apiSecret = trim(opts.apiSecret or credentials.apiSecret),
+		now = opts.now or os.time,
+		apiRoot = opts.apiRoot or API_ROOT,
+		authPage = opts.authPage or AUTH_PAGE,
+		-- What opens the authorization page comes from outside: the client is the network, not the
+		-- desktop. A caller that leaves it out simply cannot open one.
+		openBrowser = opts.openBrowser or function() return false end,
+		curl = opts.curl or (curlOk and curl or nil),
+		batch = nil,
+		pending = {},
+		pendingCount = 0,
+		state = "idle",
+		token = nil,
+		authUrl = nil,
+		error = nil,
+		authInFlight = false,
+		authEpoch = 0,
+		nextAuthPoll = 0,
+		authStartedAt = 0,
+		scrobbles = {},
+		scrobbling = false,
+		scrobbleError = nil,
+		retryAt = 0,
+		nowPlayingTrackId = nil,
 	}, Client)
 
 	if trim(settings.lastfmSessionKey) ~= "" and self.apiKey ~= "" and self.apiSecret ~= "" then
@@ -193,11 +193,11 @@ function Client:send(kind, params, onDone)
 	if self.batch == nil then return false, self.error or "Last.fm network is unavailable" end
 
 	local ok, index = pcall(self.batch.add, self.batch, self.apiRoot, {
-	method = "POST",
-	body = protocol.encode(params),
-	timeout = REQUEST_TIMEOUT,
-	useragent = USER_AGENT,
-	headers = { ["Content-Type"] = "application/x-www-form-urlencoded"},
+		method = "POST",
+		body = protocol.encode(params),
+		timeout = REQUEST_TIMEOUT,
+		useragent = USER_AGENT,
+		headers = { ["Content-Type"] = "application/x-www-form-urlencoded"},
 	})
 	if not ok or type(index) ~= "number" then return false, tostring(index) end
 
@@ -260,19 +260,19 @@ function Client:pump()
 
 	local done = {}
 	for index, item in pairs(self.pending) do
-			local state = batch.order and batch.order[index]
-			local result = state and state.result
-			if result ~= nil then done[#done + 1] = { index = index, item = item, result = result} end
-		end
+		local state = batch.order and batch.order[index]
+		local result = state and state.result
+		if result ~= nil then done[#done + 1] = { index = index, item = item, result = result} end
+	end
 
 	table.sort(done, function(a, b) return a.index < b.index end)
 
 	for _, entry in ipairs(done) do
-			self.pending[entry.index] = nil
-			self.pendingCount = self.pendingCount - 1
-			local value, err, code = resultOf(entry.result)
-			entry.item.onDone(value, err, code)
-		end
+		self.pending[entry.index] = nil
+		self.pendingCount = self.pendingCount - 1
+		local value, err, code = resultOf(entry.result)
+		entry.item.onDone(value, err, code)
+	end
 
 	if self.pendingCount == 0 and self.batch == batch then
 		batch:close()
@@ -511,9 +511,9 @@ end
 ---@param scrobbles beat.Scrobble[]
 function Client:enqueue(scrobbles)
 	for _, scrobble in ipairs(scrobbles) do
-			if #self.scrobbles >= SCROBBLE_LIMIT then table.remove(self.scrobbles, 1) end
-			self.scrobbles[#self.scrobbles + 1] = scrobble
-		end
+		if #self.scrobbles >= SCROBBLE_LIMIT then table.remove(self.scrobbles, 1) end
+		self.scrobbles[#self.scrobbles + 1] = scrobble
+	end
 end
 
 ---@param track beat.Track

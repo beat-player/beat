@@ -38,9 +38,9 @@ function topbar.view(app, props)
 	:style(sty():wrel(1.0):h(theme:px(32)):row():align("center")
 	:pad(theme:px(10), 0, theme:px(10), 0):text(theme:type("sm")):fg(theme:color("text")))
 	:input({
-	name = "search",
-	value = search,
-	oninput = function(value) return { type = "search", value = value} end,
+		name = "search",
+		value = search,
+		oninput = function(value) return { type = "search", value = value} end,
 	})
 	searchInput:children(text(searchText):style(theme:s():wrel(1.0):text(theme:type("sm"))
 	:fg(searchColour):ellipsis()))
@@ -50,8 +50,8 @@ function topbar.view(app, props)
 	local field = div()
 	:style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center"))
 	:children({
-	icon.view(app, { name = "search", size = theme:px(16), colour = theme:color("faint") }),
-	searchArea,
+		icon.view(app, { name = "search", size = theme:px(16), colour = theme:color("faint") }),
+		searchArea,
 	})
 
 	if search ~= "" then
@@ -89,7 +89,7 @@ function topbar.view(app, props)
 	end
 
 	local leftChildren = {
-	navButton("chevronLeft", { type = "back"}, #app.history > 0),
+		navButton("chevronLeft", { type = "back"}, #app.history > 0),
 	}
 	if not mobile then
 		leftChildren[#leftChildren + 1] = navButton("chevronRight", { type = "forward"}, #app.future > 0)
@@ -103,8 +103,8 @@ function topbar.view(app, props)
 	:pad(0, metrics.pad(app, width), 0, metrics.pad(app, width))
 	:gap(theme:px(10)):align("center"):justify("space-between"))
 	:children({
-	left,
-	iconButton.view(app, { name = "settings", size = iconSize, onClick = { type = "navigate", page = { kind = "settings"} } }),
+		left,
+		iconButton.view(app, { name = "settings", size = iconSize, onClick = { type = "navigate", page = { kind = "settings"} } }),
 	})
 end
 

@@ -21,18 +21,18 @@ function Queue.new(tracks, index, opts)
 	local order = {}
 	local naturalOrder = {}
 	for at = 1, #tracks do
-			order[at] = at
-			naturalOrder[at] = at
-		end
+		order[at] = at
+		naturalOrder[at] = at
+	end
 
 	local queue = setmetatable({
-	tracks = tracks,
-	order = order,
-	naturalOrder = naturalOrder,
-	position = math.max(1, math.min(index or 1, #tracks)),
-	repeatMode = opts.repeatMode or "off",
-	shuffle = opts.shuffle or false,
-	source = opts.source or "library",
+		tracks = tracks,
+		order = order,
+		naturalOrder = naturalOrder,
+		position = math.max(1, math.min(index or 1, #tracks)),
+		repeatMode = opts.repeatMode or "off",
+		shuffle = opts.shuffle or false,
+		source = opts.source or "library",
 	}, Queue)
 
 	if queue.shuffle then queue:shuffleOrder() end
@@ -51,12 +51,12 @@ end
 function Queue:upcoming(limit)
 	local list = {}
 	for at = self.position + 1, #self.order do
-			local track = self.tracks[self.order[at]]
-			if track ~= nil then
-				list[#list + 1] = track
-				if limit ~= nil and #list >= limit then break end
-			end
+		local track = self.tracks[self.order[at]]
+		if track ~= nil then
+			list[#list + 1] = track
+			if limit ~= nil and #list >= limit then break end
 		end
+	end
 	return list
 end
 
@@ -68,13 +68,13 @@ function Queue:shuffleOrder(keepCurrent)
 	local current = keepCurrent and self.order[self.position] or nil
 	local rest = {}
 	for _, index in ipairs(self.order) do
-			if index ~= current then rest[#rest + 1] = index end
-		end
+		if index ~= current then rest[#rest + 1] = index end
+	end
 
 	for at = #rest, 2, -1 do
-			local other = math.random(at)
-			rest[at], rest[other] = rest[other], rest[at]
-		end
+		local other = math.random(at)
+		rest[at], rest[other] = rest[other], rest[at]
+	end
 
 	local order = {}
 	if current ~= nil then order[1] = current end
@@ -89,12 +89,12 @@ end
 ---@return beat.Track?
 function Queue:jump(trackId)
 	for at, index in ipairs(self.order) do
-			local track = self.tracks[index]
-			if track ~= nil and track.id == trackId then
-				self.position = at
-				return track
-			end
+		local track = self.tracks[index]
+		if track ~= nil and track.id == trackId then
+			self.position = at
+			return track
 		end
+	end
 	return nil
 end
 
@@ -182,11 +182,11 @@ function Queue:toggleShuffle()
 		for at, index in ipairs(self.naturalOrder) do self.order[at] = index end
 		if current ~= nil then
 			for at, index in ipairs(self.order) do
-					if index == current then
-						self.position = at
-						break
-					end
+				if index == current then
+					self.position = at
+					break
 				end
+			end
 		end
 	end
 	return self.shuffle
@@ -219,9 +219,9 @@ function Queue:replace(tracks, index)
 	local order = {}
 	local naturalOrder = {}
 	for at = 1, #tracks do
-			order[at] = at
-			naturalOrder[at] = at
-		end
+		order[at] = at
+		naturalOrder[at] = at
+	end
 	self.order = order
 	self.naturalOrder = naturalOrder
 	self.position = math.max(1, math.min(index or 1, #tracks))
@@ -287,13 +287,13 @@ function Queue.unpack(packed, find)
 	end
 
 	local queue = setmetatable({
-	tracks = tracks,
-	order = order,
-	naturalOrder = remap(packed.naturalOrder),
-	position = math.min(before + 1, #order),
-	repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
-	shuffle = packed.shuffle == true,
-	source = type(packed.source) == "string" and packed.source or "library",
+		tracks = tracks,
+		order = order,
+		naturalOrder = remap(packed.naturalOrder),
+		position = math.min(before + 1, #order),
+		repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
+		shuffle = packed.shuffle == true,
+		source = type(packed.source) == "string" and packed.source or "library",
 	}, Queue)
 
 	return queue, moved[packed.order[packed.position]] ~= nil

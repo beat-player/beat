@@ -37,24 +37,24 @@ Player.__index = Player
 function Player.new()
 	---@type beat.Player
 	return setmetatable({
-	queue = nil,
-	player = nil,
-	volume = 1,
-	lastVolume = 1,
-	isMuted = false,
-	error = nil,
-	pending = nil,
-	pendingNextAt = nil,
-	loaded = false,
-	lastPosition = 0,
-	orderDirty = false,
-	loadedRepeatMode = "off",
-	fadeGain = 1,
-	fadeStart = nil,
-	fadeActive = false,
-	fadeDuration = 0.12,
-	equalizerBands = nil,
-	playingTrack = nil,
+		queue = nil,
+		player = nil,
+		volume = 1,
+		lastVolume = 1,
+		isMuted = false,
+		error = nil,
+		pending = nil,
+		pendingNextAt = nil,
+		loaded = false,
+		lastPosition = 0,
+		orderDirty = false,
+		loadedRepeatMode = "off",
+		fadeGain = 1,
+		fadeStart = nil,
+		fadeActive = false,
+		fadeDuration = 0.12,
+		equalizerBands = nil,
+		playingTrack = nil,
 	}, Player)
 end
 
@@ -150,9 +150,9 @@ function Player:reload(isPlaying, fade)
 		player:enqueue(track.path)
 	else
 		for at = queue.position, #queue.order do
-				local nextTrack = queue.tracks[queue.order[at]]
-				if nextTrack ~= nil then player:enqueue(nextTrack.path) end
-			end
+			local nextTrack = queue.tracks[queue.order[at]]
+			if nextTrack ~= nil then player:enqueue(nextTrack.path) end
+		end
 	end
 
 	self.loaded = true
@@ -219,8 +219,8 @@ function Player:addToQueue(tracks)
 	self.queue:add(tracks, false)
 	if self.player ~= nil and self.queue.repeatMode ~= "one" then
 		for _, track in ipairs(tracks) do
-				self.player:enqueue(track.path)
-			end
+			self.player:enqueue(track.path)
+		end
 	end
 	queueChanged(self)
 end
@@ -231,11 +231,11 @@ function Player:playAlbum(album, trackId)
 	local index = 1
 	if trackId ~= nil then
 		for at, track in ipairs(album.tracks) do
-				if track.id == trackId then
-					index = at
-					break
-				end
+			if track.id == trackId then
+				index = at
+				break
 			end
+		end
 	end
 
 	self:playTracks(album.tracks, index, { source = "album"})
@@ -248,11 +248,11 @@ function Player:playArtist(artist, trackId)
 	local index = 1
 	if trackId ~= nil then
 		for at, track in ipairs(tracks) do
-				if track.id == trackId then
-					index = at
-					break
-				end
+			if track.id == trackId then
+				index = at
+				break
 			end
+		end
 	end
 
 	self:playTracks(tracks, index, { source = "artist"})
@@ -265,11 +265,11 @@ function Player:playTrack(track, tracks, index)
 	if tracks == nil then tracks = { track} end
 	if index == nil then
 		for at, candidate in ipairs(tracks) do
-				if candidate.id == track.id then
-					index = at
-					break
-				end
+			if candidate.id == track.id then
+				index = at
+				break
 			end
+		end
 	end
 
 	self:playTracks(tracks, index or 1, { source = "track"})
@@ -385,12 +385,12 @@ function Player:setEqualizer(bands)
 	else
 		local copy = {}
 		for at = 1, #bands do
-				copy[at] = {
+			copy[at] = {
 				frequency = bands[at].frequency,
 				gain = bands[at].gain,
 				q = bands[at].q,
-				}
-			end
+			}
+		end
 		self.equalizerBands = copy
 	end
 	if self.player ~= nil and self.player.setEqualizer ~= nil then

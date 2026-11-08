@@ -24,8 +24,8 @@ function settings.view(app, page, window)
 
 	local function section(title, copy, rows, height)
 		local content = {
-		text(title):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-		text(copy):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+			text(title):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+			text(copy):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
 		}
 		for _, row in ipairs(rows) do content[#content + 1] = row end
 
@@ -37,14 +37,14 @@ function settings.view(app, page, window)
 	local themeChips = {}
 	local narrowTheme = window.width < 560
 	for _, name in ipairs(app.services.appearance:names()) do
-			themeChips[#themeChips + 1] = button.view(app, {
+		themeChips[#themeChips + 1] = button.view(app, {
 			label = name:sub(1, 1):upper() .. name:sub(2),
 			onClick = { type = "theme", name = name},
 			primary = app.services.settings.values.theme == name,
 			height = theme:px(30),
 			width = theme:px(narrowTheme and 120 or 92),
-			})
-		end
+		})
+	end
 	local themeRow
 	if narrowTheme then
 		themeRow = div():style(sty():column():h(theme:px(106)):gap(theme:px(8))):children(themeChips)
@@ -54,16 +54,16 @@ function settings.view(app, page, window)
 
 	local accents = {}
 	for _, name in ipairs(app.services.appearance:accents()) do
-			local active = app.services.settings.values.accent == name
-			accents[#accents + 1] = div()
-			:style(sty():size(theme:px(narrowTheme and 20 or 28), theme:px(narrowTheme and 20 or 28))
-			:radius(theme:radius("full"))
-			:bg(app.services.appearance:accentColour(name))
-			:align("center"):justify("center"))
-			:onClick({ type = "accent", name = name})
-			:children(active and icon.view(app, { name = "check", size = theme:px(14),
+		local active = app.services.settings.values.accent == name
+		accents[#accents + 1] = div()
+		:style(sty():size(theme:px(narrowTheme and 20 or 28), theme:px(narrowTheme and 20 or 28))
+		:radius(theme:radius("full"))
+		:bg(app.services.appearance:accentColour(name))
+		:align("center"):justify("center"))
+		:onClick({ type = "accent", name = name})
+		:children(active and icon.view(app, { name = "check", size = theme:px(14),
 			colour = app.services.appearance:accentInk(name) }) or div())
-		end
+	end
 	local accentRow = div():style(sty():row():h(theme:px(narrowTheme and 20 or 28))
 	:gap(theme:px(narrowTheme and 5 or 8))):children(accents)
 
@@ -78,76 +78,76 @@ function settings.view(app, page, window)
 
 	local scaleRow = div():style(sty():row():h(theme:px(32))
 	:gap(theme:px(narrowTheme and 4 or 8)):align("center")):children({
-	text("Scale"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	button.view(app, {
-	label = "90%",
-	onClick = { type = "uiScale", value = 0.9},
-	height = theme:px(28),
-	width = theme:px(narrowTheme and 38 or 60),
-	primary = app.services.settings.values.uiScale == 0.9,
-	}),
-	button.view(app, {
-	label = "100%",
-	onClick = { type = "uiScale", value = 1},
-	height = theme:px(28),
-	width = theme:px(narrowTheme and 40 or 62),
-	primary = app.services.settings.values.uiScale == 1,
-	}),
-	button.view(app, {
-	label = "125%",
-	onClick = { type = "uiScale", value = 1.25},
-	height = theme:px(28),
-	width = theme:px(narrowTheme and 40 or 62),
-	primary = app.services.settings.values.uiScale == 1.25,
-	}),
+		text("Scale"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+		button.view(app, {
+			label = "90%",
+			onClick = { type = "uiScale", value = 0.9},
+			height = theme:px(28),
+			width = theme:px(narrowTheme and 38 or 60),
+			primary = app.services.settings.values.uiScale == 0.9,
+		}),
+		button.view(app, {
+			label = "100%",
+			onClick = { type = "uiScale", value = 1},
+			height = theme:px(28),
+			width = theme:px(narrowTheme and 40 or 62),
+			primary = app.services.settings.values.uiScale == 1,
+		}),
+		button.view(app, {
+			label = "125%",
+			onClick = { type = "uiScale", value = 1.25},
+			height = theme:px(28),
+			width = theme:px(narrowTheme and 40 or 62),
+			primary = app.services.settings.values.uiScale == 1.25,
+		}),
 	})
 
 	local motionRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center")):children({
-	text("Motion"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	button.view(app, {
-	label = app.services.settings.values.reduceMotion and "Motion reduced" or "Reduce motion",
-	onClick = { type = "reduceMotion", value = not app.services.settings.values.reduceMotion},
-	height = theme:px(28),
-	width = theme:px(narrowTheme and 130 or 150),
-	primary = app.services.settings.values.reduceMotion,
-	}),
+		text("Motion"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+		button.view(app, {
+			label = app.services.settings.values.reduceMotion and "Motion reduced" or "Reduce motion",
+			onClick = { type = "reduceMotion", value = not app.services.settings.values.reduceMotion},
+			height = theme:px(28),
+			width = theme:px(narrowTheme and 130 or 150),
+			primary = app.services.settings.values.reduceMotion,
+		}),
 	})
 
 	local mobileSidebar = metrics.mobile(app, window.width)
 	local sidebarControls = {
-	text(mobileSidebar and "Hidden on phones" or "Width"):style(theme:s():text(theme:type("sm"))
-	:fg(theme:color("muted"))),
+		text(mobileSidebar and "Hidden on phones" or "Width"):style(theme:s():text(theme:type("sm"))
+		:fg(theme:color("muted"))),
 	}
 	if mobileSidebar then
 		-- The phone shell uses bottom tabs; sidebar width has no meaning there.
 	elseif window.width >= 1040 then
 		sidebarControls[#sidebarControls + 1] = button.view(app, {
-		label = "Narrow",
-		onClick = { type = "sidebarWidth", width = 220},
-		height = theme:px(28),
-		width = theme:px(74),
-		primary = app.services.settings.values.sidebarWidth == 220,
+			label = "Narrow",
+			onClick = { type = "sidebarWidth", width = 220},
+			height = theme:px(28),
+			width = theme:px(74),
+			primary = app.services.settings.values.sidebarWidth == 220,
 		})
 		sidebarControls[#sidebarControls + 1] = button.view(app, {
-		label = "Balanced",
-		onClick = { type = "sidebarWidth", width = 264},
-		height = theme:px(28),
-		width = theme:px(86),
-		primary = app.services.settings.values.sidebarWidth == 264,
+			label = "Balanced",
+			onClick = { type = "sidebarWidth", width = 264},
+			height = theme:px(28),
+			width = theme:px(86),
+			primary = app.services.settings.values.sidebarWidth == 264,
 		})
 		sidebarControls[#sidebarControls + 1] = button.view(app, {
-		label = "Wide",
-		onClick = { type = "sidebarWidth", width = 320},
-		height = theme:px(28),
-		width = theme:px(64),
-		primary = app.services.settings.values.sidebarWidth == 320,
+			label = "Wide",
+			onClick = { type = "sidebarWidth", width = 320},
+			height = theme:px(28),
+			width = theme:px(64),
+			primary = app.services.settings.values.sidebarWidth == 320,
 		})
 		sidebarControls[#sidebarControls + 1] = button.view(app, {
-		label = app.services.settings.values.sidebarCollapsed and "Expand" or "Collapse",
-		onClick = { type = "toggleSidebar"},
-		height = theme:px(28),
-		width = theme:px(76),
-		primary = app.services.settings.values.sidebarCollapsed,
+			label = app.services.settings.values.sidebarCollapsed and "Expand" or "Collapse",
+			onClick = { type = "toggleSidebar"},
+			height = theme:px(28),
+			width = theme:px(76),
+			primary = app.services.settings.values.sidebarCollapsed,
 		})
 	else
 		sidebarControls[#sidebarControls + 1] = text("Icon rail below 1040 px"):style(
@@ -158,29 +158,29 @@ function settings.view(app, page, window)
 	:children(sidebarControls)
 
 	local libraryRows = {
-	text(app.services.settings.values.root or "No folder chosen"):style(theme:s():text(theme:type("sm"))
-	:fg(theme:color("muted")):ellipsis()),
-	(function()
-		local buttons = {
-		button.view(app, {
-		label = "Choose folder…",
-		onClick = { type = "chooseFolder"},
-		primary = true,
-		height = theme:px(32),
-		width = theme:px(narrowTheme and 160 or 150),
-		}),
-		button.view(app, {
-		label = "Rescan",
-		onClick = { type = "rescan"},
-		height = theme:px(32),
-		width = theme:px(narrowTheme and 160 or 90),
-		}),
-		}
-		if narrowTheme then
-			return div():style(sty():column():h(theme:px(72)):gap(theme:px(8))):children(buttons)
-		end
-		return div():style(sty():row():h("auto"):gap(theme:px(8))):children(buttons)
-	end)(),
+		text(app.services.settings.values.root or "No folder chosen"):style(theme:s():text(theme:type("sm"))
+		:fg(theme:color("muted")):ellipsis()),
+		(function()
+			local buttons = {
+				button.view(app, {
+					label = "Choose folder…",
+					onClick = { type = "chooseFolder"},
+					primary = true,
+					height = theme:px(32),
+					width = theme:px(narrowTheme and 160 or 150),
+				}),
+				button.view(app, {
+					label = "Rescan",
+					onClick = { type = "rescan"},
+					height = theme:px(32),
+					width = theme:px(narrowTheme and 160 or 90),
+				}),
+			}
+			if narrowTheme then
+				return div():style(sty():column():h(theme:px(72)):gap(theme:px(8))):children(buttons)
+			end
+			return div():style(sty():row():h("auto"):gap(theme:px(8))):children(buttons)
+		end)(),
 	}
 	local scan = app.services.scan
 	if scan.skipped > 0 then
@@ -188,19 +188,19 @@ function settings.view(app, page, window)
 		theme:s():text(theme:type("xs")):fg(theme:color("danger"))
 		)
 		for at, failure in ipairs(scan.errors) do
-				if at > 3 then break end
-				libraryRows[#libraryRows + 1] = text(path.basename(failure.path) .. " · " .. failure.message):style(
-				theme:s():text(theme:type("xs")):fg(theme:color("muted")):ellipsis()
-				)
-			end
+			if at > 3 then break end
+			libraryRows[#libraryRows + 1] = text(path.basename(failure.path) .. " · " .. failure.message):style(
+			theme:s():text(theme:type("xs")):fg(theme:color("muted")):ellipsis()
+			)
+		end
 	end
 
 	local audioRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(12)):align("center")):children({
-	text("Volume"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	volume.view(app, { width = theme:px(narrowTheme and 80 or 200) }),
-	text(tostring(math.floor((app.services.settings.values.isMuted and 0 or app.services.settings.values.volume) * 100)) .. "%"):style(
-	theme:s():text(theme:type("xs")):fg(theme:color("faint"))
-	),
+		text("Volume"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+		volume.view(app, { width = theme:px(narrowTheme and 80 or 200) }),
+		text(tostring(math.floor((app.services.settings.values.isMuted and 0 or app.services.settings.values.volume) * 100)) .. "%"):style(
+		theme:s():text(theme:type("xs")):fg(theme:color("faint"))
+		),
 	})
 
 	local lastfm = app.services.lastfm.client
@@ -212,35 +212,35 @@ function settings.view(app, page, window)
 	if lastfm:isConnected() then
 		lastfmActionWidth = theme:px(narrowTheme and 92 or 110)
 		lastfmButton = button.view(app, {
-		label = "Disconnect",
-		onClick = { type = "lastfmDisconnect"},
-		height = theme:px(28),
-		width = lastfmActionWidth,
+			label = "Disconnect",
+			onClick = { type = "lastfmDisconnect"},
+			height = theme:px(28),
+			width = lastfmActionWidth,
 		})
 	elseif lastfm:isAuthorizing() then
 		lastfmActionWidth = theme:px(narrowTheme and 78 or 88) + theme:px(6) + theme:px(70)
 		lastfmButton = div():style(sty():row():h(theme:px(28)):gap(theme:px(6))):children({
-		button.view(app, {
-		label = "Open page",
-		onClick = { type = "lastfmOpenAuth"},
-		height = theme:px(28),
-		width = theme:px(narrowTheme and 78 or 88),
-		}),
-		button.view(app, {
-		label = "Cancel",
-		onClick = { type = "lastfmCancel"},
-		height = theme:px(28),
-		width = theme:px(70),
-		}),
+			button.view(app, {
+				label = "Open page",
+				onClick = { type = "lastfmOpenAuth"},
+				height = theme:px(28),
+				width = theme:px(narrowTheme and 78 or 88),
+			}),
+			button.view(app, {
+				label = "Cancel",
+				onClick = { type = "lastfmCancel"},
+				height = theme:px(28),
+				width = theme:px(70),
+			}),
 		})
 	else
 		lastfmActionWidth = theme:px(narrowTheme and 84 or 96)
 		lastfmButton = button.view(app, {
-		label = "Connect",
-		onClick = { type = "lastfmConnect"},
-		primary = true,
-		height = theme:px(28),
-		width = lastfmActionWidth,
+			label = "Connect",
+			onClick = { type = "lastfmConnect"},
+			primary = true,
+			height = theme:px(28),
+			width = lastfmActionWidth,
 		})
 	end
 
@@ -248,41 +248,41 @@ function settings.view(app, page, window)
 	metrics.contentWidth(app, window.width) - theme:space(18) * 2 - lastfmActionWidth - theme:px(10))
 	local lastfmStatusRow = div():style(sty():row():wrel(1.0):h(theme:px(28)):gap(theme:px(10))
 	:align("center")):children({
-	text(lastfm:statusText()):style(theme:s():w(lastfmStatusWidth):text(theme:type("xs"))
-	:fg(lastfmColour):ellipsis()),
-	lastfmButton,
+		text(lastfm:statusText()):style(theme:s():w(lastfmStatusWidth):text(theme:type("xs"))
+		:fg(lastfmColour):ellipsis()),
+		lastfmButton,
 	})
 
 	local lastfmToggleRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"))
 	:children({
-	text("Scrobbling"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-	button.view(app, {
-	label = app.services.settings.values.lastfmEnabled and "Enabled" or "Paused",
-	onClick = { type = "lastfmEnabled", value = not app.services.settings.values.lastfmEnabled},
-	height = theme:px(28),
-	width = theme:px(narrowTheme and 76 or 88),
-	primary = app.services.settings.values.lastfmEnabled,
-	}),
+		text("Scrobbling"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+		button.view(app, {
+			label = app.services.settings.values.lastfmEnabled and "Enabled" or "Paused",
+			onClick = { type = "lastfmEnabled", value = not app.services.settings.values.lastfmEnabled},
+			height = theme:px(28),
+			width = theme:px(narrowTheme and 76 or 88),
+			primary = app.services.settings.values.lastfmEnabled,
+		}),
 	})
 
 	local lastfmRows = { lastfmStatusRow, lastfmToggleRow}
 	local lastfmHeight = 176
 
 	local githubButtons = {
-	button.view(app, {
-	label = "GitHub",
-	onClick = { type = "openURL", url = GITHUB},
-	icon = "github",
-	primary = true,
-	height = theme:px(32),
-	width = theme:px(narrowTheme and 160 or 124),
-	}),
-	button.view(app, {
-	label = "Issues",
-	onClick = { type = "openURL", url = GITHUB .. "/issues"},
-	height = theme:px(32),
-	width = theme:px(narrowTheme and 160 or 92),
-	}),
+		button.view(app, {
+			label = "GitHub",
+			onClick = { type = "openURL", url = GITHUB},
+			icon = "github",
+			primary = true,
+			height = theme:px(32),
+			width = theme:px(narrowTheme and 160 or 124),
+		}),
+		button.view(app, {
+			label = "Issues",
+			onClick = { type = "openURL", url = GITHUB .. "/issues"},
+			height = theme:px(32),
+			width = theme:px(narrowTheme and 160 or 92),
+		}),
 	}
 	local githubRow
 	if narrowTheme then
@@ -298,17 +298,17 @@ function settings.view(app, page, window)
 	return div():style(sty():column():wrel(1.0):h(theme:px(32 + appearanceHeight + 136 + libraryHeight
 	+134 + lastfmHeight + aboutHeight + 6 * 16 + 24))
 	:gap(theme:space(16))):children({
-	text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-	section("Appearance", "Theme, accent, custom colour, scale and motion.",
-	{ themeRow, accentRow, customRow, scaleRow, motionRow}, appearanceHeight),
-	section("Sidebar", "Width and rail behaviour.", { sidebarRow}, 136),
-	section("Library", "Where the library is read from.", libraryRows, libraryHeight),
-	section("Audio", "Output volume.", { audioRow}, 134),
-	section("Last.fm", "Authorize your account to send now-playing updates and scrobbles.", lastfmRows,
-	lastfmHeight),
-	section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", {
-	githubRow,
-	}, aboutHeight),
+		text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
+		section("Appearance", "Theme, accent, custom colour, scale and motion.",
+		{ themeRow, accentRow, customRow, scaleRow, motionRow}, appearanceHeight),
+		section("Sidebar", "Width and rail behaviour.", { sidebarRow}, 136),
+		section("Library", "Where the library is read from.", libraryRows, libraryHeight),
+		section("Audio", "Output volume.", { audioRow}, 134),
+		section("Last.fm", "Authorize your account to send now-playing updates and scrobbles.", lastfmRows,
+		lastfmHeight),
+		section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", {
+			githubRow,
+		}, aboutHeight),
 	})
 end
 

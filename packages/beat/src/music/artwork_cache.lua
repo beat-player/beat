@@ -53,13 +53,13 @@ function artworkCache.prune(root, used)
 
 	local removed = 0
 	for entry in iterator do
-			if entry.type == "file" then
-				local file = path.join(dir, entry.name)
-				if not used[file] then
-					if fs.delete(file) then removed = removed + 1 end
-				end
+		if entry.type == "file" then
+			local file = path.join(dir, entry.name)
+			if not used[file] then
+				if fs.delete(file) then removed = removed + 1 end
 			end
 		end
+	end
 
 	return removed
 end

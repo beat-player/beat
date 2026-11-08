@@ -84,7 +84,9 @@ end
 ---@return boolean
 ---@return string?
 local function requiresMet(module, loaded)
-	for name, requirement in pairs(module.requires or {}) do
+	---@type table<string, string>
+	local requires = module.requires or {}
+	for name, requirement in pairs(requires) do
 		local dependency = loaded[name]
 		if dependency == nil then
 			return false, "it needs plugin " .. name .. " " .. tostring(requirement) .. ", which is not loaded"
@@ -92,7 +94,7 @@ local function requiresMet(module, loaded)
 		local met, why = satisfies(dependency.version, requirement)
 		if not met then
 			return false, "it needs plugin " .. name .. " " .. tostring(requirement) .. ", but "
-				.. dependency.version .. " is loaded" .. (why ~= nil and (": " .. why) or "")
+			.. dependency.version .. " is loaded" .. (why ~= nil and (": " .. why) or "")
 		end
 	end
 	return true
@@ -103,27 +105,43 @@ end
 ---@param registry beat.Registry
 ---@param plugin beat.Plugin
 ---@param undo fun()[]
----@return table
+---@return beat.PluginHandle
 local function handleFor(registry, plugin, undo)
+	---@type beat.PluginHandle
 	local handle = {}
 
 	---@param callback fun()
 	local function record(callback) undo[#undo + 1] = callback end
 
+	---@param name string
+	---@param module beat.Service
 	function handle.service(name, module) record(registry:addService(name, module, plugin)) end
+	---@param kind string
+	---@param surface beat.PageSurface
 	function handle.page(kind, surface) record(registry:addPage(kind, surface, plugin)) end
+	---@param name string
+	---@param surface beat.OverlaySurface
 	function handle.overlay(name, surface) record(registry:addOverlay(name, surface, plugin)) end
+	---@param action beat.Action
 	function handle.action(action) record(registry:addAction(action, plugin)) end
+	---@param kind string
+	---@param listener fun(message: table, app: beat.App)
 	function handle.on(kind, listener) record(registry:addListener(kind, listener, plugin)) end
+	---@param kind string
+	---@param interceptor fun(message: table, app: beat.App, continue: fun(message: table?))
 	function handle.intercept(kind, interceptor) record(registry:addInterceptor(kind, interceptor, plugin)) end
+	---@param name string
+	---@param fn fun(original: any): any
 	function handle.wrap(name, fn) record(registry:addWrap(name, fn, plugin)) end
+	---@param name string
+	---@param value any
 	function handle.replace(name, value) record(registry:addReplace(name, value, plugin)) end
 
 	return handle
 end
 
 ---@param registry beat.Registry
----@param module table
+---@param module beat.PluginModule
 ---@param builtin boolean
 ---@param loaded table<string, beat.Plugin>
 local function loadOne(registry, module, builtin, loaded)
@@ -165,12 +183,12 @@ end
 --- Loads beat's own plugins, then the outside ones, and returns what loaded by name.
 ---@param registry beat.Registry
 ---@param builtins string[] # Module names under `beat.plugins`
----@param outside table[]?
+---@param outside beat.PluginModule[]?
 ---@return table<string, beat.Plugin>
 function Plugins.load(registry, builtins, outside)
 	local loaded = {}
 	for _, name in ipairs(builtins) do
-		loadOne(registry, require("beat.plugins." .. name), true, loaded)
+		loadOne(registry, require("beat.plugins." .. name) --[[@as beat.PluginModule]], true, loaded)
 	end
 	for _, module in ipairs(outside or {}) do
 		loadOne(registry, module, false, loaded)

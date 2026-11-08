@@ -70,11 +70,11 @@ end
 local function inspect(entry)
 	local stat = fs.stat(entry.path)
 	local fileEntry = {
-	path = entry.path,
-	dir = entry.dir,
-	name = entry.name,
-	ext = entry.ext,
-	modifyTime = stat and stat.modifyTime or nil,
+		path = entry.path,
+		dir = entry.dir,
+		name = entry.name,
+		ext = entry.ext,
+		modifyTime = stat and stat.modifyTime or nil,
 	}
 
 	local ok, info = pcall(audio.inspect, entry.path)
@@ -110,7 +110,7 @@ local function inspect(entry)
 
 	dropUnsendableTags(info)
 	local sent, encoded = pcall(json.encode,
-		{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
+	{ type = "track", info = info, entry = fileEntry, cover = entry.cover, coverCache = coverCache })
 	if not sent then
 		recordError(entry.path, "skipped: its tags are not UTF-8")
 		return

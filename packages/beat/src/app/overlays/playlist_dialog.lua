@@ -14,10 +14,11 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@field tagIds table<number, boolean>
 ---@field match "all"|"any"
 
----@type beat.OverlaySurface
+---@class beat.PlaylistDialogOverlay: beat.OverlaySurface
 local playlistDialog = {}
 
 ---@param params { smart: boolean? }
+---@param app beat.App
 function playlistDialog.new(app, params)
 	app:close("tag_picker")
 	app:close("tag_dialog")
@@ -28,12 +29,17 @@ function playlistDialog.new(app, params)
 	return { smart = params.smart == true, name = "", tagIds = {}, match = "all"}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.PlaylistDialogState>
 function playlistDialog.close(app, overlay)
 	app:focusField(nil)
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.PlaylistDialogState>
+---@param message beat.Message
 function playlistDialog.update(app, overlay, message)
-	local state = overlay.state --[[@as beat.PlaylistDialogState]]
+	local state = overlay.state
 	local kind = message.type
 	if kind == "playlistDraft" then
 		state.name = message.value or ""
@@ -69,72 +75,75 @@ function playlistDialog.update(app, overlay, message)
 	return false
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.PlaylistDialogState>
+---@param window wonderland.RenderWindow
 function playlistDialog.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.PlaylistDialogState]]
+	local state = overlay.state
 	local theme = app.services.appearance.theme
 	local tags = app.services.collections.taxonomy:visibleTags()
 	local panelWidth = metrics.panelWidth(app, window, 440)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2
 	local children = {
-	text("New playlist"):style(
-	theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-	text("Tags add tracks automatically; you can still add the rest by hand."):style(
-	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-	field.view(app, {
-	name = "playlistName",
-	value = state.name,
-	placeholder = "Playlist name",
-	oninput = function(value) return { type = "playlistDraft", value = value} end,
-	onsubmit = function() return { type = "createPlaylist"} end,
-	}),
+		text("New playlist"):style(
+		theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+		text("Tags add tracks automatically; you can still add the rest by hand."):style(
+		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+		field.view(app, {
+			name = "playlistName",
+			value = state.name,
+			placeholder = "Playlist name",
+			oninput = function(value) return { type = "playlistDraft", value = value} end,
+			onsubmit = function() return { type = "createPlaylist"} end,
+		}),
 	}
 
 	local pills = tagPills.view(app, {
-	tags = tags,
-	selected = state.tagIds,
-	action = function(tag)
-		return { type = "playlistDraftTag", id = tag.id}
-	end,
-	width = content,
-	columns = metrics.mobile(app, window.width) and 2 or 3,
+		tags = tags,
+		selected = state.tagIds,
+		action = function(tag)
+			return { type = "playlistDraftTag", id = tag.id}
+		end,
+		width = content,
+		columns = metrics.mobile(app, window.width) and 2 or 3,
 	})
 	children[#children + 1] = pills or text("Create a tag to make this playlist smart too."):style(
 	theme:s():text(theme:type("sm")):fg(theme:color("faint")))
 	children[#children + 1] = div():style(sty():row():h(theme:px(28)):gap(theme:px(8))
 	:align("center")):children({
-	text("Match"):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
-	button.view(app, {
-	label = "All tags",
-	onClick = { type = "playlistDraftMatch", value = "all"},
-	height = theme:px(26),
-	width = theme:px(82),
-	primary = state.match == "all",
-	}),
-	button.view(app, {
-	label = "Any tag",
-	onClick = { type = "playlistDraftMatch", value = "any"},
-	height = theme:px(26),
-	width = theme:px(82),
-	primary = state.match == "any",
-	}),
+		text("Match"):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
+		button.view(app, {
+			label = "All tags",
+			onClick = { type = "playlistDraftMatch", value = "all"},
+			height = theme:px(26),
+			width = theme:px(82),
+			primary = state.match == "all",
+		}),
+		button.view(app, {
+			label = "Any tag",
+			onClick = { type = "playlistDraftMatch", value = "any"},
+			height = theme:px(26),
+			width = theme:px(82),
+			primary = state.match == "any",
+		}),
 	})
 
 	children[#children + 1] = div():style(sty():row():h(theme:px(32)):gap(theme:px(8))
 	:align("center"):justify("end")):children({
-	button.view(app, {
-	label = "Cancel",
-	onClick = { type = "dismiss"},
-	height = theme:px(30),
-	width = theme:px(80),
-	}),
-	button.view(app, {
-	label = "Create",
-	onClick = { type = "createPlaylist"},
-	primary = true,
-	height = theme:px(30),
-	width = theme:px(86),
-	}),
+		button.view(app, {
+			label = "Cancel",
+			onClick = { type = "dismiss"},
+			height = theme:px(30),
+			width = theme:px(80),
+		}),
+		button.view(app, {
+			label = "Create",
+			onClick = { type = "createPlaylist"},
+			primary = true,
+			height = theme:px(30),
+			width = theme:px(86),
+		}),
 	})
 
 	local tagRows = math.max(1, math.ceil(math.min(#tags, 12) / 3))

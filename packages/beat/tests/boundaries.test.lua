@@ -11,7 +11,6 @@
 local test = require("lde-test")
 local env = require("env")
 local fs = require("fs")
-local path = require("path")
 
 local ROOTS = { "music", "workers" }
 -- Prefixes forbidden with everything under them, and modules forbidden by exact name.

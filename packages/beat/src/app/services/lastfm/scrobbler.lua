@@ -29,11 +29,11 @@ local SEEK_SLOP = 2
 ---@return beat.Scrobbler
 local function new()
 	return setmetatable({
-	trackId = nil,
-	played = 0,
-	lastPosition = 0,
-	queued = false,
-	queue = {},
+		trackId = nil,
+		played = 0,
+		lastPosition = 0,
+		queued = false,
+		queue = {},
 	}, Scrobbler)
 end
 
@@ -87,14 +87,14 @@ function Scrobbler:update(track, position, playing, now)
 		self.queued = true
 		if #self.queue >= 512 then table.remove(self.queue, 1) end
 		self.queue[#self.queue + 1] = {
-		trackId = track.id,
-		title = track.title,
-		artist = track.artist,
-		album = track.album,
-		albumArtist = track.albumArtist,
-		number = track.number,
-		duration = track.duration,
-		startedAt = self.startedAt or now,
+			trackId = track.id,
+			title = track.title,
+			artist = track.artist,
+			album = track.album,
+			albumArtist = track.albumArtist,
+			number = track.number,
+			duration = track.duration,
+			startedAt = self.startedAt or now,
 		}
 	end
 end

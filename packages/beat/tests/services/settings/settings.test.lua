@@ -45,7 +45,7 @@ test.it("round-trips the settings a launch remembers", function()
 	value.equalizerPreset = "Custom 2"
 	value.equalizerGains = { 5, 3, 0, 2, 4}
 	value.equalizerCustomPresets = { { name = "Custom", gains = { 1, 2, 3, 4, 5}},
-	{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
+		{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
 
 	local ok, err = settingsModel.save(value, dir)
 	test.truthy(ok, err)
@@ -63,12 +63,14 @@ test.it("round-trips the settings a launch remembers", function()
 	test.equal(again.lastfmSessionKey, "session")
 	test.equal(again.lastfmUsername, "scrobbler")
 	test.equal(again.lastfmEnabled, false)
+	local gains = assert(again.equalizerGains)
+	local presets = assert(again.equalizerCustomPresets)
 	test.equal(again.equalizerPreset, "Custom 2")
-	test.equal(again.equalizerGains[1], 5)
-	test.equal(again.equalizerGains[5], 4)
-	test.equal(#again.equalizerCustomPresets, 2)
-	test.equal(again.equalizerCustomPresets[1].name, "Custom")
-	test.equal(again.equalizerCustomPresets[2].gains[4], 2)
+	test.equal(gains[1], 5)
+	test.equal(gains[5], 4)
+	test.equal(#presets, 2)
+	test.equal(presets[1].name, "Custom")
+	test.equal(presets[2].gains[4], 2)
 
 	fs.delete(paths.file("settings.json", dir))
 	fs.rmdir(dir)

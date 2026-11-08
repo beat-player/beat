@@ -5,7 +5,6 @@ local wonderland = require("wonderland")
 local icon = require("beat.app.components.icon")
 local iconButton = require("beat.app.components.icon_button")
 local cover = require("beat.app.components.cover")
-local playingBars = require("beat.app.components.playing_bars")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -113,10 +112,14 @@ end
 ---@return wonderland.Element?
 local function anchored(app, name, anchor, window)
 	local overlay = app:overlay(name)
-	if overlay == nil then return nil end
+	local surface = app.registry:overlay(name)
+	if overlay == nil or surface.view == nil then return nil end
 	overlay.state.anchor = anchor
-	return app.registry:overlay(name).view(app, overlay, window)
+	return surface.view(app, overlay, window)
 end
+
+---@class beat.NowPlayingState: beat.OverlayState
+---@field anchor table?
 
 ---@class beat.NowPlayingOverlay: beat.OverlaySurface
 ---@field toolPanel fun(app: beat.App, panel: wonderland.Element, x: number, width: number, height: number, room: beat.ToolRoom): wonderland.Element
@@ -126,17 +129,21 @@ local nowPlaying = { fullscreen = true}
 
 nowPlaying.toolPanel = toolPanel
 
+---@param app beat.App
 function nowPlaying.new(app)
 	app.services.motion.clock:animate("nowPlaying", 1, 0.28, app.services.motion.ease.outBack)
 	return {}
 end
 
 ---@param app beat.App
----@param _overlay beat.OverlayInstance
+---@param _overlay beat.OverlayInstance<beat.NowPlayingState>
 function nowPlaying.close(app, _overlay)
 	app.services.motion.clock:animate("nowPlaying", 0, 0.28, app.services.motion.ease.inCubic)
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.NowPlayingState>
+---@param message beat.Message
 function nowPlaying.update(app, overlay, message)
 	local kind = message.type
 	if kind == "expandNowPlaying" then
@@ -158,7 +165,7 @@ function nowPlaying.update(app, overlay, message)
 end
 
 ---@param app beat.App
----@param _overlay beat.OverlayInstance
+---@param _overlay beat.OverlayInstance<beat.NowPlayingState>
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function nowPlaying.view(app, _overlay, window)
@@ -183,17 +190,15 @@ function nowPlaying.view(app, _overlay, window)
 
 	local header = div():style(sty():row():wrel(1.0):h(theme:px(36)):justify("end")
 	:align("center"):offset(0, 0):z(110)):children({
-	iconButton.view(app, {
-	name = "chevronDown",
-	size = theme:px(34),
-	onClick = { type = "expandNowPlaying", open = false},
-	}),
+		iconButton.view(app, {
+			name = "chevronDown",
+			size = theme:px(34),
+			onClick = { type = "expandNowPlaying", open = false},
+		}),
 	})
 	local contentChildren = {}
 
 	if track ~= nil and album ~= nil then
-		---@cast track beat.Track
-		---@cast album beat.Album
 		local coverSize
 		local progressWidth
 		if stacked then
@@ -222,50 +227,50 @@ function nowPlaying.view(app, _overlay, window)
 		local transport = math.max(0.7, math.min(1, progressWidth / theme:px(240)))
 		local controlGap = theme:px(10 * transport)
 		local textRows = {
-		text(track.title):style(theme:s():w(progressWidth)
-		:text(theme:type(mobile and "xxl" or "hero")):weight("bold")
-		:fg(theme:color("text")):ellipsis()),
-		text(album.title .. "  ·  " .. track.artist):style(theme:s():w(progressWidth)
-		:text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis()),
+			text(track.title):style(theme:s():w(progressWidth)
+			:text(theme:type(mobile and "xxl" or "hero")):weight("bold")
+			:fg(theme:color("text")):ellipsis()),
+			text(album.title .. "  ·  " .. track.artist):style(theme:s():w(progressWidth)
+			:text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis()),
 		}
-		local repeatIcon = app.services.playback.player.queue and app.services.playback.player.queue.repeatMode == "one"
-		and "repeatOne" or "repeat"
-		local repeatActive = app.services.playback.player.queue and app.services.playback.player.queue.repeatMode ~= "off"
+		local queue = app.services.playback.player.queue
+		local repeatIcon = queue ~= nil and queue.repeatMode == "one" and "repeatOne" or "repeat"
+		local repeatActive = queue ~= nil and queue.repeatMode ~= "off"
 		local toolSize = theme:px(28)
 		local toolGap = theme:px(4)
 		local toolGroupWidth = toolSize * 2 + toolGap
 		textRows[#textRows + 1] = div():style(sty():row():wrel(1.0):h(theme:px(34))
 		:align("center"):justify("space-between")):children({
-		div():style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap)
-		:align("center")):children({
-		iconButton.view(app, {
-		name = "playlists",
-		size = toolSize,
-		onClick = { type = "toggleQueue"},
-		active = app:overlay("queue") ~= nil,
-		}),
-		moreButton(app, toolSize, { type = "toggleMore"}, app:overlay("more") ~= nil),
-		}),
-		div():style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap)
-		:align("center")):children({
-		iconButton.view(app, {
-		name = "shuffle",
-		size = toolSize,
-		onClick = { type = "shuffle"},
-		active = app.services.playback.player.queue and app.services.playback.player.queue.shuffle,
-		}),
-		iconButton.view(app, {
-		name = repeatIcon,
-		size = toolSize,
-		onClick = { type = "repeat"},
-		active = repeatActive,
-		}),
-		})
+			div():style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap)
+			:align("center")):children({
+				iconButton.view(app, {
+					name = "playlists",
+					size = toolSize,
+					onClick = { type = "toggleQueue"},
+					active = app:overlay("queue") ~= nil,
+				}),
+				moreButton(app, toolSize, { type = "toggleMore"}, app:overlay("more") ~= nil),
+			}),
+			div():style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap)
+			:align("center")):children({
+				iconButton.view(app, {
+					name = "shuffle",
+					size = toolSize,
+					onClick = { type = "shuffle"},
+					active = queue ~= nil and queue.shuffle,
+				}),
+				iconButton.view(app, {
+					name = repeatIcon,
+					size = toolSize,
+					onClick = { type = "repeat"},
+					active = repeatActive,
+				}),
+			})
 		})
 		textRows[#textRows + 1] = progress.view(app, {
-		track = track,
-		player = app.services.playback.player,
-		width = progressWidth,
+			track = track,
+			player = app.services.playback.player,
+			width = progressWidth,
 		})
 		local controlHeight = theme:px(54 * transport)
 		-- The transport is centred by a spacer either side rather than by spreading the row: the
@@ -275,29 +280,29 @@ function nowPlaying.view(app, _overlay, window)
 		local skipSize = theme:px(30 * transport)
 		local playSize = theme:px(54 * transport)
 		local controlChildren = {
-		volumeButton(app, theme:px(28 * transport)),
-		div():style(sty():w("auto"):h(controlHeight)),
-		div():style(sty():row():w(skipSize * 2 + playSize + controlGap * 2):h(controlHeight)
-		:gap(controlGap):align("center"):justify("center")):children({
-		iconButton.view(app, { name = "previous", size = skipSize, onClick = { type = "previous"} }),
-		div():style(sty():size(playSize, playSize)
-		:radius(theme:radius("full")):bg(theme:color("accent"))
-		:align("center"):justify("center"))
-		:onClick({ type = "togglePlay"})
-		:children(icon.view(app, { name = app.services.playback.player:isPlaying() and "pause" or "play",
-		size = theme:px(24 * transport), colour = theme.accentInk })),
-		iconButton.view(app, { name = "next", size = skipSize, onClick = { type = "next"} }),
-		}),
-		div():style(sty():w("auto"):h(controlHeight)),
-		equalizerButton(app, theme:px(28 * transport),
-		{ type = "toggleEqualizer"}, app:overlay("equalizer") ~= nil),
+			volumeButton(app, theme:px(28 * transport)),
+			div():style(sty():w("auto"):h(controlHeight)),
+			div():style(sty():row():w(skipSize * 2 + playSize + controlGap * 2):h(controlHeight)
+			:gap(controlGap):align("center"):justify("center")):children({
+				iconButton.view(app, { name = "previous", size = skipSize, onClick = { type = "previous"} }),
+				div():style(sty():size(playSize, playSize)
+				:radius(theme:radius("full")):bg(theme:color("accent"))
+				:align("center"):justify("center"))
+				:onClick({ type = "togglePlay"})
+				:children(icon.view(app, { name = app.services.playback.player:isPlaying() and "pause" or "play",
+					size = theme:px(24 * transport), colour = theme.accentInk })),
+				iconButton.view(app, { name = "next", size = skipSize, onClick = { type = "next"} }),
+			}),
+			div():style(sty():w("auto"):h(controlHeight)),
+			equalizerButton(app, theme:px(28 * transport),
+			{ type = "toggleEqualizer"}, app:overlay("equalizer") ~= nil),
 		}
 		local panelHeight = theme:px(44)
 		local volumePanel = anchored(app, "volume", {
-		width = theme:px(190),
-		height = panelHeight,
-		x = 0,
-		y = compact and (-panelHeight - theme:px(8)) or (controlHeight + theme:px(8)),
+			width = theme:px(190),
+			height = panelHeight,
+			x = 0,
+			y = compact and (-panelHeight - theme:px(8)) or (controlHeight + theme:px(8)),
 		}, window)
 		if volumePanel ~= nil then controlChildren[#controlChildren + 1] = volumePanel end
 		local titleSize = theme:type(mobile and "xxl" or "hero")
@@ -315,19 +320,19 @@ function nowPlaying.view(app, _overlay, window)
 		-- nothing in the stage is painted later than its last row. The tool row is a fixed distance
 		-- above it.
 		local room = {
-		below = window.height - edge - rowTop - theme:px(34),
-		above = rowTop - edge,
-		top = -(theme:px(34) + theme:px(18) + stageGap * 2),
+			below = window.height - edge - rowTop - theme:px(34),
+			above = rowTop - edge,
+			top = -(theme:px(34) + theme:px(18) + stageGap * 2),
 		}
 		local queuePanel = anchored(app, "queue", {
-		toolWidth = progressWidth,
-		room = room,
+			toolWidth = progressWidth,
+			room = room,
 		}, window)
 		if queuePanel ~= nil then controlChildren[#controlChildren + 1] = queuePanel end
 		local menu = anchored(app, "more", {
-		rowWidth = progressWidth,
-		room = room,
-		x = toolSize + toolGap,
+			rowWidth = progressWidth,
+			room = room,
+			x = toolSize + toolGap,
 		}, window)
 		if menu ~= nil then controlChildren[#controlChildren + 1] = menu end
 		textRows[#textRows + 1] = div():style(sty():row():wrel(1.0):h(controlHeight)
@@ -338,17 +343,17 @@ function nowPlaying.view(app, _overlay, window)
 			main = div():style(sty():h(availableHeight)
 			:column():align("center"):justify("center"):gap(theme:space(16)):pad(mainPad, 0, mainPad, 0))
 			main:children({
-			coverFrame,
-			div():style(sty():column():h(textHeight):gap(stageGap)
-			:w(progressWidth)):children(textRows),
+				coverFrame,
+				div():style(sty():column():h(textHeight):gap(stageGap)
+				:w(progressWidth)):children(textRows),
 			})
 		else
 			main = div():style(sty():h(availableHeight)
 			:row():align("center"):justify("center"):gap(gap):pad(mainPad, 0, mainPad, 0))
 			main:children({
-			coverFrame,
-			div():style(sty():column():h(stageHeight):justify("center"):gap(stageGap)
-			:w(progressWidth)):children(textRows),
+				coverFrame,
+				div():style(sty():column():h(stageHeight):justify("center"):gap(stageGap)
+				:w(progressWidth)):children(textRows),
 			})
 		end
 		contentChildren[#contentChildren + 1] = main
