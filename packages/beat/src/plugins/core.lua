@@ -7,6 +7,7 @@ local appearance = require("beat.app.services.appearance")
 local toasts = require("beat.app.services.toasts")
 local scroll = require("beat.app.services.scroll")
 local system = require("beat.app.services.system")
+local http = require("beat.app.services.http")
 
 local settingsPage = require("beat.app.pages.settings")
 local accentPicker = require("beat.app.overlays.accent_picker")
@@ -22,6 +23,7 @@ return {
 		beat.service("toasts", toasts)
 		beat.service("scroll", scroll)
 		beat.service("system", system)
+		beat.service("http", http)
 
 		beat.page("settings", settingsPage)
 		beat.overlay("accent_picker", accentPicker)

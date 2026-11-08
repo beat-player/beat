@@ -58,6 +58,21 @@ function LibraryService:replace(root)
 	self.emit({ type = "libraryReplaced"})
 end
 
+--- Drops the tracks a folder add is about to replace. The folder is scanned again from the
+--- filesystem, so what the library held under it is stale the moment the scan starts.
+---@param folder string
+---@return boolean removed
+function LibraryService:forgetFolder(folder)
+	local library = self.current
+	if library == nil then return false end
+	local removed = library:removeUnder(folder)
+	if removed then
+		dropSorted(self)
+		self.changed:fire()
+	end
+	return removed
+end
+
 --- A track the scan read. The caller guards the call, because one unreadable file must not stop
 --- the scan; the change is announced only once `add` returned, so a listener never sees a
 --- half-built track.

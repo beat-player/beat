@@ -13,8 +13,9 @@ local picker = {}
 
 --- Starts the dialog. A file is returned even when no native picker exists; `poll` says which.
 ---@param window winit.Window?
+---@param opts { title: string? }?
 ---@return beat.FolderPick
-function picker.start(window)
+function picker.start(window, opts)
 	local file = os.tmpname() .. "-beat-folder"
 	local osName = jit.os or ""
 	local dialog = winit.FileDialog
@@ -26,7 +27,8 @@ function picker.start(window)
 		return { file = file, platform = osName}
 	end
 
-	local ok, path = pcall(dialog.pickFolder, window, { title = "Choose music folder" })
+	local title = opts ~= nil and opts.title or "Choose music folder"
+	local ok, path = pcall(dialog.pickFolder, window, { title = title })
 
 	if not ok then
 		fs.write(file, "__NO_PICKER__")

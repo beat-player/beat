@@ -37,6 +37,14 @@ local Log = require("beat.log")
 ---@field view (fun(app: beat.App, overlay: beat.OverlayInstance, window: wonderland.RenderWindow): wonderland.Element?)?
 ---@field close (fun(app: beat.App, overlay: beat.OverlayInstance))? # What closing it undoes: a focused field, a draft
 
+--- A destination in the sidebar and the phone's tabs, after the built-in ones.
+---@class beat.NavEntry
+---@field id string # The plugin's name and the entry's own: `bandcamp:search`
+---@field title string
+---@field icon string # A glyph name from `components/icon.lua`
+---@field page beat.Route
+---@field order number?
+
 --- One entry of a context menu. The message may be made when the menu opens, so it can name the
 --- album or track the menu is for.
 ---@class beat.Action
@@ -73,6 +81,7 @@ local Log = require("beat.log")
 ---@field mods table<string, table[]> # By `page:home`, `overlay:queue`, `service:playback`
 ---@field handled table<string, beat.Registration> # The service that answers each message type
 ---@field actionsList table[] # In registration order; sorted when a menu asks
+---@field navList table[] # Sidebar entries in registration order; sorted when a sidebar asks
 ---@field listeners table<string, table[]>
 ---@field interceptors table<string, table[]>
 ---@field reports string[] # Problems found before the toasts service could be told
@@ -94,6 +103,7 @@ function Registry.new(app)
 		mods = {},
 		handled = {},
 		actionsList = {},
+		navList = {},
 		listeners = {},
 		interceptors = {},
 		reports = {},
@@ -313,6 +323,47 @@ function Registry:addAction(action, plugin)
 		for at, candidate in ipairs(self.actionsList) do
 			if candidate == entry then
 				table.remove(self.actionsList, at)
+				return
+			end
+		end
+	end
+end
+
+---@param entry beat.NavEntry
+---@param plugin beat.Plugin
+---@return fun() undo
+function Registry:addNav(entry, plugin)
+	if type(entry) ~= "table" then error("a nav entry must be a table", 0) end
+	if type(entry.id) ~= "string" then error("a nav entry needs an id", 0) end
+	if type(entry.title) ~= "string" then error("a nav entry needs a title", 0) end
+	if type(entry.icon) ~= "string" then error("a nav entry needs an icon", 0) end
+	if type(entry.page) ~= "table" or type(entry.page.kind) ~= "string" then
+		error("a nav entry needs a page route", 0)
+	end
+	if entry.order ~= nil and type(entry.order) ~= "number" then
+		error("a nav entry's order must be a number", 0)
+	end
+	namespace(plugin, "nav", entry.id)
+
+	for _, candidate in ipairs(self.navList) do
+		if candidate.id == entry.id then error("nav entry " .. entry.id .. " is registered twice", 0) end
+	end
+
+	local registration = {
+		id = entry.id,
+		title = entry.title,
+		icon = entry.icon,
+		page = entry.page,
+		order = entry.order or 100,
+		plugin = plugin,
+		index = #self.navList + 1,
+	}
+	self.navList[#self.navList + 1] = registration
+
+	return function()
+		for at, candidate in ipairs(self.navList) do
+			if candidate == registration then
+				table.remove(self.navList, at)
 				return
 			end
 		end
@@ -543,6 +594,21 @@ function Registry:actions(menu, ctx)
 		actions[at] = { title = item.entry.title, message = item.message, tone = item.entry.tone}
 	end
 	return actions
+end
+
+--- The destinations a sidebar shows after the built-in ones, in the order they asked for. An
+--- entry whose plugin has been switched off is not there.
+---@return beat.NavEntry[]
+function Registry:nav()
+	local entries = {}
+	for _, entry in ipairs(self.navList) do
+		if not entry.plugin.disabled then entries[#entries + 1] = entry end
+	end
+	table.sort(entries, function(a, b)
+		if a.order ~= b.order then return a.order < b.order end
+		return a.index < b.index
+	end)
+	return entries
 end
 
 --- Runs the interceptors for a message before it is delivered. `continue` is how one passes the

@@ -159,6 +159,7 @@ local function handleFor(registry, plugin, undo)
 	function handle.page(kind, surface) record(registry:addPage(kind, surface, plugin)) end
 	function handle.overlay(name, surface) record(registry:addOverlay(name, surface, plugin)) end
 	function handle.action(action) record(registry:addAction(action, plugin)) end
+	function handle.nav(entry) record(registry:addNav(entry, plugin)) end
 	function handle.on(kind, listener) record(registry:addListener(kind, listener, plugin)) end
 	function handle.intercept(kind, interceptor) record(registry:addInterceptor(kind, interceptor, plugin)) end
 	function handle.wrap(name, fn) record(registry:addWrap(name, fn, plugin)) end

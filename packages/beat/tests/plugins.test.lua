@@ -8,6 +8,9 @@ local json = require("json")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local App = require("beat.app")
+local Picker = require("beat.app.services.scan.picker")
+
+local realPickStart, realPickPoll = Picker.start, Picker.poll
 
 -- Settings, tags and the library cache are written under `paths.directory`; a test must not put
 -- its fixtures where the person's real library cache lives.
@@ -24,6 +27,7 @@ test.afterAll(function()
 end)
 
 test.afterEach(function()
+	Picker.start, Picker.poll = realPickStart, realPickPoll
 	if App.services ~= nil and App.services.playback ~= nil then App.services.playback.player:close() end
 	-- The folder and the settings file are this test's fixtures, not the person's. A switch test
 	-- reads the file back, so it must not leak into the next test or into a real launch.
@@ -287,6 +291,95 @@ test.it("adds a page a plugin named after itself", function()
 	App:act({ type = "navigate", page = { kind = "panel:page" }})
 	test.equal(App.page.kind, "panel:page", "the namespaced page is navigated to")
 	test.equal(App:currentPage().state.hello, true, "it was given the state its surface starts with")
+end)
+
+test.it("puts a plugin's destination in the sidebar model and reaches its page", function()
+	local plugin = {
+		name = "bandcamp",
+		version = "1.0.0",
+		setup = function(beat)
+			beat.page("bandcamp:search", {
+				new = function() return { hello = true } end,
+				view = function() return nil end,
+			})
+			beat.nav({
+				id = "bandcamp:search",
+				title = "Bandcamp",
+				icon = "search",
+				page = { kind = "bandcamp:search"},
+			})
+		end,
+	}
+	App:init({ scan = false, plugins = { plugin } })
+
+	local entries = App.registry:nav()
+	test.equal(#entries, 1)
+	test.equal(entries[1].id, "bandcamp:search")
+	test.equal(entries[1].title, "Bandcamp")
+	test.equal(entries[1].page.kind, "bandcamp:search")
+
+	App:act({ type = "navigate", page = entries[1].page})
+	test.equal(App.page.kind, "bandcamp:search", "the sidebar entry's page is reachable")
+	test.equal(App:currentPage().state.hello, true)
+end)
+
+test.it("refuses a nav entry that is not named after its plugin, and rolls back the rest", function()
+	local plugin = {
+		name = "sloppy",
+		version = "1.0.0",
+		setup = function(beat)
+			beat.action({
+				menu = "album",
+				title = "Should be rolled back",
+				message = { type = "toast", text = "never" },
+			})
+			beat.nav({
+				id = "search",
+				title = "Sloppy",
+				icon = "search",
+				page = { kind = "home"},
+			})
+		end,
+	}
+	App:init({ scan = false, plugins = { plugin } })
+
+	test.equal(#App.registry:nav(), 0, "the un-namespaced entry is not in the sidebar")
+	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Should be rolled back"), nil,
+		"the registrations made before the bad nav entry were taken back")
+	test.truthy(reported("must be named"), "the reason was reported")
+end)
+
+test.it("asks the folder dialog for a plugin and answers with the path or nil", function()
+	local replies = {}
+	local plugin = {
+		name = "bandcamp",
+		version = "1.0.0",
+		setup = function(beat)
+			beat.on("bandcamp:folder", function(message)
+				replies[#replies + 1] = { path = message.path }
+			end)
+		end,
+	}
+	App:init({ scan = false, plugins = { plugin } })
+
+	local started
+	Picker.start = function(_, opts)
+		started = opts
+		return { file = "stand-in", platform = "test"}
+	end
+	Picker.poll = function() return "/music/Downloaded" end
+
+	App:act({ type = "pickFolder", reply = "bandcamp:folder"})
+	test.equal(started.title, "Choose a folder")
+	local window = { width = 1200, height = 720, shouldRedraw = false}
+	App:tick(10, window)
+	test.equal(replies[1].path, "/music/Downloaded", "the chosen folder came back as the reply")
+
+	Picker.poll = function() return nil, "cancelled" end
+	App:act({ type = "pickFolder", reply = "bandcamp:folder"})
+	App:tick(11, window)
+	test.equal(#replies, 2)
+	test.equal(replies[2].path, nil, "a cancelled dialog answers with no path")
 end)
 
 test.it("builds a service a plugin added and lets it answer its own messages", function()
