@@ -406,6 +406,15 @@ end
 ---@param event winit.Event
 ---@param handler winit.EventManager
 function App:event(event, _handler)
+	if event.name == "windowClose" then
+		-- The app goes with the window. What its services would have written a moment from now --
+		-- a setting still settling, where listening got to -- is written now.
+		for _, service in ipairs(self.serviceOrder) do
+				if service.flush ~= nil then service:flush() end
+			end
+		return nil
+	end
+
 	if event.name == "fileDrop" then
 		for _, drop in ipairs(event.paths or {}) do
 				if fs.isdir(drop) then

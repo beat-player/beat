@@ -5,7 +5,14 @@
 -- arrives here as a message. Last.fm is deliberately not here: it watches what this plays from
 -- its own service, and nothing about playing depends on it.
 local Player = require("beat.app.services.playback.player")
+local Queue = require("beat.app.services.playback.queue")
+local Session = require("beat.app.services.playback.session")
 local Spectrum = require("beat.app.services.playback.spectrum")
+
+-- A change to the queue comes in bursts -- a shuffle, then a skip -- so it is written once they
+-- settle. While a track plays, its place is written this often, so a crash loses little of it.
+local SESSION_DELAY = 1
+local SESSION_STRIDE = 10
 
 ---@class beat.PlaybackService
 ---@field player beat.Player
@@ -15,6 +22,8 @@ local Spectrum = require("beat.app.services.playback.spectrum")
 ---@field library beat.LibraryService
 ---@field collections beat.CollectionsService
 ---@field toasts beat.ToastsService
+---@field sessionKey string # What the session file holds, as `sessionKeyOf` puts it
+---@field sessionDueAt number? # When a changed session is to be written
 local Playback = {}
 Playback.__index = Playback
 Playback.needs = { "settings", "library", "collections", "toasts"}
@@ -52,7 +61,49 @@ function Playback.new(deps)
 	self.player:setVolume(values.volume)
 	self.player.isMuted = values.isMuted
 
+	self:restoreSession()
+	self.sessionKey = self:sessionKeyOf()
 	return self
+end
+
+--- Carries on from where the last launch stopped: the queue it had, paused where its track was.
+--- The track is not a new listen; it was counted when it first started.
+function Playback:restoreSession()
+	local library = self.library.current
+	local saved = Session.load()
+	if library == nil or saved == nil or saved.queue == nil then return end
+
+	local byPath = {}
+	for _, track in ipairs(library.tracks) do byPath[track.path] = track end
+	local queue, sameTrack = Queue.unpack(saved.queue, function(path) return byPath[path] end)
+	if queue == nil then return end
+
+	self.player:restore(queue, sameTrack and saved.seconds or 0)
+	local current = queue:current()
+	self.lastListenedTrackId = current and current.id or nil
+end
+
+--- What would be written, in a form that changes when the file would: the queue, where its play
+--- head is, and -- to a stride -- how far into the track.
+---@return string
+function Playback:sessionKeyOf()
+	local queue = self.player.queue
+	if queue == nil then return "" end
+	return table.concat({
+		tostring(queue), tostring(queue.tracks), tostring(queue.order), #queue.order, queue.position,
+		queue.repeatMode, tostring(queue.shuffle), queue.source,
+		math.floor(self.player:position() / SESSION_STRIDE),
+	}, "|")
+end
+
+--- Writes where listening is now. The window closing asks for it at once. A launch that never had
+--- a queue -- its library still being scanned -- leaves the last session's file as it was.
+function Playback:flush()
+	local queue = self.player.queue
+	if queue == nil and self.sessionKey == "" then return end
+	Session.save({ queue = queue and queue:pack() or nil, seconds = self.player:position()})
+	self.sessionKey = self:sessionKeyOf()
+	self.sessionDueAt = nil
 end
 
 --- The track playing, for the bar and every page that marks the current row.
@@ -264,6 +315,11 @@ function Playback:step(now)
 		self.toasts:show(err, "error")
 		changed = true
 	end
+
+	if self.sessionDueAt == nil and self:sessionKeyOf() ~= self.sessionKey then
+		self.sessionDueAt = now + SESSION_DELAY
+	end
+	if self.sessionDueAt ~= nil and now >= self.sessionDueAt then self:flush() end
 
 	return changed, playing
 end

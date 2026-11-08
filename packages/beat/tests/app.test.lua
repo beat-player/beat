@@ -477,6 +477,57 @@ test.it("plays, pauses, stops and skips from the media keys", function()
 	player:close()
 end)
 
+test.it("carries on after a restart from the track and the place it was left at", function()
+	App:init({ scan = false})
+	local library = fixture()
+	App.services.library.current = library
+	local tracks = library.albums[2].tracks
+	local player = App.services.playback.player
+	player.queue = Queue.new(tracks, 2, { repeatMode = "all"})
+	player.loaded = true
+	player.player = {
+	isPlaying = function() return true end,
+	position = function() return 42 end,
+	duration = function() return 180 end,
+	play = function() end,
+	pause = function() end,
+	setVolume = function() end,
+	update = function() end,
+	close = function() end,
+	}
+	App:event({ name = "windowClose"})
+	player:close()
+
+	-- The next launch: its playback service is made once the library cache has been loaded.
+	local Playback = require("beat.app.services.playback")
+	local again = Playback.new({
+	settings = App.services.settings,
+	library = App.services.library,
+	collections = App.services.collections,
+	toasts = App.services.toasts,
+	})
+	test.equal(again:current().path, tracks[2].path, "the same track is current")
+	test.falsy(again.player:isPlaying(), "it comes back paused")
+	test.equal(again.player:position(), 42, "where it was left")
+	test.equal(again.player.queue.repeatMode, "all")
+
+	local seeks, playing = {}, false
+	again.player.player = {
+	isPlaying = function() return playing end,
+	position = function() return 0 end,
+	play = function() playing = true end,
+	seek = function(_, seconds) seeks[#seeks + 1] = seconds end,
+	enqueue = function() end,
+	setVolume = function() end,
+	update = function() end,
+	close = function() end,
+	}
+	again:update({ type = "togglePlay"})
+	test.truthy(playing)
+	test.equal(seeks[1], 42, "play goes on from there")
+	again:close()
+end)
+
 test.it("renames and deletes tags without changing their ids", function()
 	App:init({ scan = false})
 	App.services.collections.taxonomy = Taxonomy.new()

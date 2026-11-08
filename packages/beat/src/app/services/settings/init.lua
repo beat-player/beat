@@ -55,4 +55,9 @@ function Settings:step(now)
 	if self.dirtyAt ~= nil and now >= self.dirtyAt then self:save() end
 end
 
+--- The window is closing: a change still settling is written now rather than lost.
+function Settings:flush()
+	if self.dirtyAt ~= nil then self:save() end
+end
+
 return Settings
