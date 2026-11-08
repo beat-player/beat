@@ -47,12 +47,17 @@ local Log = require("beat.log")
 ---@field when (fun(ctx: table, app: beat.App): boolean?)?
 ---@field message table|fun(ctx: table, app: beat.App): table?
 
---- A plugin while it is loaded. Built-in plugins are not protected: their mistakes are the app's.
+--- A plugin while it is loaded, and what the plugins page shows about it. Built-in plugins are
+--- not protected: their mistakes are the app's.
 ---@class beat.Plugin
 ---@field name string
 ---@field version string
 ---@field builtin boolean
 ---@field disabled boolean
+---@field source string # "built-in", or the file outside plugins were read from
+---@field file string? # The plugins-folder file, when this plugin came from one
+---@field state "loaded"|"off"|"failed"|"doesn't fit"|"switched off"
+---@field reason string? # Why it is not loaded, or why it was switched off
 
 ---@class beat.Registration
 ---@field value any
@@ -125,6 +130,8 @@ function Registry:disable(plugin, err)
 	if plugin.builtin then error(err, 0) end
 	if plugin.disabled then return end
 	plugin.disabled = true
+	plugin.state = "switched off"
+	plugin.reason = tostring(err)
 	self:report("Plugin " .. plugin.name .. " was switched off: " .. tostring(err))
 end
 
