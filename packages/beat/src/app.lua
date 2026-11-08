@@ -6,6 +6,8 @@ local fs = require("fs")
 local shell = require("beat.app.shell")
 local Registry = require("beat.app.registry")
 local Plugins = require("beat.app.plugins")
+local PluginFiles = require("beat.app.plugin_files")
+local settingsModel = require("beat.app.services.settings.model")
 local ServiceCollection = require("beat.app.service_collection")
 local Signal = require("beat.app.signal")
 
@@ -13,8 +15,9 @@ local Signal = require("beat.app.signal")
 local iconData = require("beat.app.icon")
 
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
--- overlays of one feature; outside plugins are loaded after them, through `opts.plugins`.
-local BUILT_IN = { "core", "library", "collections", "playback", "lastfm" }
+-- overlays of one feature; outside plugins are loaded after them, from the config directory's
+-- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
+local BUILT_IN = { "core", "plugins", "library", "collections", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
    playPause = "togglePlay",
@@ -33,6 +36,7 @@ local MEDIA_MESSAGES = {
 --- | { kind: "searchAll", category: "albums"|"artists"|"tracks" }
 --- | { kind: "library" }
 --- | { kind: "settings" }
+--- | { kind: "plugins" }
 --- | { kind: "folders" }
 --- | { kind: "album", id: number }
 --- | { kind: "artist", id: number }
@@ -51,6 +55,7 @@ local MEDIA_MESSAGES = {
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
+---@field pluginStates beat.PluginStatus[] # Every plugin the page lists: loaded, off, failed, doesn't fit. Not `plugins`: that is wonderland's own list of its screen plugins, and the window's events are walked down it
 ---@field services table<string, table> # The app's services by name: `app.services.search`
 ---@field serviceOrder table[] # Every service, each after everything it needs
 ---@field owners table<string, table> # The service that answers each message type
@@ -174,6 +179,7 @@ end
 
 ---@param opts { scan: boolean?, plugins: table[]? }?
 function App:init(opts)
+	opts = opts or {}
 	for _, service in ipairs(self.serviceOrder or {}) do
 			if service.close ~= nil then service:close() end
 		end
@@ -181,7 +187,23 @@ function App:init(opts)
 	self.delivering = false
 	self.messages = Signal.new()
 	self.registry = Registry.new(self)
-	Plugins.load(self.registry, BUILT_IN, opts ~= nil and opts.plugins or nil)
+	-- Read once, before any service exists, because what is switched off decides which plugin
+	-- files are only listed rather than loaded. The same values are handed to the settings
+	-- service below, so a switch and the app never disagree about what is on.
+	local settingsValues = settingsModel.load()
+	local outside
+	if opts.plugins ~= nil then
+		-- A caller -- a test, the throwaway launcher -- supplied the plugins itself; the folder is
+		-- not read, and what the folder's switches say does not apply to them.
+		outside = {}
+		for _, module in ipairs(opts.plugins) do
+			outside[#outside + 1] = { module = module, source = "given to the app" }
+		end
+	else
+		outside = PluginFiles.found(nil, settingsValues.disabledPlugins)
+	end
+	local _, entries = Plugins.load(self.registry, BUILT_IN, outside)
+	self.pluginStates = entries
 	local collection = ServiceCollection.new()
 	for name, module in pairs(self.registry:serviceModules()) do collection:add(name, module) end
 	-- What services are given besides each other. `emit` sends a message the way a click does;
@@ -190,7 +212,8 @@ function App:init(opts)
 	-- has to ask about rather than own.
 	collection:provide("emit", function(message) self:act(message) end)
 	collection:provide("messages", self.messages)
-	collection:provide("options", opts or {})
+	collection:provide("options", opts)
+	collection:provide("settingsValues", settingsValues)
 	collection:provide("window", function() return self.window end)
 	collection:provide("pointer", function()
 		if self.window == nil or self.layoutPlugin == nil then return nil end

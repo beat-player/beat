@@ -26,6 +26,7 @@ local settings = {}
 ---@field equalizerPreset string? # As the file holds it: the equalizer service validates it at start
 ---@field equalizerGains number[]?
 ---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
+---@field disabledPlugins string[] # Plugin files switched off by name; applied at the next start
 
 ---@type beat.Settings
 local DEFAULTS = {
@@ -46,6 +47,7 @@ lastfmEnabled = true,
 equalizerPreset = "flat",
 equalizerGains = { 0, 0, 0, 0, 0},
 equalizerCustomPresets = {},
+disabledPlugins = {},
 }
 
 ---@param value any
@@ -54,6 +56,19 @@ equalizerCustomPresets = {},
 local function number(value, fallback)
 	if type(value) ~= "number" or value ~= value then return fallback end
 	return value
+end
+
+--- The file names of switched-off plugins. Anything but a string in the list is not a name and is
+--- dropped, the same way a colour or a folder of the wrong type falls back to its default.
+---@param value any
+---@return string[]
+local function pluginNames(value)
+	if type(value) ~= "table" then return {} end
+	local names = {}
+	for _, name in ipairs(value) do
+		if type(name) == "string" and name ~= "" then names[#names + 1] = name end
+	end
+	return names
 end
 
 ---@param dir string?
@@ -91,6 +106,7 @@ function settings.load(dir)
 	equalizerPreset = data.equalizerPreset,
 	equalizerGains = data.equalizerGains,
 	equalizerCustomPresets = data.equalizerCustomPresets,
+	disabledPlugins = pluginNames(data.disabledPlugins),
 	}
 
 	return loaded, file
