@@ -5,21 +5,21 @@
 <h1 align="center">beat</h1>
 
 <p align="center">
-  <strong>A tiny, fast, native music player for the files you already own.</strong>
+  <strong>A small, fast desktop music player.</strong>
 </p>
 
 ![beat playing the home screen](docs/screenshots/home.png)
 
-## Highlights
+## Features
 
-- **Tiny: 4.1 MB.** One native executable. No runtime, no bundled browser, no installer.
-- **Sips memory.** An empty window sits near 65 MB PSS; a 4,054-track library brings it to about 105 MB. The scanner peaks at roughly 60 MB while walking a 12 GB library.
-- **Fast on slow libraries.** The window never walks your music folder. A coordinator scans it outside the app, then four inspector processes read files in parallel, so a high-latency mount keeps several reads in flight. Tracks, albums, search and covers appear as the scan runs.
-- **LuaJIT all the way down.** Beat is written in Lua, JIT-compiled by LuaJIT, and built with [lde](https://lde.sh) into a self-contained native binary. No Lua installation, virtual machine or webview ships alongside it.
-- **Last.fm, if you want it.** Connect an account in Settings for now-playing updates and scrobbles. Requests run off the UI thread, and failed scrobbles retry while beat is open.
-- **Tags are playlists.** Tag tracks and each tag becomes a smart playlist; hand-picked playlists can be mixed with tag rules. Search filters use the same tags. Everything is stored as plain JSON beside your settings.
+- **Executable size.** The native executable is 4.1 MB. It contains the application, the renderer, and the audio engine. You do not install a runtime or a browser.
+- **Memory use.** An empty window uses approximately 130 MB RSS. A library of 4,054 tracks uses approximately 166 MB RSS. Scan processes use approximately 60 MB RSS in total.
+- **Parallel scan.** The application does not scan the music folder in the window process. A scan coordinator starts four inspector processes. The inspectors read files at the same time. A network folder can keep several reads active. Tracks and covers appear during the scan.
+- **LuaJIT.** The application is written in Lua. LuaJIT compiles the Lua code. [lde](https://lde.sh) builds one native executable. You do not install Lua or a virtual machine.
+- **Last.fm.** You can connect a Last.fm account in Settings. The application sends now-playing data and scrobbles. Network requests do not block the user interface. Failed scrobbles are retried while the application runs.
+- **Tags and playlists.** A tag makes a smart playlist. You can add tracks to a playlist by hand. You can also combine tag rules and hand-added tracks. Search filters use the same tags. The application stores tags and playlists in JSON files next to the settings.
 
-> **Plugins are in progress.** Most players put extensions behind a narrow SDK. Beat is a single LuaJIT process: the pages, services, library, tags and playback queue are all Lua, and the renderer and audio engine are lde packages exposed as Lua. Plugins will load into that same state, so they can call exactly what the app calls, extend any screen, and reach everything the app can reach. No IPC boundary, no ABI, no walled garden — if beat can do it, a plugin can do it. The loader and lifecycle are still being designed.
+> **Plugins (WIP)** The application is one LuaJIT process. The pages, services, library, tags, and playback queue are Lua code. The renderer and audio engine are lde packages with Lua interfaces. A plugin will load into the same Lua state. A plugin can call the same functions as the application and can extend any screen. There is no IPC boundary and no ABI. The plugin loader and lifecycle are not complete.
 
 ## Screenshots
 
@@ -34,48 +34,48 @@
 <p align="center">
   <img src="docs/screenshots/mobile.png" width="260" alt="beat at phone width">
   <br>
-  <em>The same app at phone width.</em>
+  <em>The same application at phone width.</em>
 </p>
 
 ## Install
 
-Download the archive for your platform from [Releases](https://github.com/bycruz/beat/releases). The rolling [`nightly`](https://github.com/bycruz/beat/releases/tag/nightly) prerelease has the newest build.
+Download the archive for your platform from [Releases](https://github.com/bycruz/beat/releases). The [`nightly`](https://github.com/bycruz/beat/releases/tag/nightly) prerelease contains the newest build.
 
 | Linux | Windows | macOS |
 | :---: | :---: | :---: |
-| x86-64 · arm64 | x86-64 · arm64 | Intel · Apple silicon |
+| x86-64, arm64 | x86-64, arm64 | Intel, Apple silicon |
 
-Unzip it and run `beat` (`beat.exe` on Windows). The first launch asks for a music folder.
+Extract the archive. Run `beat` on Linux or macOS. Run `beat.exe` on Windows. The first start asks for a music folder.
 
-Beat needs a working Vulkan driver. Builds are not code-signed, so macOS may require right-click → Open on first launch and Windows may show SmartScreen.
+The application needs a Vulkan driver. The builds are not code-signed. On macOS, right-click the application and select Open at the first start. On Windows, SmartScreen can show a warning.
 
-**Controls:** `Space` play/pause · `←`/`→` seek · `/` search · `Ctrl+,` settings · `Ctrl+O` choose folder.
+**Controls:** `Space` play or pause. `Left` and `Right` seek. `/` search. `Ctrl+,` settings. `Ctrl+O` select a folder.
 
 ## Build
 
-Install [lde](https://lde.sh/docs/general/setup/installation), a C toolchain and `glslang` (for the shaders), then:
+Install [lde](https://lde.sh/docs/general/setup/installation). Install a C compiler. Install `glslang` to compile the shaders. Then run these commands:
 
 ```sh
 lde sync -C packages/beat
 lde run -C packages/beat      # run from source
 lde compile -C packages/beat  # build one executable
-lde test -C packages/beat     # headless tests
+lde test -C packages/beat     # run headless tests
 ```
 
 ## Benchmarks
 
-Measured on Linux x86-64 (Intel i7-9700F). The library lives on a Google Drive mount via rclone FUSE: **539 albums, 4,054 tracks, 12 GB**.
+These values are from a Linux x86-64 computer with an Intel i7-9700F processor. The library is on a Google Drive mount through rclone FUSE. The library contains 539 albums, 4,054 tracks, and 12 GB of data.
 
 | Measurement | Result |
 | --- | --- |
-| Native executable | 4.06 MiB |
-| App, empty window | ~130 MB RSS · ~65 MB PSS |
-| App, full library loaded | ~166 MB RSS · ~105 MB PSS |
-| Scan, 4 inspectors | 2.4–3.0 s · ~60 MB RSS total |
-| Scan, 1 inspector | 17.5 s · ~39 MB RSS |
+| Native executable | 4.1 MB |
+| Window, no library | approximately 130 MB RSS, approximately 65 MB PSS |
+| Window, full library | approximately 166 MB RSS, approximately 105 MB PSS |
+| Scan, 4 inspectors | 2.4 to 3.0 seconds, approximately 60 MB RSS total |
+| Scan, 1 inspector | 17.5 seconds, approximately 39 MB RSS |
 
-Scan times use a warm VFS cache. RSS includes shared libraries; PSS divides those pages across processes. Loading 4,054 tracks adds roughly 35 MB of memory over an empty window.
+Scan times use a warm VFS cache. RSS includes shared libraries. PSS divides shared pages across processes. A full library adds approximately 35 MB PSS to an empty window.
 
 ## Status
 
-Beat is early software and nightlies are the only builds. Expect rough edges and changing behavior. Bug reports and ideas are welcome in [Issues](https://github.com/bycruz/beat/issues).
+Beat is early software. Only nightly builds are available. Behavior can change. Report bugs and ideas in [Issues](https://github.com/bycruz/beat/issues).
