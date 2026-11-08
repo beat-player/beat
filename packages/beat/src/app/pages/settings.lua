@@ -290,12 +290,23 @@ function settings.view(app, page, window)
 		githubRow = div():style(sty():row():h(theme:px(32)):gap(theme:px(8))):children(githubButtons)
 	end
 
+	local pluginsRow = div():style(sty():row():h(theme:px(32)):align("center")):children({
+		button.view(app, {
+			label = "Manage plugins",
+			onClick = { type = "navigate", page = { kind = "plugins"}},
+			primary = true,
+			height = theme:px(32),
+			width = theme:px(narrowTheme and 160 or 150),
+		}),
+	})
+
 	local appearanceHeight = (narrowTheme and 342 or 268) + 32 + 12
 	local libraryHeight = (narrowTheme and 210 or 170)
 	+(scan.skipped > 0 and (12 + math.min(#scan.errors, 3) * 16) or 0)
 	local aboutHeight = narrowTheme ? 196 : 156
+	local pluginsHeight = 120
 	return div():style(sty():column():wrel(1.0):h(theme:px(32 + appearanceHeight + 136 + libraryHeight
-	+134 + lastfmHeight + aboutHeight + 6 * 16 + 24))
+	+134 + lastfmHeight + pluginsHeight + aboutHeight + 7 * 16 + 24))
 	:gap(theme:space(16))):children({
 		text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
 		section("Appearance", "Theme, accent, custom colour, scale and motion.",
@@ -305,6 +316,8 @@ function settings.view(app, page, window)
 		section("Audio", "Output volume.", { audioRow}, 134),
 		section("Last.fm", "Authorize your account to send now-playing updates and scrobbles.", lastfmRows,
 		lastfmHeight),
+		section("Plugins", "The plugins in your plugins folder, and which of them load. A change applies after a restart.",
+		{ pluginsRow}, pluginsHeight),
 		section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", {
 			githubRow,
 		}, aboutHeight),

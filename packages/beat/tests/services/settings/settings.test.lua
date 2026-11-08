@@ -46,6 +46,7 @@ test.it("round-trips the settings a launch remembers", function()
 	value.equalizerGains = { 5, 3, 0, 2, 4}
 	value.equalizerCustomPresets = { { name = "Custom", gains = { 1, 2, 3, 4, 5}},
 		{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
+	value.disabledPlugins = { "rym.lua"}
 
 	local ok, err = settingsModel.save(value, dir)
 	test.truthy(ok, err)
@@ -71,6 +72,22 @@ test.it("round-trips the settings a launch remembers", function()
 	test.equal(#presets, 2)
 	test.equal(presets[1].name, "Custom")
 	test.equal(presets[2].gains[4], 2)
+	test.equal(#again.disabledPlugins, 1)
+	test.equal(again.disabledPlugins[1], "rym.lua")
+
+	fs.delete(paths.file("settings.json", dir))
+	fs.rmdir(dir)
+end)
+
+test.it("keeps only real file names in the switched-off plugin list", function()
+	local dir = tempDir()
+	fs.write(path.join(dir, "settings.json"),
+	'{ "disabledPlugins": [ "rym.lua", 4, "", true, "lastfm.lua" ] }')
+
+	local loaded = settingsModel.load(dir)
+	test.equal(#loaded.disabledPlugins, 2, "numbers, empty strings and booleans are not names")
+	test.equal(loaded.disabledPlugins[1], "rym.lua")
+	test.equal(loaded.disabledPlugins[2], "lastfm.lua")
 
 	fs.delete(paths.file("settings.json", dir))
 	fs.rmdir(dir)

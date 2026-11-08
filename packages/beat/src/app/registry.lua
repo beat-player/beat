@@ -111,12 +111,17 @@ local messages = require("beat.message")
 ---@field fn fun(message: beat.Message, app: beat.App, continue: fun(message: beat.Message?))
 ---@field plugin beat.Plugin
 
---- A plugin while it is loaded. Built-in plugins are not protected: their mistakes are the app's.
+--- A plugin while it is loaded, and what the plugins page shows about it. Built-in plugins are
+--- not protected: their mistakes are the app's.
 ---@class beat.Plugin
 ---@field name string
 ---@field version string
 ---@field builtin boolean
 ---@field disabled boolean
+---@field source string # "built-in", or the file outside plugins were read from
+---@field file string? # The plugins-folder file, when this plugin came from one
+---@field state "loaded"|"off"|"failed"|"doesn't fit"|"switched off"
+---@field reason string? # Why it is not loaded, or why it was switched off
 
 --- What a plugin module declares before it is loaded. `setup` is handed the handle that records
 --- everything it registers, so a plugin that cannot finish is taken back out of the app whole.
@@ -211,6 +216,8 @@ function Registry:disable(plugin, err)
 	if plugin.builtin then error(err, 0) end
 	if plugin.disabled then return end
 	plugin.disabled = true
+	plugin.state = "switched off"
+	plugin.reason = tostring(err)
 	self:report("Plugin " .. plugin.name .. " was switched off: " .. tostring(err))
 end
 

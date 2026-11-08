@@ -55,6 +55,10 @@ local function testSettings()
 		lastfmSessionKey = "",
 		lastfmUsername = "",
 		lastfmEnabled = true,
+		equalizerPreset = "flat",
+		equalizerGains = { 0, 0, 0, 0, 0},
+		equalizerCustomPresets = {},
+		disabledPlugins = {},
 	}
 end
 

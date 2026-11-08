@@ -16,13 +16,14 @@ local SAVE_DELAY = 0.6
 ---@field dirtyAt number? # When the deferred save is due; nil when disk has the current values
 local Settings = {}
 Settings.__index = Settings
-Settings.needs = {}
-Settings.handles = { "sidebarWidth", "toggleSidebar" }
+Settings.needs = { "settingsValues" }
+Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled" }
 
+---@param deps { settingsValues: beat.Settings }?
 ---@return beat.SettingsService
-function Settings.new()
+function Settings.new(deps)
 	return setmetatable({
-		values = settingsModel.load(),
+		values = deps and deps.settingsValues or settingsModel.load(),
 		dirtyAt = nil,
 	}, Settings)
 end
@@ -45,6 +46,22 @@ function Settings:update(message)
 		self.values.sidebarWidth = math.max(200, math.min(360, message.width or 264))
 	elseif message.type == "toggleSidebar" then
 		self.values.sidebarCollapsed = not self.values.sidebarCollapsed
+	elseif message.type == "pluginEnabled" then
+		if type(message.file) ~= "string" or message.file == "" then return end
+		local list = self.values.disabledPlugins
+		local at = nil
+		for index, name in ipairs(list) do
+			if name == message.file then at = index end
+		end
+		-- The plugins page's switch says what the next start should load. The entry is the file
+		-- name in the plugins folder: a file that will not load can be switched off too, and a
+		-- switched-off file is never run. Nothing is loaded or unloaded now: the plugin that is
+		-- running keeps running until beat is started again.
+		if message.enabled == false then
+			if at == nil then list[#list + 1] = message.file end
+		elseif at ~= nil then
+			table.remove(list, at)
+		end
 	else
 		return
 	end

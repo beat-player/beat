@@ -1,7 +1,10 @@
--- Asking the desktop to open a URL. It is not a page's business how a browser is found there, and
--- two very different screens want it: the About links in settings and Last.fm's authorization
--- page. Both also want the same answer when there is no browser to open, so the failure is a toast
--- here rather than a second copy of the platform command in each caller.
+-- Asking the desktop to open a URL, or the plugins folder in the file manager. It is not a page's
+-- business how a browser or a file manager is found there, and several very different screens want
+-- it: the About links and Last.fm's authorization page, and the plugins page. They also want the
+-- same answer when nothing could be opened, so the failure is a toast here rather than a second
+-- copy of the platform command in each caller.
+local fs = require("fs")
+local paths = require("beat.paths")
 local links = require("beat.app.services.system.links")
 
 ---@class beat.SystemService: beat.Service
@@ -9,7 +12,7 @@ local links = require("beat.app.services.system.links")
 local System = {}
 System.__index = System
 System.needs = { "toasts" }
-System.handles = { "openURL" }
+System.handles = { "openURL", "openPluginsFolder" }
 
 ---@param deps { toasts: beat.ToastsService }
 ---@return beat.SystemService
@@ -35,7 +38,23 @@ function System:update(message)
 		if not self:open(message.url) then
 			self.toasts:show("Could not open the link", "error")
 		end
+	elseif message.type == "openPluginsFolder" then
+		-- The folder is made first: the page's control is also how a person finds out where
+		-- plugins go, and an empty folder is the useful answer when there are none yet.
+		local folder = paths.file("plugins")
+		fs.mkdirAll(folder)
+		if not self:openFolder(folder) then
+			self.toasts:show("Could not open the plugins folder", "error")
+		end
 	end
+end
+
+--- Open a folder and say whether it worked, the same way `open` does for a URL.
+---@param dir string
+---@return boolean
+function System:openFolder(dir)
+	local ok, opened = pcall(links.openFolder, dir)
+	return ok and opened ~= false
 end
 
 return System

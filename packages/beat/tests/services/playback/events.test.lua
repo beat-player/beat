@@ -163,6 +163,10 @@ local function start(albums)
 		lastfmSessionKey = "",
 		lastfmUsername = "",
 		lastfmEnabled = true,
+		equalizerPreset = "flat",
+		equalizerGains = { 0, 0, 0, 0, 0},
+		equalizerCustomPresets = {},
+		disabledPlugins = {},
 	}
 
 	local library = libraryOf(albums or { albumA, albumB })

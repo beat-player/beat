@@ -4,6 +4,8 @@
 local test = require("lde-test")
 local fs = require("fs")
 local wonderland = require("wonderland")
+local path = require("path")
+local json = require("json")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local App = require("beat.app")
@@ -25,6 +27,11 @@ end)
 
 test.afterEach(function()
 	if App.services ~= nil and App.services.playback ~= nil then App.services.playback.player:close() end
+	-- The folder and the settings file are this test's fixtures, not the person's. A switch test
+	-- reads the file back, so it must not leak into the next test or into a real launch.
+	local folder = paths.file("plugins")
+	if fs.isdir(folder) then fs.rmdir(folder) end
+	fs.delete(paths.file("settings.json"))
 end)
 
 local function fixture()
@@ -80,6 +87,53 @@ local function openInRateYourMusic(ctx)
 	return ctx.message.openURL("https://rateyourmusic.com/album/" .. album.id)
 end
 
+---@param name string
+---@return beat.PluginStatus?
+local function entry(name)
+	for _, value in ipairs(App.pluginStates or {}) do
+		if value.name == name then return value end
+	end
+	return nil
+end
+
+--- Writes one plugin bundle into the config directory's plugins folder and returns its path.
+---@param name string
+---@param body string
+---@return string
+local function writePlugin(name, body)
+	local folder = paths.file("plugins")
+	fs.mkdirAll(folder)
+	local file = path.join(folder, name)
+	test.truthy(fs.write(file, body), "the plugin fixture was written")
+	return file
+end
+
+-- A file in the shape `lde bundle` writes: a private module and a bundled copy of `json` in
+-- `package.preload`, then the entry module, whose return value is the plugin table. The copy of
+-- json must not replace the host's.
+local PROBE = [[
+package.preload["probe.private"] = function()
+	return { answer = 42, host = require("json") }
+end
+package.preload["json"] = function()
+	return { tampered = true }
+end
+package.preload["probe"] = function()
+	return {
+		name = "probe",
+		version = "2.3.4",
+		setup = function(beat)
+			local private = require("probe.private")
+			beat.action({
+				menu = "album",
+				title = "Private answer",
+				message = { type = "toast", text = "answer " .. private.answer },
+			})
+		end,
+	}
+end
+return package.preload["probe"](...)
+]]
 test.it("adds an album action whose message reaches the service it names", function()
 	local plugin = beat.plugin({
 		name = "rym",
@@ -340,4 +394,141 @@ test.it("switches off a plugin whose hook raises, after one report, and carries 
 
 	App:act({ type = "toast", text = "still working" })
 	test.truthy(reported("still working"), "the rest of the app still delivers messages")
+end)
+
+test.it("loads a bundle from the plugins folder and keeps the host's copy of a bundled module", function()
+	writePlugin("probe.lua", PROBE)
+	App:init({ scan = false })
+
+	local probe = entry("probe")
+	test.truthy(probe ~= nil, "the bundle is listed")
+	test.equal(probe.state, "loaded")
+	test.equal(probe.version, "2.3.4")
+	test.equal(probe.builtin, false)
+	test.equal(probe.source, path.join(paths.file("plugins"), "probe.lua"))
+
+	local actions = App.registry:actions("album", { album = { id = 1 } })
+	test.truthy(action(actions, "Private answer") ~= nil,
+	"the plugin's own module was resolvable and its action was registered")
+
+	---@diagnostic disable-next-line: missing-module
+	local private = require("probe.private") --[[@as { answer: number, host: any }]]
+	test.equal(private.answer, 42, "the plugin's private module is the one it shipped")
+	test.equal(type(require("json").encode), "function", "beat's json is still beat's")
+	test.equal(require("json").tampered, nil, "the bundle's bundled copy of json did not replace it")
+	test.equal(private.host, require("json"), "the plugin sees the host module too")
+end)
+
+test.it("keeps starting when a plugin file raises, and lets a broken file be switched off", function()
+	_G.__beat_broken_runs = nil
+	writePlugin("broken.lua",
+	'_G.__beat_broken_runs = (_G.__beat_broken_runs or 0) + 1\nerror("the bundle exploded")')
+	App:init({ scan = false })
+
+	local broken = entry("broken.lua")
+	test.truthy(broken ~= nil, "the file is listed by its file name")
+	test.equal(broken.state, "failed")
+	test.truthy(broken.reason ~= nil and broken.reason:find("the bundle exploded", 1, true) ~= nil,
+	"the error is kept for the page")
+	test.truthy(reported("broken.lua was not loaded"), "the failure was reported")
+	local core = assert(entry("core"))
+	test.equal(core.state, "loaded", "the app still loaded its own plugins")
+	test.equal(_G.__beat_broken_runs, 1, "the file ran once")
+
+	-- A file that cannot load is the one most worth switching off, and the switch is its name.
+	App:act({ type = "pluginEnabled", file = "broken.lua", enabled = false })
+	App.services.settings:flush()
+	App:init({ scan = false })
+
+	local brokenOff = assert(entry("broken.lua"))
+	test.equal(brokenOff.state, "off", "the next start lists it as off")
+	test.equal(_G.__beat_broken_runs, 1, "and does not run the file again")
+	_G.__beat_broken_runs = nil
+end)
+
+test.it("names bytecode from another LuaJIT as the likely reason it would not load", function()
+	writePlugin("other.lua", "\27LJ\1\0not bytecode for this LuaJIT")
+	App:init({ scan = false })
+
+	local other = entry("other.lua")
+	test.truthy(other ~= nil, "the file is listed by its file name")
+	test.equal(other.state, "failed")
+	local reason = assert(other.reason)
+	test.truthy(reason:find("bytecode", 1, true) ~= nil,
+	"the error says the file is bytecode")
+	test.truthy(reason:find("same LuaJIT", 1, true) ~= nil,
+	"and names the likely cause")
+end)
+
+test.it("lists a disabled file as off without running it", function()
+	fs.write(paths.file("settings.json"), json.encode({ disabledPlugins = { "sleeper.lua" } }))
+	writePlugin("sleeper.lua", [[
+_G.__beat_sleeper_ran = true
+package.preload["sleeper"] = function()
+	return {
+		name = "sleeper",
+		version = "1.0.0",
+		setup = function(beat)
+			beat.action({
+				menu = "album",
+				title = "Sleeper action",
+				message = { type = "toast", text = "woke" },
+			})
+		end,
+	}
+end
+return package.preload["sleeper"](...)
+]])
+	App:init({ scan = false })
+
+	local sleeper = entry("sleeper.lua")
+	test.truthy(sleeper ~= nil, "the switched-off file is still listed by its file name")
+	test.equal(sleeper.state, "off")
+	test.equal(sleeper.disabled, true)
+	test.equal(sleeper.version, nil, "the file was not run to learn its version")
+	test.equal(sleeper.source, path.join(paths.file("plugins"), "sleeper.lua"))
+	test.equal(_G.__beat_sleeper_ran, nil, "the disabled file was never executed")
+	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Sleeper action"), nil,
+	"its setup never ran")
+	test.equal(package.loaded["sleeper"], nil, "its modules were not kept")
+	test.equal(package.preload["sleeper"], nil, "and cannot be required later")
+	_G.__beat_sleeper_ran = nil
+end)
+
+test.it("saves a switch in disabledPlugins by file name and honours it on the next start", function()
+	writePlugin("toggle.lua", [[
+package.preload["toggle"] = function()
+	return {
+		name = "toggle",
+		version = "1.0.0",
+		setup = function(beat)
+			beat.action({
+				menu = "album",
+				title = "Toggle action",
+				message = { type = "toast", text = "toggled" },
+			})
+		end,
+	}
+end
+return package.preload["toggle"](...)
+]])
+	App:init({ scan = false })
+	local toggleLoaded = assert(entry("toggle"))
+	test.equal(toggleLoaded.state, "loaded")
+
+	App:act({ type = "pluginEnabled", file = "toggle.lua", enabled = false })
+	App.services.settings:flush()
+
+	local bytes = assert(fs.read(paths.file("settings.json")))
+	local saved = json.decode(bytes):unpack()
+	local disabled = {}
+	for _, name in ipairs(saved.disabledPlugins) do disabled[name] = true end
+	test.equal(disabled["toggle.lua"], true, "the switch was written to the settings file by file name")
+
+	App:init({ scan = false })
+	local toggleOff = assert(entry("toggle.lua"))
+	test.equal(toggleOff.state, "off", "the next start reads the switch")
+	test.equal(entry("toggle"), nil, "the disabled file is listed by its file name, not its plugin name")
+	test.equal(action(App.registry:actions("album", { album = { id = 1} }), "Toggle action"), nil,
+	"and the plugin is out of the app")
 end)

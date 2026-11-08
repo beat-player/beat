@@ -165,6 +165,7 @@ test.skipIf(not canRender)("draws every page the app has", function()
 		{ kind = "search"},
 		{ kind = "playlists"},
 		{ kind = "settings"},
+		{ kind = "plugins"},
 		{ kind = "folders"},
 	}
 
