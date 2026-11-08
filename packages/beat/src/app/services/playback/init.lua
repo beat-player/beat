@@ -21,6 +21,7 @@ Playback.needs = { "settings", "library", "collections", "toasts"}
 Playback.handles = {
 	"togglePlay", "next", "previous", "seek", "volume", "mute", "shuffle", "repeat",
 	"playAlbum", "playTrack", "playArtist", "playPlaylist", "playPlaylistTrack", "jumpTrack",
+	"play", "pause", "stop",
 }
 
 ---@param deps {
@@ -62,22 +63,37 @@ end
 
 --- A new library invalidates what is playing: its ids and paths are gone, so the queue, the
 --- device and the spectrum go with it.
-function Playback:stop()
+function Playback:reset()
 	self.player:close()
 	self.spectrum:clear()
+end
+
+-- Media controls
+function Playback:play()
+	if self.player.queue == nil then
+		-- Set up the queue with the library's tracks
+		local library = self.library.current
+		if library ~= nil and #library.tracks > 0 then
+			self.player:playTracks(library.tracks, 1, { source = "library"})
+		end
+		return
+	end
+
+	self.player:play()
+end
+
+function Playback:pause()
+	self.player:pause()
+end
+
+function Playback:stop()
+	self.player:stop()
 end
 
 --- The control with nothing queued starts something: the whole library. A page that has
 --- something better to start -- an album page, its album -- answers `togglePlay` itself first.
 function Playback:toggle()
-	if self.player.queue == nil then
-		local library = self.library.current
-		if library ~= nil and #library.tracks > 0 then
-			self.player:playTracks(library.tracks, 1, { source = "library"})
-		end
-	else
-		self.player:toggle()
-	end
+	if self.player:isPlaying() then self:pause() else self:play() end
 end
 
 --- An album's play or shuffle. Playing the album already in the queue is the pause button.
@@ -209,6 +225,12 @@ function Playback:update(message)
 		self:playPlaylistTrack(message.playlistId --[[@as number]], message.trackId --[[@as number]])
 	elseif kind == "jumpTrack" then
 		self.player:jump(message.trackId)
+	elseif kind == "play" then
+		self:play()
+	elseif kind == "pause" then
+		self:pause()
+	elseif kind == "stop" then
+		self:stop()
 	end
 end
 

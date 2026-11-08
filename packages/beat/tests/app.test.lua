@@ -433,6 +433,50 @@ test.it("records a listen when playback starts a track", function()
 	App.services.playback.player:close()
 end)
 
+test.it("plays, pauses, stops and skips from the media keys", function()
+	App:init({ scan = false})
+	local library = fixture()
+	App.services.library.current = library
+	App.page = { kind = "home"}
+	local player = App.services.playback.player
+	player.queue = Queue.new(library.albums[1].tracks, 1)
+	player.loaded = true
+	local playing = false
+	player.player = {
+	isPlaying = function() return playing end,
+	play = function() playing = true end,
+	pause = function() playing = false end,
+	stop = function() playing = false end,
+	position = function() return 0 end,
+	duration = function() return 180 end,
+	enqueue = function() end,
+	seek = function() end,
+	setVolume = function() end,
+	update = function() end,
+	close = function() end,
+	}
+	local first = player.queue:current().id
+
+	App:event({ name = "mediaKey", action = "playPause"})
+	test.truthy(player:isPlaying(), "play/pause starts what is queued")
+	App:event({ name = "mediaKey", action = "playPause"})
+	test.falsy(player:isPlaying(), "and pauses it again")
+	App:event({ name = "mediaKey", action = "play"})
+	test.truthy(player:isPlaying())
+	App:event({ name = "mediaKey", action = "pause"})
+	test.falsy(player:isPlaying())
+	App:event({ name = "mediaKey", action = "play"})
+	App:event({ name = "mediaKey", action = "stop"})
+	test.falsy(player:isPlaying(), "stop silences")
+	test.equal(player.queue:current().id, first, "and keeps the track")
+	App:event({ name = "mediaKey", action = "next"})
+	test.truthy(player.queue:current().id ~= first, "next moves the queue on")
+	App:event({ name = "mediaKey", action = "previous"})
+	test.equal(player.queue:current().id, first, "previous comes back")
+
+	player:close()
+end)
+
 test.it("renames and deletes tags without changing their ids", function()
 	App:init({ scan = false})
 	App.services.collections.taxonomy = Taxonomy.new()

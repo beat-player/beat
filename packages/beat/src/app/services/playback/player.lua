@@ -231,22 +231,33 @@ function Player:playTrack(track, tracks, index)
 	self:playTracks(tracks, index or 1, { source = "track"})
 end
 
-function Player:toggle()
-	local player = ensurePlayer(self)
+function Player:play()
 	if self.queue == nil or self.queue:current() == nil then return end
-
+	local player = ensurePlayer(self)
 	if not self.loaded then
 		self:reload(true)
-		return
-	end
-
-	if player:isPlaying() then
-		player:pause()
-	else
+	elseif not player:isPlaying() then
 		beginFade(self)
 		applyVolume(self)
 		player:play()
 	end
+end
+
+function Player:stop()
+	if self.player ~= nil then self.player:stop() end
+	self.loaded = false
+	self.lastPosition = 0
+	self.pendingNextAt = nil
+	self.fadeGain = 1
+	self.fadeActive = false
+end
+
+function Player:pause()
+	if self:isPlaying() then self.player:pause() end
+end
+
+function Player:toggle()
+	if self:isPlaying() then self:pause() else self:play() end
 end
 
 ---@param direction "next"|"previous"
