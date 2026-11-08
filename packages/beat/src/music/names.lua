@@ -48,7 +48,6 @@ function names.parentName(value)
 end
 
 ---@param value string?
----@return boolean
 local function hasText(value)
 	return value ~= nil and value ~= ""
 end

@@ -18,9 +18,14 @@ end
 
 --- Space, or the bar's play, with nothing queued: on an album page that means this album, which
 --- only the page knows. With a queue it is the player's pause, and goes on to playback.
+---@param app beat.App
+---@param page beat.PageInstance
+---@param message beat.Message
 function albumPage.update(app, page, message)
 	if message.type ~= "togglePlay" or app.services.playback.player.queue ~= nil then return false end
-	local album = app.services.library.current ~= nil and app.services.library.current:album(page.id) or nil
+	local id = assert(page.id)
+	local library = app.services.library.current
+	local album = library ~= nil ? (library:album(id)) : nil
 	if album == nil then return false end
 	app.services.playback.player:playAlbum(album)
 	app:refresh()
@@ -34,41 +39,37 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function albumPage.view(app, page, window)
-	local album = app.services.library.current ~= nil and app.services.library.current:album(page.id) or nil
+	local id = assert(page.id)
+	local library = app.services.library.current
+	local album = library ~= nil ? (library:album(id)) : nil
 	if album == nil then
 		return emptyState.view(app, {
-		title = "Album not found",
-		copy = "The scan no longer has it.",
-		actionLabel = "Library",
-		action = { type = "navigate", page = { kind = "library"}},
+			title = "Album not found",
+			copy = "The scan no longer has it.",
+			actionLabel = "Library",
+			action = { type = "navigate", page = { kind = "library"}},
 		})
 	end
-	---@cast album beat.Album
-	local thisAlbum = app.services.playback:current() ~= nil and app.services.playback:current().albumId == album.id
+	local current = app.services.playback:current()
+	local thisAlbum = current?.albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
 	return collection.view(app, {
-	window = window,
-	label = "ALBUM",
-	cover = function(size)
-		return cover.view(app, { album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true })
-	end,
-	coverMenu = function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
-	end,
-	title = album.title,
-	subtitle = album.artist,
-	subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId}},
-	meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track")
-	.. " · " .. format.duration(album.duration),
-	playAction = thisAlbum and { type = "togglePlay"} or { type = "playAlbum", id = album.id},
-	playIcon = playing and thisAlbum and "pause" or "play",
-	titleOnly = true,
-	shuffleAction = { type = "playAlbum", id = album.id, shuffle = true},
-	tracks = album.tracks,
-	trackAction = function(track)
-		return { type = "playTrack", trackId = track.id, albumId = album.id}
-	end,
-	trackIndex = function(track, at) return track.number or at end,
+		window = window,
+		label = "ALBUM",
+		cover = |size| -> cover.view(app, { album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true }),
+		coverMenu = |_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY},
+		title = album.title,
+		subtitle = album.artist,
+		subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId}},
+		meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track")
+		.. " · " .. format.duration(album.duration),
+		playAction = thisAlbum ? { type = "togglePlay"} : { type = "playAlbum", id = album.id},
+		playIcon = playing and thisAlbum ? "pause" : "play",
+		titleOnly = true,
+		shuffleAction = { type = "playAlbum", id = album.id, shuffle = true},
+		tracks = album.tracks,
+		trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id},
+		trackIndex = |track, at| -> track.number or at,
 	})
 end
 

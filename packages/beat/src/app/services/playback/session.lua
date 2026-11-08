@@ -15,7 +15,6 @@ local Session = {}
 local VERSION = 1
 
 ---@param dir string?
----@return string
 local function sessionFile(dir)
 	return paths.file("session.json", dir)
 end
@@ -26,7 +25,7 @@ function Session.load(dir)
 	local bytes = fs.read(sessionFile(dir))
 	if bytes == nil then return nil end
 
-	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
+	local ok, decoded = pcall(|| -> json.decode(bytes):unpack())
 	if not ok then
 		Log.write("error", "the session could not be read: " .. tostring(decoded))
 		return nil
@@ -35,7 +34,7 @@ function Session.load(dir)
 	if type(decoded) ~= "table" or decoded.version ~= VERSION then return nil end
 	return {
 		queue = type(decoded.queue) == "table" and decoded.queue or nil,
-		seconds = type(decoded.seconds) == "number" and math.max(0, decoded.seconds) or 0,
+		seconds = type(decoded.seconds) == "number" ? math.max(0, decoded.seconds) : 0,
 	}
 end
 

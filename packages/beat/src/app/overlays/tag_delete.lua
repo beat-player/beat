@@ -10,10 +10,11 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@class beat.TagDeleteState
 ---@field id number
 
----@type beat.OverlaySurface
+---@class beat.TagDeleteOverlay: beat.OverlaySurface
 local tagDelete = {}
 
 ---@param params { id: number }
+---@param app beat.App
 function tagDelete.new(app, params)
 	local tag = params.id ~= nil and app.services.collections.taxonomy.tagById[params.id] or nil
 	if tag == nil then return nil end
@@ -21,15 +22,17 @@ function tagDelete.new(app, params)
 	return { id = tag.id}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagDeleteState>
+---@param message beat.Message
 function tagDelete.update(app, overlay, message)
-	local state = overlay.state --[[@as beat.TagDeleteState]]
-	local kind = message.type
-	if kind == "confirmDeleteTag" then
+	local state = overlay.state
+	if message.type == "confirmDeleteTag" then
 		-- The page that asked clears what it was keeping about the tag: its row's hover and the
 		-- name field if it was being edited. The search service drops the tag from its filter
 		-- when collections announce the change.
 		local page = app.page
-		if page ~= nil and page.kind == "playlists" then
+		if page?.kind == "playlists" then
 			page = app:currentPage()
 			if page.state.tagEditId == state.id then
 				page.state.tagEditId = nil
@@ -42,7 +45,7 @@ function tagDelete.update(app, overlay, message)
 		app:close(overlay)
 		app:refresh()
 		return true
-	elseif kind == "cancelDeleteTag" then
+	elseif message.type == "cancelDeleteTag" then
 		app:close(overlay)
 		app:refresh()
 		return true
@@ -50,8 +53,11 @@ function tagDelete.update(app, overlay, message)
 	return false
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.TagDeleteState>
+---@param window wonderland.RenderWindow
 function tagDelete.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.TagDeleteState]]
+	local state = overlay.state
 	local tag = app.services.collections.taxonomy.tagById[state.id]
 	if tag == nil then return nil end
 
@@ -78,21 +84,21 @@ function tagDelete.view(app, overlay, window)
 	:shadow(0, theme:px(16), theme:px(42), "#00000080"))
 	:onClick({ type = "keep"})
 	:children({
-	text("Delete “" .. tag.name .. "”?"):style(theme:s():wrel(1.0):text(theme:type("lg"))
-	:weight("bold"):fg(theme:color("text")):ellipsis()),
-	text("It is used on " .. format.count(tag.count, "track") .. "."):style(
-	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-	text("Its automatic playlist will be deleted too."):style(
-	theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-	div():style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center")
-	:justify("end")):children({
-	div():style(cancelStyle):hover(cancelHover):onClick({ type = "cancelDeleteTag"})
-	:children(text("Cancel"):style(theme:s():text(theme:type("sm")):weight("semibold")
-	:fg(theme:color("text")))),
-	div():style(deleteStyle):hover(deleteHover):onClick({ type = "confirmDeleteTag"})
-	:children(text("Delete"):style(theme:s():text(theme:type("sm")):weight("semibold")
-	:fg(theme:color("bg")))),
-	}),
+		text("Delete “" .. tag.name .. "”?"):style(theme:s():wrel(1.0):text(theme:type("lg"))
+		:weight("bold"):fg(theme:color("text")):ellipsis()),
+		text("It is used on " .. format.count(tag.count, "track") .. "."):style(
+		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+		text("Its automatic playlist will be deleted too."):style(
+		theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+		div():style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center")
+		:justify("end")):children({
+			div():style(cancelStyle):hover(cancelHover):onClick({ type = "cancelDeleteTag"})
+			:children(text("Cancel"):style(theme:s():text(theme:type("sm")):weight("semibold")
+			:fg(theme:color("text")))),
+			div():style(deleteStyle):hover(deleteHover):onClick({ type = "confirmDeleteTag"})
+			:children(text("Delete"):style(theme:s():text(theme:type("sm")):weight("semibold")
+			:fg(theme:color("bg")))),
+		}),
 	})
 
 	return div():style(sty():fill():offset(0, 0):z(124):column():align("center"):justify("center")

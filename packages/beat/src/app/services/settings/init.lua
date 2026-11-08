@@ -11,7 +11,7 @@ local time = wonderland.time
 -- Long enough that a drag or a picker's turns make one write instead of dozens.
 local SAVE_DELAY = 0.6
 
----@class beat.SettingsService
+---@class beat.SettingsService: beat.Service
 ---@field values beat.Settings
 ---@field dirtyAt number? # When the deferred save is due; nil when disk has the current values
 local Settings = {}
@@ -19,11 +19,11 @@ Settings.__index = Settings
 Settings.needs = { "settingsValues" }
 Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled" }
 
----@param deps { settingsValues: beat.Settings }
+---@param deps { settingsValues: beat.Settings }?
 ---@return beat.SettingsService
 function Settings.new(deps)
 	return setmetatable({
-		values = deps.settingsValues or settingsModel.load(),
+		values = deps and deps.settingsValues or settingsModel.load(),
 		dirtyAt = nil,
 	}, Settings)
 end

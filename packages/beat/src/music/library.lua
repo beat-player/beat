@@ -73,24 +73,24 @@ Library.__index = Library
 ---@return beat.Library
 function Library.new(root)
 	return setmetatable({
-	root = root,
-	tracks = {},
-	albums = {},
-	artists = {},
-	recent = {},
-	albumById = {},
-	artistById = {},
-	trackById = {},
-	albumByKey = {},
-	artistByName = {},
-	strings = {},
-	version = 0,
-	ready = false,
-	-- Ids are handed out from counters rather than from the list length: removing the tracks of
-	-- a folder leaves gaps, and a later add must not reuse an id something still refers to.
-	nextTrackId = 1,
-	nextAlbumId = 1,
-	nextArtistId = 1,
+		root = root,
+		tracks = {},
+		albums = {},
+		artists = {},
+		recent = {},
+		albumById = {},
+		artistById = {},
+		trackById = {},
+		albumByKey = {},
+		artistByName = {},
+		strings = {},
+		version = 0,
+		ready = false,
+		-- Ids are handed out from counters rather than from the list length: removing the tracks of
+		-- a folder leaves gaps, and a later add must not reuse an id something still refers to.
+		nextTrackId = 1,
+		nextAlbumId = 1,
+		nextArtistId = 1,
 	}, Library)
 end
 
@@ -104,7 +104,6 @@ end
 --- and a JSON event decodes its own copy of each.
 ---@param self beat.Library
 ---@param value string?
----@return string?
 local function intern(self, value)
 	if value == nil then return nil end
 
@@ -148,27 +147,27 @@ function Library:add(info, entry, cover, coverCache)
 
 	---@type beat.Track
 	local track = {
-	id = id,
-	path = entry.path,
-	title = title,
-	artist = artist,
-	album = albumTitle,
-	albumId = 0,
-	artistId = 0,
-	albumArtist = albumArtist,
-	disc = disc,
-	number = number,
-	year = names.yearOf(date),
-	genre = intern(self, tags.genre),
-	duration = duration,
-	format = intern(self, info.format) or "",
-	sampleRate = info.sampleRate,
-	channels = info.channels,
-	hasPicture = info.hasPicture,
-	coverPath = intern(self, cover),
-	coverCache = intern(self, coverCache),
-	modified = entry.modifyTime or 0,
-	hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
+		id = id,
+		path = entry.path,
+		title = title,
+		artist = artist,
+		album = albumTitle,
+		albumId = 0,
+		artistId = 0,
+		albumArtist = albumArtist,
+		disc = disc,
+		number = number,
+		year = names.yearOf(date),
+		genre = intern(self, tags.genre),
+		duration = duration,
+		format = intern(self, info.format) or "",
+		sampleRate = info.sampleRate,
+		channels = info.channels,
+		hasPicture = info.hasPicture,
+		coverPath = intern(self, cover),
+		coverCache = intern(self, coverCache),
+		modified = entry.modifyTime or 0,
+		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
 	}
 
 	-- The album key is the album artist when the files agree on one, and the album's directory
@@ -184,19 +183,19 @@ function Library:add(info, entry, cover, coverCache)
 		local albumId = self.nextAlbumId
 		self.nextAlbumId = albumId + 1
 		album = {
-		id = albumId,
-		key = key,
-		title = albumTitle,
-		artist = albumArtist,
-		year = track.year,
-		tracks = {},
-		duration = 0,
-		trackCount = 0,
-		coverPath = intern(self, cover),
-		coverCache = intern(self, coverCache),
-		coverTrack = info.hasPicture and track or nil,
-		modified = track.modified,
-		hash = names.fold(albumTitle .. "\0" .. albumArtist),
+			id = albumId,
+			key = key,
+			title = albumTitle,
+			artist = albumArtist,
+			year = track.year,
+			tracks = {},
+			duration = 0,
+			trackCount = 0,
+			coverPath = intern(self, cover),
+			coverCache = intern(self, coverCache),
+			coverTrack = info.hasPicture and track or nil,
+			modified = track.modified,
+			hash = names.fold(albumTitle .. "\0" .. albumArtist),
 		}
 
 		self.albums[#self.albums + 1] = album
@@ -217,8 +216,8 @@ function Library:add(info, entry, cover, coverCache)
 
 	album.tracks[#album.tracks + 1] = track
 	track.albumId = album.id
-	album.trackCount = album.trackCount + 1
-	album.duration = album.duration + duration
+	album.trackCount += 1
+	album.duration += duration
 
 	local artistKey = albumArtist
 	local profile = self.artistByName[artistKey]
@@ -226,11 +225,11 @@ function Library:add(info, entry, cover, coverCache)
 		local artistId = self.nextArtistId
 		self.nextArtistId = artistId + 1
 		profile = {
-		id = artistId,
-		name = artistKey,
-		albums = {},
-		tracks = {},
-		hash = names.fold(artistKey),
+			id = artistId,
+			name = artistKey,
+			albums = {},
+			tracks = {},
+			hash = names.fold(artistKey),
 		}
 
 		self.artists[#self.artists + 1] = profile
@@ -247,7 +246,7 @@ function Library:add(info, entry, cover, coverCache)
 
 	self.tracks[#self.tracks + 1] = track
 	self.trackById[id] = track
-	self.version = self.version + 1
+	self.version += 1
 
 	return track, gainedCover
 end
@@ -366,15 +365,15 @@ end
 --- Closes the scan: sorts what was found and computes the values a screen reads in a loop.
 function Library:finish()
 	for _, album in ipairs(self.albums) do
-			table.sort(album.tracks, trackOrder)
-			album.trackCount = #album.tracks
-			album.duration = 0
-			for _, track in ipairs(album.tracks) do
-					album.duration = album.duration + track.duration
-					if album.coverTrack == nil and track.hasPicture then album.coverTrack = track end
-					if album.coverPath == nil then album.coverPath = track.coverPath end
-				end
+		table.sort(album.tracks, trackOrder)
+		album.trackCount = #album.tracks
+		album.duration = 0
+		for _, track in ipairs(album.tracks) do
+			album.duration += track.duration
+			if album.coverTrack == nil and track.hasPicture then album.coverTrack = track end
+			if album.coverPath == nil then album.coverPath = track.coverPath end
 		end
+	end
 
 	local orderedAlbums = {}
 	for _, album in ipairs(self.albums) do orderedAlbums[#orderedAlbums + 1] = album end
@@ -383,18 +382,18 @@ function Library:finish()
 
 	local orderedArtists = {}
 	for _, artist in ipairs(self.artists) do
-			local albums = {}
-			for _, album in pairs(artist.albums) do albums[#albums + 1] = album end
-			table.sort(albums, albumOrder)
-			artist.albums = albums
-			table.sort(artist.tracks, trackOrder)
-			orderedArtists[#orderedArtists + 1] = artist
-		end
-	table.sort(orderedArtists, function(a, b) return a.hash < b.hash end)
+		local albums = {}
+		for _, album in pairs(artist.albums) do albums[#albums + 1] = album end
+		table.sort(albums, albumOrder)
+		artist.albums = albums
+		table.sort(artist.tracks, trackOrder)
+		orderedArtists[#orderedArtists + 1] = artist
+	end
+	table.sort(orderedArtists,|a, b| -> a.hash < b.hash)
 	self.artists = orderedArtists
 
 	self.ready = true
-	self.version = self.version + 1
+	self.version += 1
 end
 
 ---@param id number
@@ -420,9 +419,9 @@ end
 function Library:recentlyAdded(limit)
 	local list = {}
 	for index = #self.recent, 1, -1 do
-			list[#list + 1] = self.recent[index]
-			if limit ~= nil and #list >= limit then break end
-		end
+		list[#list + 1] = self.recent[index]
+		if limit ~= nil and #list >= limit then break end
+	end
 	return list
 end
 
@@ -435,14 +434,14 @@ function Library:search(query)
 	local albums, artists, tracks = {}, {}, {}
 
 	for _, album in ipairs(self.albums) do
-			if album.hash:find(needle, 1, true) then albums[#albums + 1] = album end
-		end
+		if album.hash:find(needle, 1, true) then albums[#albums + 1] = album end
+	end
 	for _, artist in ipairs(self.artists) do
-			if artist.hash:find(needle, 1, true) then artists[#artists + 1] = artist end
-		end
+		if artist.hash:find(needle, 1, true) then artists[#artists + 1] = artist end
+	end
 	for _, track in ipairs(self.tracks) do
-			if track.hash:find(needle, 1, true) then tracks[#tracks + 1] = track end
-		end
+		if track.hash:find(needle, 1, true) then tracks[#tracks + 1] = track end
+	end
 
 	return albums, artists, tracks
 end

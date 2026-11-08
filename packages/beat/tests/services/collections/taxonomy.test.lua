@@ -1,14 +1,33 @@
 local test = require("lde-test")
+local Library = require("beat.music.library")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
 
+--- A real library, so what these tests hand `playlistTracks` and `recordListen` is what the app
+--- hands them: three tracks in one album.
 local function library()
-	return {
-	tracks = {
-	{ path = "/music/a.flac", title = "A"},
-	{ path = "/music/b.flac", title = "B"},
-	{ path = "/music/c.flac", title = "C"},
-	},
-	}
+	local lib = Library.new("/music")
+	for _, name in ipairs({ "a", "b", "c" }) do
+		lib:add({
+			format = "FLAC",
+			sampleRate = 44100,
+			channels = 2,
+			duration = 180,
+			hasPicture = false,
+			tags = {
+				title = name:upper(),
+				artist = "artist",
+				album = "album",
+				albumArtist = "artist",
+			},
+		}, {
+			path = "/music/" .. name .. ".flac",
+			dir = "/music",
+			name = name .. ".flac",
+			ext = "flac",
+		}, nil)
+	end
+	lib:finish()
+	return lib
 end
 
 test.it("names tags case-insensitively and toggles them on a track", function()
@@ -53,7 +72,6 @@ test.it("keeps manual playlist membership in a hidden tag", function()
 	local taxonomy = Taxonomy.new()
 	local lib = library()
 	local playlist = assert(taxonomy:addPlaylist("Favourites", false))
-	---@cast playlist beat.Playlist
 
 	taxonomy:setPlaylistTrack(playlist, "/music/c.flac", true)
 	local manualTracks = taxonomy:playlistTracks(playlist, lib)
@@ -78,9 +96,10 @@ test.it("round-trips tags and playlists through its packed form", function()
 	local lib = library()
 	test.equal(#loaded:visibleTags(), 1)
 	test.equal(loaded:visibleTags()[1].name, "High Energy")
-	test.equal(#loaded:playlistTracks(loaded:playlist(smart.id), lib), 1)
-	test.equal(#loaded:playlistTracks(loaded:playlist(manual.id), lib), 1)
-	test.truthy(loaded.tagById[assert(loaded:playlist(manual.id).hiddenTagId)].hidden)
+	test.equal(#loaded:playlistTracks(assert(loaded:playlist(smart.id)), lib), 1)
+	test.equal(#loaded:playlistTracks(assert(loaded:playlist(manual.id)), lib), 1)
+	local reloadedManual = assert(loaded:playlist(manual.id))
+	test.truthy(loaded.tagById[assert(reloadedManual.hiddenTagId)].hidden)
 end)
 
 test.it("makes an automatic smart playlist for each tag", function()
@@ -128,10 +147,6 @@ test.it("records listens for tracks, albums, tags and playlists", function()
 	local tag = assert(taxonomy:addTag("Focus"))
 	local auto = taxonomy.playlists[1]
 	local lib = library()
-	lib.albums = {{ id = 1, key = "artist\0album", title = "Album", artist = "Artist"}}
-	lib.albumById = { [1] = lib.albums[1]}
-	function lib:album(id) return self.albumById[id] end
-	lib.tracks[1].albumId = 1
 	taxonomy:setTag("/music/a.flac", tag.id, true)
 
 	taxonomy:recordListen(lib.tracks[1], lib, auto.id, 1234)

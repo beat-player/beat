@@ -86,7 +86,6 @@ end
 --- A LuaJIT bytecode bundle only loads under the LuaJIT that wrote it. The first bytes say so
 --- before the loader does, which lets the error name the likely cause instead of only quoting it.
 ---@param file string
----@return boolean
 local function isBytecode(file)
 	local bytes = fs.read(file)
 	return bytes ~= nil and bytes:sub(1, 3) == "\27LJ"
@@ -154,7 +153,7 @@ local function runFile(file)
 		local reason = tostring(loadError)
 		if isBytecode(file) or reason:find("bytecode", 1, true) ~= nil then
 			reason = reason
-				.. " (the file is LuaJIT bytecode; build the bundle again under the same LuaJIT, or without --bytecode)"
+			.. " (the file is LuaJIT bytecode; build the bundle again under the same LuaJIT, or without --bytecode)"
 		end
 		return { name = name, file = file, error = reason}
 	end
@@ -192,7 +191,7 @@ function PluginFiles.found(dir, disabled)
 		if entry.name:sub(-4) == ".lua" then
 			local file = path.join(folder, entry.name)
 			local isFile = entry.type == "file"
-				or (entry.type ~= "dir" and fs.isfile(file))
+			or (entry.type ~= "dir" and fs.isfile(file))
 			if isFile then names[#names + 1] = entry.name end
 		end
 	end

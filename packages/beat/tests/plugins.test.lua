@@ -3,11 +3,13 @@
 -- that must not take the app with it. The app is built headlessly, so nothing here needs a window.
 local test = require("lde-test")
 local fs = require("fs")
+local wonderland = require("wonderland")
 local path = require("path")
 local json = require("json")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local App = require("beat.app")
+local beat = require("beat")
 local Picker = require("beat.app.services.scan.picker")
 
 local realPickStart, realPickPoll = Picker.start, Picker.poll
@@ -82,6 +84,13 @@ local function reported(text)
 	return false
 end
 
+---@param ctx beat.MenuContext
+---@return beat.Message
+local function openInRateYourMusic(ctx)
+	local album = assert(ctx.album)
+	return ctx.message.openURL("https://rateyourmusic.com/album/" .. album.id)
+end
+
 ---@param name string
 ---@return beat.PluginStatus?
 local function entry(name)
@@ -129,21 +138,18 @@ package.preload["probe"] = function()
 end
 return package.preload["probe"](...)
 ]]
-
 test.it("adds an album action whose message reaches the service it names", function()
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "rym",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.action({
+		setup = function(handle)
+			handle.action({
 				menu = "album",
 				title = "Open in Rate Your Music",
-				message = function(ctx)
-					return { type = "openURL", url = "https://rateyourmusic.com/album/" .. ctx.album.id }
-				end,
+				message = openInRateYourMusic,
 			})
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 	App.services.library.current = fixture()
 	local album = App.services.library.current.albums[1]
@@ -168,20 +174,24 @@ end)
 
 test.it("lets an interceptor cancel a message and send another one", function()
 	local replayed = 0
-	local plugin = {
+	---@param message { type: string, id: number, shuffle: boolean? }
+	---@param app beat.App
+	---@param proceed fun(message: beat.Message?)
+	local function shuffleFirst(message, app, proceed)
+		if message.shuffle ~= true then
+			replayed = replayed + 1
+			app:act({ type = "playAlbum", id = message.id, shuffle = true })
+			return
+		end
+		proceed(message)
+	end
+	local plugin = beat.plugin({
 		name = "shuffler",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.intercept("playAlbum", function(message, app, proceed)
-				if message.shuffle ~= true then
-					replayed = replayed + 1
-					app:act({ type = "playAlbum", id = message.id, shuffle = true })
-					return
-				end
-				proceed(message)
-			end)
+		setup = function(handle)
+			handle.intercept("playAlbum", shuffleFirst)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 	App.services.library.current = fixture()
 	local album = App.services.library.current.albums[1]
@@ -200,15 +210,18 @@ end)
 
 test.it("tells listeners about a message after it has been delivered", function()
 	local heard = {}
-	local plugin = {
+	---@param message { type: string, track: { title: string } }
+	---@param app beat.App
+	local function noteStart(message, app)
+		heard[#heard + 1] = message.track.title .. "@" .. tostring(app ~= nil)
+	end
+	local plugin = beat.plugin({
 		name = "listener",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.on("trackStarted", function(message, app)
-				heard[#heard + 1] = message.track.title .. "@" .. tostring(app ~= nil)
-			end)
+		setup = function(handle)
+			handle.on("trackStarted", noteStart)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "trackStarted", track = { title = "A Track" }, position = 0})
@@ -216,16 +229,19 @@ test.it("tells listeners about a message after it has been delivered", function(
 	test.equal(heard[1], "A Track@true", "the listener saw the delivered message and the app")
 end)
 
+---@param _ beat.App
+---@param params beat.OverlayParams
+---@return beat.OverlayState
+local function panelCard(_, params) return { value = params.value} end
+
 test.it("opens an overlay a plugin named after itself", function()
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "panel",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.overlay("panel:card", {
-				new = function(_, params) return { value = params.value} end,
-			})
+		setup = function(handle)
+			handle.overlay("panel:card", { new = panelCard })
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "open", overlay = "panel:card", value = 7})
@@ -236,11 +252,13 @@ end)
 
 test.it("leaves out a plugin whose version requirement does not match", function()
 	local baseRan, needsRan = false, false
+	---@type beat.PluginModule
 	local base = {
 		name = "base",
 		version = "1.0.0",
 		setup = function() baseRan = true end,
 	}
+	---@type beat.PluginModule
 	local needs = {
 		name = "needs",
 		version = "1.0.0",
@@ -255,37 +273,37 @@ test.it("leaves out a plugin whose version requirement does not match", function
 end)
 
 test.it("refuses a page that is not named after its plugin", function()
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "sloppy",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.action({
+		setup = function(handle)
+			handle.action({
 				menu = "album",
 				title = "Should be rolled back",
 				message = { type = "toast", text = "never" },
 			})
-			beat.page("home", { view = function() return nil end })
+			handle.page("home", { view = function() return wonderland.div() end })
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Should be rolled back"), nil,
-		"the registrations made before the bad page were taken back")
+	"the registrations made before the bad page were taken back")
 	test.equal(App.registry:page("home"), require("beat.app.pages.home"), "the built-in page is still there")
 	test.truthy(reported("must be named"), "the reason was reported")
 end)
 
 test.it("adds a page a plugin named after itself", function()
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "panel",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.page("panel:page", {
+		setup = function(handle)
+			handle.page("panel:page", {
 				new = function() return { hello = true } end,
-				view = function() return nil end,
+				view = function() return wonderland.div() end,
 			})
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "navigate", page = { kind = "panel:page" }})
@@ -384,16 +402,22 @@ end)
 
 test.it("builds a service a plugin added and lets it answer its own messages", function()
 	local answered = 0
-	local service = { needs = {}, handles = { "counter:ping" } }
-	service.__index = service
-	function service.new() return setmetatable({}, service) end
-	function service.update(_, message) answered = answered + message.by end
+	---@param _ beat.ServiceInstance
+	---@param message beat.Message
+	local function onPing(_, message) answered = answered + message.by end
+	---@type beat.Service
+	local service = {
+		needs = {},
+		handles = { "counter:ping" },
+		new = function() return {} end,
+		update = onPing,
+	}
 
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "counter",
 		version = "1.0.0",
-		setup = function(beat) beat.service("counter:service", service) end,
-	}
+		setup = function(handle) handle.service("counter:service", service) end,
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "counter:ping", by = 2 })
@@ -402,19 +426,25 @@ end)
 
 test.it("switches off a service whose update raises", function()
 	local calls = 0
-	local service = { needs = {}, handles = { "bad:ping" } }
-	service.__index = service
-	function service.new() return setmetatable({}, service) end
-	function service.update()
+	---@param _ beat.ServiceInstance
+	---@param _message beat.Message
+	local function explode(_, _message)
 		calls = calls + 1
 		error("the service exploded")
 	end
+	---@type beat.Service
+	local service = {
+		needs = {},
+		handles = { "bad:ping" },
+		new = function() return {} end,
+		update = explode,
+	}
 
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "bad",
 		version = "1.0.0",
-		setup = function(beat) beat.service("bad:service", service) end,
-	}
+		setup = function(handle) handle.service("bad:service", service) end,
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	App:act({ type = "bad:ping" })
@@ -429,16 +459,16 @@ end)
 
 test.it("switches off a plugin whose hook raises, after one report, and carries on", function()
 	local calls = 0
-	local plugin = {
+	local plugin = beat.plugin({
 		name = "broken",
 		version = "1.0.0",
-		setup = function(beat)
-			beat.wrap("page:home", function()
+		setup = function(handle)
+			handle.wrap("page:home", function()
 				calls = calls + 1
 				error("the hook exploded")
 			end)
 		end,
-	}
+	})
 	App:init({ scan = false, plugins = { plugin } })
 
 	local home = App.registry:page("home")
@@ -472,9 +502,10 @@ test.it("loads a bundle from the plugins folder and keeps the host's copy of a b
 
 	local actions = App.registry:actions("album", { album = { id = 1 } })
 	test.truthy(action(actions, "Private answer") ~= nil,
-		"the plugin's own module was resolvable and its action was registered")
+	"the plugin's own module was resolvable and its action was registered")
 
-	local private = require("probe.private")
+	---@diagnostic disable-next-line: missing-module
+	local private = require("probe.private") --[[@as { answer: number, host: any }]]
 	test.equal(private.answer, 42, "the plugin's private module is the one it shipped")
 	test.equal(type(require("json").encode), "function", "beat's json is still beat's")
 	test.equal(require("json").tampered, nil, "the bundle's bundled copy of json did not replace it")
@@ -484,17 +515,17 @@ end)
 test.it("keeps starting when a plugin file raises, and lets a broken file be switched off", function()
 	_G.__beat_broken_runs = nil
 	writePlugin("broken.lua",
-		'_G.__beat_broken_runs = (_G.__beat_broken_runs or 0) + 1\nerror("the bundle exploded")')
+	'_G.__beat_broken_runs = (_G.__beat_broken_runs or 0) + 1\nerror("the bundle exploded")')
 	App:init({ scan = false })
 
 	local broken = entry("broken.lua")
 	test.truthy(broken ~= nil, "the file is listed by its file name")
 	test.equal(broken.state, "failed")
 	test.truthy(broken.reason ~= nil and broken.reason:find("the bundle exploded", 1, true) ~= nil,
-		"the error is kept for the page")
+	"the error is kept for the page")
 	test.truthy(reported("broken.lua was not loaded"), "the failure was reported")
-	test.truthy(entry("core") ~= nil and entry("core").state == "loaded",
-		"the app still loaded its own plugins")
+	local core = assert(entry("core"))
+	test.equal(core.state, "loaded", "the app still loaded its own plugins")
 	test.equal(_G.__beat_broken_runs, 1, "the file ran once")
 
 	-- A file that cannot load is the one most worth switching off, and the switch is its name.
@@ -502,7 +533,8 @@ test.it("keeps starting when a plugin file raises, and lets a broken file be swi
 	App.services.settings:flush()
 	App:init({ scan = false })
 
-	test.equal(entry("broken.lua").state, "off", "the next start lists it as off")
+	local brokenOff = assert(entry("broken.lua"))
+	test.equal(brokenOff.state, "off", "the next start lists it as off")
 	test.equal(_G.__beat_broken_runs, 1, "and does not run the file again")
 	_G.__beat_broken_runs = nil
 end)
@@ -514,10 +546,11 @@ test.it("names bytecode from another LuaJIT as the likely reason it would not lo
 	local other = entry("other.lua")
 	test.truthy(other ~= nil, "the file is listed by its file name")
 	test.equal(other.state, "failed")
-	test.truthy(other.reason ~= nil and other.reason:find("bytecode", 1, true) ~= nil,
-		"the error says the file is bytecode")
-	test.truthy(other.reason:find("same LuaJIT", 1, true) ~= nil,
-		"and names the likely cause")
+	local reason = assert(other.reason)
+	test.truthy(reason:find("bytecode", 1, true) ~= nil,
+	"the error says the file is bytecode")
+	test.truthy(reason:find("same LuaJIT", 1, true) ~= nil,
+	"and names the likely cause")
 end)
 
 test.it("lists a disabled file as off without running it", function()
@@ -549,7 +582,7 @@ return package.preload["sleeper"](...)
 	test.equal(sleeper.source, path.join(paths.file("plugins"), "sleeper.lua"))
 	test.equal(_G.__beat_sleeper_ran, nil, "the disabled file was never executed")
 	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Sleeper action"), nil,
-		"its setup never ran")
+	"its setup never ran")
 	test.equal(package.loaded["sleeper"], nil, "its modules were not kept")
 	test.equal(package.preload["sleeper"], nil, "and cannot be required later")
 	_G.__beat_sleeper_ran = nil
@@ -573,19 +606,22 @@ end
 return package.preload["toggle"](...)
 ]])
 	App:init({ scan = false })
-	test.equal(entry("toggle").state, "loaded")
+	local toggleLoaded = assert(entry("toggle"))
+	test.equal(toggleLoaded.state, "loaded")
 
 	App:act({ type = "pluginEnabled", file = "toggle.lua", enabled = false })
 	App.services.settings:flush()
 
-	local saved = json.decode(fs.read(paths.file("settings.json"))):unpack()
+	local bytes = assert(fs.read(paths.file("settings.json")))
+	local saved = json.decode(bytes):unpack()
 	local disabled = {}
 	for _, name in ipairs(saved.disabledPlugins) do disabled[name] = true end
 	test.equal(disabled["toggle.lua"], true, "the switch was written to the settings file by file name")
 
 	App:init({ scan = false })
-	test.equal(entry("toggle.lua").state, "off", "the next start reads the switch")
+	local toggleOff = assert(entry("toggle.lua"))
+	test.equal(toggleOff.state, "off", "the next start reads the switch")
 	test.equal(entry("toggle"), nil, "the disabled file is listed by its file name, not its plugin name")
 	test.equal(action(App.registry:actions("album", { album = { id = 1} }), "Toggle action"), nil,
-		"and the plugin is out of the app")
+	"and the plugin is out of the app")
 end)

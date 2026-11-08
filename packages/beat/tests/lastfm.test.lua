@@ -30,9 +30,9 @@ local function fakeCurl()
 	local requests = {}
 
 	local curl = {
-	batch = function()
-		return setmetatable({ order = {}, requests = requests}, TestBatch)
-	end,
+		batch = function()
+			return setmetatable({ order = {}, requests = requests}, TestBatch)
+		end,
 	}
 
 	return curl, requests
@@ -41,26 +41,29 @@ end
 ---@return beat.Settings
 local function testSettings()
 	return {
-	root = nil,
-	theme = "night",
-	accent = "lime",
-	volume = 0.8,
-	isMuted = false,
-	sort = "title",
-	view = "grid",
-	sidebarWidth = 264,
-	sidebarCollapsed = false,
-	uiScale = 1,
-	reduceMotion = false,
-	lastfmSessionKey = "",
-	lastfmUsername = "",
-	lastfmEnabled = true,
+		root = nil,
+		theme = "night",
+		accent = "lime",
+		volume = 0.8,
+		isMuted = false,
+		sort = "title",
+		view = "grid",
+		sidebarWidth = 264,
+		sidebarCollapsed = false,
+		uiScale = 1,
+		reduceMotion = false,
+		lastfmSessionKey = "",
+		lastfmUsername = "",
+		lastfmEnabled = true,
+		equalizerPreset = "flat",
+		equalizerGains = { 0, 0, 0, 0, 0},
+		equalizerCustomPresets = {},
+		disabledPlugins = {},
 	}
 end
 
 ---@param body string
 ---@param method string
----@return boolean
 local function calls(body, method)
 	return body:find("method=" .. method, 1, true) ~= nil
 end
@@ -70,9 +73,9 @@ end
 ---@return table?
 local function requestFor(requests, method)
 	for at = #requests, 1, -1 do
-			local request = requests[at]
-			if request.result == nil and calls(request.opts.body, method) then return request end
-		end
+		local request = requests[at]
+		if request.result == nil and calls(request.opts.body, method) then return request end
+	end
 end
 
 ---@param settings beat.Settings
@@ -80,6 +83,37 @@ local function connectedSettings(settings)
 	settings.lastfmSessionKey = "session-key"
 	settings.lastfmUsername = "listener"
 	settings.lastfmEnabled = true
+end
+
+--- A track complete enough for the client's now-playing call, which reads the fields a scan
+--- would have filled.
+---@param id number
+---@param title string
+---@param artist string
+---@param album string
+---@param duration number
+---@param number number?
+---@return beat.Track
+local function trackFixture(id, title, artist, album, duration, number)
+	return {
+		id = id,
+		path = "/music/" .. id .. ".flac",
+		title = title,
+		artist = artist,
+		album = album,
+		albumId = id,
+		artistId = id,
+		albumArtist = artist,
+		disc = 1,
+		number = number,
+		duration = duration,
+		format = "FLAC",
+		sampleRate = 44100,
+		channels = 2,
+		hasPicture = false,
+		modified = 0,
+		hash = "hash-" .. id,
+	}
 end
 
 test.it("authorizes a desktop session and keeps the returned key", function()
@@ -91,14 +125,14 @@ test.it("authorizes a desktop session and keeps the returned key", function()
 	local toasts = {}
 
 	local client = Lastfm.new(settings, {
-	onToast = function(_, tone) toasts[#toasts + 1] = tone end,
-	onSave = function() saved = saved + 1 end,
+		onToast = function(_, tone) toasts[#toasts + 1] = tone end,
+		onSave = function() saved = saved + 1 end,
 	}, {
-	curl = curl,
-	apiKey = "api-key",
-	apiSecret = "api-secret",
-	now = function() return now end,
-	openBrowser = function(url) opened = url; return true end,
+		curl = curl,
+		apiKey = "api-key",
+		apiSecret = "api-secret",
+		now = function() return now end,
+		openBrowser = function(url) opened = url; return true end,
 	})
 
 	test.truthy(client:connect())
@@ -119,9 +153,9 @@ test.it("authorizes a desktop session and keeps the returned key", function()
 	test.truthy(sessionRequest ~= nil, "the session request was sent after the poll")
 
 	sessionRequest.result = {
-	ok = true,
-	status = 200,
-	body = '{"session":{"name":"listener","key":"session-key"}}',
+		ok = true,
+		status = 200,
+		body = '{"session":{"name":"listener","key":"session-key"}}',
 	}
 	client:update(nil, false, {})
 
@@ -139,27 +173,25 @@ test.it("keeps waiting while Last.fm says the token is not authorized", function
 	local now = 1000
 	local curl, requests = fakeCurl()
 	local client = Lastfm.new(settings, nil, {
-	curl = curl,
-	apiKey = "api-key",
-	apiSecret = "api-secret",
-	now = function() return now end,
-	openBrowser = function() return true end,
+		curl = curl,
+		apiKey = "api-key",
+		apiSecret = "api-secret",
+		now = function() return now end,
+		openBrowser = function() return true end,
 	})
 
 	client:connect()
-	local tokenRequest = requestFor(requests, "auth.getToken")
-	---@cast tokenRequest table
+	local tokenRequest = assert(requestFor(requests, "auth.getToken"))
 	tokenRequest.result = { ok = true, status = 200, body = '{"token":"request-token"}'}
 	client:update(nil, false, {})
 
 	now = 1002
 	client:update(nil, false, {})
-	local sessionRequest = requestFor(requests, "auth.getSession")
-	---@cast sessionRequest table
+	local sessionRequest = assert(requestFor(requests, "auth.getSession"))
 	sessionRequest.result = {
-	ok = true,
-	status = 200,
-	body = '{"error":14,"message":"This token has not been authorized"}',
+		ok = true,
+		status = 200,
+		body = '{"error":14,"message":"This token has not been authorized"}',
 	}
 	client:update(nil, false, {})
 
@@ -179,31 +211,23 @@ test.it("sends now playing and a scrobble once a track is heard", function()
 
 	local curl, requests = fakeCurl()
 	local client = Lastfm.new(settings, nil, {
-	curl = curl,
-	apiKey = "api-key",
-	apiSecret = "api-secret",
-	now = function() return 1700000100 end,
+		curl = curl,
+		apiKey = "api-key",
+		apiSecret = "api-secret",
+		now = function() return 1700000100 end,
 	})
 
-	local track = {
-	id = 4,
-	title = "Jóga",
-	artist = "Björk",
-	album = "Homogenic",
-	albumArtist = "Björk",
-	number = 2,
-	duration = 302,
-	}
-	---@cast track beat.Track
+	local track = trackFixture(4, "Jóga", "Björk", "Homogenic", 302, 2)
+	---@type beat.Scrobble
 	local scrobble = {
-	trackId = 4,
-	title = "Jóga",
-	artist = "Björk",
-	album = "Homogenic",
-	albumArtist = "Björk",
-	number = 2,
-	duration = 302,
-	startedAt = 1700000000,
+		trackId = 4,
+		title = "Jóga",
+		artist = "Björk",
+		album = "Homogenic",
+		albumArtist = "Björk",
+		number = 2,
+		duration = 302,
+		startedAt = 1700000000,
 	}
 
 	client:update(track, true, { scrobble})
@@ -219,9 +243,9 @@ test.it("sends now playing and a scrobble once a track is heard", function()
 	test.truthy(scrobbleRequest.opts.body:find("timestamp%5B0%5D=1700000000", 1, true) ~= nil)
 
 	scrobbleRequest.result = {
-	ok = true,
-	status = 200,
-	body = '{"scrobbles":{"accepted":"1","ignored":"0"}}',
+		ok = true,
+		status = 200,
+		body = '{"scrobbles":{"accepted":"1","ignored":"0"}}',
 	}
 	nowPlaying.result = { ok = true, status = 200, body = '{"nowplaying":{}}'}
 	client:update(track, true, {})
@@ -239,31 +263,23 @@ test.it("does not send when scrobbling is paused", function()
 	settings.lastfmEnabled = false
 	local curl, requests = fakeCurl()
 	local client = Lastfm.new(settings, nil, {
-	curl = curl,
-	apiKey = "api-key",
-	apiSecret = "api-secret",
-	now = function() return 100 end,
+		curl = curl,
+		apiKey = "api-key",
+		apiSecret = "api-secret",
+		now = function() return 100 end,
 	})
 
-	local track = {
-	id = 1,
-	title = "Title",
-	artist = "Artist",
-	album = "Album",
-	albumArtist = "Artist",
-	duration = 100,
-	}
-	---@cast track beat.Track
+	local track = trackFixture(1, "Title", "Artist", "Album", 100, nil)
+	---@type beat.Scrobble
 	local scrobble = {
-	trackId = 1,
-	title = "Title",
-	artist = "Artist",
-	album = "Album",
-	albumArtist = "Artist",
-	duration = 100,
-	startedAt = 50,
+		trackId = 1,
+		title = "Title",
+		artist = "Artist",
+		album = "Album",
+		albumArtist = "Artist",
+		duration = 100,
+		startedAt = 50,
 	}
-	---@cast scrobble beat.Scrobble
 
 	client:update(track, true, { scrobble})
 

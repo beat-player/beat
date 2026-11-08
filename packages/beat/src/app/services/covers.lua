@@ -10,7 +10,7 @@ local artwork = require("beat.music.artwork")
 -- it without end.
 local CACHE_LIMIT = 48
 
----@class beat.CoversService
+---@class beat.CoversService: beat.Service
 ---@field assets wonderland.Assets?
 ---@field entries table<string, { asset: wonderland.Asset?, colour: { r: number, g: number, b: number }?, failed: boolean?, seen: number }>
 ---@field jobs { key: string, album: beat.Album, size: number, epoch: number, seen: number }[]
@@ -26,12 +26,12 @@ Covers.needs = {}
 ---@return beat.CoversService
 function Covers.new(_deps)
 	return setmetatable({
-	assets = nil,
-	entries = {},
-	jobs = {},
-	epoch = 0,
-	frame = 0,
-	jobsByKey = {},
+		assets = nil,
+		entries = {},
+		jobs = {},
+		epoch = 0,
+		frame = 0,
+		jobsByKey = {},
 	}, Covers)
 end
 
@@ -47,39 +47,39 @@ end
 --- released by `sweep`, which is what keeps a scan's changing recently-added row from keeping a
 --- texture for every album it ever showed.
 function Covers:beginFrame()
-	self.frame = self.frame + 1
+	self.frame += 1
 end
 
 --- Drops jobs for covers the view no longer asks for, and evicts the oldest cached covers once
 --- the cache is over its limit. Covers still on screen are never evicted.
 function Covers:sweep()
 	for at = #self.jobs, 1, -1 do
-			local job = self.jobs[at]
-			if job.seen ~= self.frame then
-				self.jobsByKey[job.key] = nil
-				table.remove(self.jobs, at)
-			end
+		local job = self.jobs[at]
+		if job.seen ~= self.frame then
+			self.jobsByKey[job.key] = nil
+			table.remove(self.jobs, at)
 		end
+	end
 
 	local count = 0
-	for _ in pairs(self.entries) do count = count + 1 end
+	for _ in pairs(self.entries) do count += 1 end
 	if count <= CACHE_LIMIT then return end
 
 	local stale = {}
 	for key, entry in pairs(self.entries) do
-			if entry.seen ~= self.frame then stale[#stale + 1] = { key = key, seen = entry.seen} end
-		end
-	table.sort(stale, function(a, b) return a.seen < b.seen end)
+		if entry.seen ~= self.frame then stale[#stale + 1] = { key = key, seen = entry.seen} end
+	end
+	table.sort(stale,|a, b| -> a.seen < b.seen)
 
 	local over = count - CACHE_LIMIT
 	for at = 1, math.min(over, #stale) do
-			local key = stale[at].key
-			local entry = self.entries[key]
-			if entry ~= nil then
-				if entry.asset ~= nil and self.assets ~= nil then self.assets:release(entry.asset) end
-				self.entries[key] = nil
-			end
+		local key = stale[at].key
+		local entry = self.entries[key]
+		if entry ~= nil then
+			if entry.asset ~= nil and self.assets ~= nil then self.assets:release(entry.asset) end
+			self.entries[key] = nil
 		end
+	end
 end
 
 ---@param album beat.Album
@@ -97,19 +97,19 @@ function Covers:request(album, size)
 	if not self.jobsByKey[key] then
 		self.jobsByKey[key] = true
 		self.jobs[#self.jobs + 1] = {
-		key = key,
-		album = album,
-		size = size,
-		epoch = self.epoch,
-		seen = self.frame,
+			key = key,
+			album = album,
+			size = size,
+			epoch = self.epoch,
+			seen = self.frame,
 		}
 	else
 		for at = 1, #self.jobs do
-				if self.jobs[at].key == key then
-					self.jobs[at].seen = self.frame
-					break
-				end
+			if self.jobs[at].key == key then
+				self.jobs[at].seen = self.frame
+				break
 			end
+		end
 	end
 
 	return nil
@@ -120,8 +120,8 @@ end
 function Covers:colourOf(album)
 	local prefix = tostring(album.id) .. ":"
 	for key, entry in pairs(self.entries) do
-			if key:sub(1, #prefix) == prefix then return entry.colour end
-		end
+		if key:sub(1, #prefix) == prefix then return entry.colour end
+	end
 	return nil
 end
 
@@ -159,31 +159,31 @@ end
 function Covers:forget(albumId)
 	local prefix = tostring(albumId) .. ":"
 	for key, entry in pairs(self.entries) do
-			if key:sub(1, #prefix) == prefix then
-				if entry.asset ~= nil and self.assets ~= nil then self.assets:release(entry.asset) end
-				self.entries[key] = nil
-			end
+		if key:sub(1, #prefix) == prefix then
+			if entry.asset ~= nil and self.assets ~= nil then self.assets:release(entry.asset) end
+			self.entries[key] = nil
 		end
+	end
 	for at = #self.jobs, 1, -1 do
-			local job = self.jobs[at]
-			if job.album.id == albumId then
-				self.jobsByKey[job.key] = nil
-				table.remove(self.jobs, at)
-			end
+		local job = self.jobs[at]
+		if job.album.id == albumId then
+			self.jobsByKey[job.key] = nil
+			table.remove(self.jobs, at)
 		end
+	end
 end
 
 function Covers:releaseAll()
 	if self.assets ~= nil then
 		for _, entry in pairs(self.entries) do
-				if entry.asset ~= nil then self.assets:release(entry.asset) end
-			end
+			if entry.asset ~= nil then self.assets:release(entry.asset) end
+		end
 	end
 
 	self.entries = {}
 	self.jobsByKey = {}
 	self.jobs = {}
-	self.epoch = self.epoch + 1
+	self.epoch += 1
 	self.frame = 0
 end
 

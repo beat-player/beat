@@ -7,7 +7,7 @@ local Library = require("beat.music.library")
 local LibraryCache = require("beat.app.services.library.cache")
 local Signal = require("beat.app.signal")
 
----@class beat.LibraryService
+---@class beat.LibraryService: beat.Service
 ---@field current beat.Library?
 ---@field sortedAlbums beat.Album[]?
 ---@field sortedFor string?
@@ -76,9 +76,9 @@ end
 --- A track the scan read. The caller guards the call, because one unreadable file must not stop
 --- the scan; the change is announced only once `add` returned, so a listener never sees a
 --- half-built track.
----@param info table
----@param entry table
----@param cover any
+---@param info treble.audio.Inspect
+---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number?, key: string? }
+---@param cover string?
 ---@param coverCache string?
 ---@return beat.Track? track, boolean? gainedCover
 function LibraryService:add(info, entry, cover, coverCache)

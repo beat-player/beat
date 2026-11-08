@@ -2,6 +2,32 @@ local test = require("lde-test")
 local md5 = require("beat.music.md5")
 local lastfm = require("beat.app.services.lastfm.protocol")
 
+--- A complete track, as the scanner would hand it over.
+---@param overrides { title: string, album: string, albumArtist: string, number: number?, duration: number }
+---@return beat.Track
+local function track(overrides)
+	---@type beat.Track
+	return {
+		id = 1,
+		path = "/music/" .. overrides.title .. ".flac",
+		title = overrides.title,
+		artist = "Artist",
+		album = overrides.album,
+		albumId = 1,
+		artistId = 1,
+		albumArtist = overrides.albumArtist,
+		disc = 1,
+		number = overrides.number,
+		duration = overrides.duration,
+		format = "FLAC",
+		sampleRate = 44100,
+		channels = 2,
+		hasPicture = false,
+		modified = 0,
+		hash = "hash-" .. overrides.title,
+	}
+end
+
 test.it("hashes the RFC 1321 vectors", function()
 	test.equal(md5.sumhexa(""), "d41d8cd98f00b204e9800998ecf8427e")
 	test.equal(md5.sumhexa("abc"), "900150983cd24fb0d6963f7d28e17f72")
@@ -10,10 +36,10 @@ end)
 
 test.it("signs the example from the Last.fm authentication docs", function()
 	local params = {
-	api_key = "xxxxxxxx",
-	method = "auth.getSession",
-	token = "xxxxxxx",
-	format = "json",
+		api_key = "xxxxxxxx",
+		method = "auth.getSession",
+		token = "xxxxxxx",
+		format = "json",
 	}
 	test.equal(lastfm.sign(params, "mysecret"), "68afb32bee072407a63b6c41f3e1e2b4")
 end)
@@ -31,8 +57,8 @@ end)
 
 test.it("encodes a form body without signing the response format", function()
 	local params = lastfm.params("track.updateNowPlaying", "key", "secret", {
-	artist = "Björk",
-	track = "Jóga",
+		artist = "Björk",
+		track = "Jóga",
 	})
 	local body = lastfm.encode(params)
 
@@ -61,14 +87,13 @@ test.it("builds desktop authentication parameters and URL", function()
 end)
 
 test.it("builds a now-playing call with the track's metadata", function()
-	local params = lastfm.nowPlayingParams("key", "secret", "session", {
-	artist = "Artist",
-	title = "Title",
-	album = "Album",
-	albumArtist = "Album Artist",
-	number = 4,
-	duration = 212.6,
-	})
+	local params = lastfm.nowPlayingParams("key", "secret", "session", track({
+		title = "Title",
+		album = "Album",
+		albumArtist = "Album Artist",
+		number = 4,
+		duration = 212.6,
+	}))
 
 	test.equal(params.method, "track.updateNowPlaying")
 	test.equal(params.sk, "session")
@@ -81,24 +106,29 @@ test.it("builds a now-playing call with the track's metadata", function()
 end)
 
 test.it("builds a batched scrobble with Last.fm's array notation", function()
-	local params = lastfm.scrobbleParams("key", "secret", "session", {
-	{
-	artist = "Artist One",
-	title = "Track One",
-	album = "Album One",
-	albumArtist = "Album Artist One",
-	number = 1,
-	duration = 100,
-	startedAt = 1700000000.9,
-	},
-	{
-	artist = "Artist Two",
-	title = "Track Two",
-	album = "",
-	duration = 200,
-	startedAt = 1700000300,
-	},
-	})
+	---@type beat.Scrobble[]
+	local scrobbles = {
+		{
+			trackId = 1,
+			artist = "Artist One",
+			title = "Track One",
+			album = "Album One",
+			albumArtist = "Album Artist One",
+			number = 1,
+			duration = 100,
+			startedAt = 1700000000.9,
+		},
+		{
+			trackId = 2,
+			artist = "Artist Two",
+			title = "Track Two",
+			album = "",
+			albumArtist = "",
+			duration = 200,
+			startedAt = 1700000300,
+		},
+	}
+	local params = lastfm.scrobbleParams("key", "secret", "session", scrobbles)
 
 	test.equal(params.method, "track.scrobble")
 	test.equal(params.sk, "session")

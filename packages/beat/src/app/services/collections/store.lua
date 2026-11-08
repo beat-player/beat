@@ -11,7 +11,6 @@ local TagStore = {}
 local VERSION = 1
 
 ---@param dir string?
----@return string
 local function storeFile(dir)
 	return paths.file("tags.json", dir)
 end
@@ -23,7 +22,7 @@ function TagStore.load(dir)
 	local bytes = fs.read(file)
 	if bytes == nil then return Taxonomy.new() end
 
-	local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
+	local ok, decoded = pcall(|| -> json.decode(bytes):unpack())
 
 	if not ok then
 		Log.write("error", "tags could not be read: " .. tostring(decoded))

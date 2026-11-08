@@ -14,7 +14,7 @@ end
 
 --- There is no disconnect: services are made together and dropped together, so a listener never
 --- outlives what it listens to.
----@param listener fun(...)
+---@param listener function
 function Signal:connect(listener)
 	self.listeners[#self.listeners + 1] = listener
 end

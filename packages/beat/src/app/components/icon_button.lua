@@ -40,7 +40,7 @@ end
 ---@return wonderland.Element
 function iconButton.view(app, props)
 	local theme = app.services.appearance.theme
-	local colour = props.active and theme:color("text") or theme:color("muted")
+	local colour = props.active ? (theme:color("text")) : (theme:color("muted"))
 
 	local glyphSize = math.max(18, math.floor(props.size * 0.8 + 0.5))
 	return iconButton.surface(app, {

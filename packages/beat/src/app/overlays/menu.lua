@@ -19,26 +19,33 @@ local WIDTH = { album = 218, track = 210, playlist = 196 }
 --- has the thing it was opened on, which is what the three menus used to decide one at a time.
 ---@type table<string, fun(app: beat.App, id: number): table?>
 local CONTEXT = {
+	---@param app beat.App
+	---@param id number
 	album = function(app, id)
 		local library = app.services.library.current
-		local album = library ~= nil and library:album(id) or nil
-		return album ~= nil and { album = album} or nil
+		local album = library ~= nil ? (library:album(id)) : nil
+		return album ~= nil ? { album = album} : nil
 	end,
+	---@param app beat.App
+	---@param id number
 	track = function(app, id)
 		local library = app.services.library.current
-		local track = library ~= nil and library:track(id) or nil
-		return track ~= nil and { track = track} or nil
+		local track = library ~= nil ? (library:track(id)) : nil
+		return track ~= nil ? { track = track} : nil
 	end,
+	---@param app beat.App
+	---@param id number
 	playlist = function(app, id)
 		local playlist = app.services.collections.taxonomy:playlist(id)
-		return playlist ~= nil and { playlist = playlist} or nil
+		return playlist ~= nil ? { playlist = playlist} : nil
 	end,
 }
 
----@type beat.OverlaySurface
+---@class beat.MenuOverlay: beat.OverlaySurface
 local menu = { light = true}
 
 ---@param params { menu: string, id: number, x: number?, y: number? }
+---@param app beat.App
 function menu.new(app, params)
 	local context = params.menu ~= nil and CONTEXT[params.menu] or nil
 	if context == nil or params.id == nil then return nil end
@@ -47,10 +54,13 @@ function menu.new(app, params)
 	return { menu = params.menu, id = params.id, x = params.x or 0, y = params.y or 0}
 end
 
+---@param app beat.App
+---@param overlay beat.OverlayInstance<beat.MenuState>
+---@param window wonderland.RenderWindow
 function menu.view(app, overlay, window)
-	local state = overlay.state --[[@as beat.MenuState]]
+	local state = overlay.state
 	local context = CONTEXT[state.menu]
-	local ctx = context ~= nil and context(app, state.id) or nil
+	local ctx = context ~= nil ? context(app, state.id) : nil
 	if ctx == nil then return nil end
 
 	local entries = app.registry:actions(state.menu, ctx)
@@ -87,7 +97,7 @@ function menu.view(app, overlay, window)
 	:style(sty():fill():offset(0, 0):z(120))
 	:onClick({ type = "dismiss"})
 	:children({
-	div():style(sty():w(width):h(height):offset(x, y)):children({ panel}),
+		div():style(sty():w(width):h(height):offset(x, y)):children({ panel}),
 	})
 end
 

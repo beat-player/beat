@@ -11,7 +11,7 @@ local ScanJob = require("beat.app.services.scan.job")
 ---@field skipped number
 ---@field at number
 
----@class beat.ScanService
+---@class beat.ScanService: beat.Service
 ---@field job beat.ScanJob? # The worker reading the folder, while there is one
 ---@field addJob beat.ScanJob? # The worker reading one folder into the existing library, while there is one
 ---@field addFolder string? # The folder that worker is reading
@@ -197,38 +197,37 @@ function Scan:addTrack(event, errors)
 end
 
 function Scan:update(message)
-	local kind = message.type
-	if kind == "startScan" then
+	if message.type == "startScan" then
 		self:start(message.root)
-	elseif kind == "rescan" then
+	elseif message.type == "rescan" then
 		local root = self.settings.values.root
 		if root ~= nil then self:start(root) end
-	elseif kind == "chooseFolder" then
+	elseif message.type == "chooseFolder" then
 		self:startPick({})
-	elseif kind == "pickFolder" then
+	elseif message.type == "pickFolder" then
 		if type(message.reply) ~= "string" or message.reply == "" then
 			self.toasts:show("A folder pick needs a reply message type", "error")
 		else
 			self:startPick({ reply = message.reply })
 		end
-	elseif kind == "libraryAddFolder" then
+	elseif message.type == "libraryAddFolder" then
 		if type(message.path) ~= "string" or message.path == "" then
 			self.toasts:show("Adding a folder needs a path", "error")
 		else
 			self:addFolder(message.path)
 		end
-	elseif kind == "cancelScan" then
+	elseif message.type == "cancelScan" then
 		if self.job ~= nil then
 			self.job:cancel()
 			self.job = nil
 			self.islandOpen = false
 			self.toasts:show("Scan cancelled")
 		end
-	elseif kind == "hideScanIsland" then
+	elseif message.type == "hideScanIsland" then
 		self.islandOpen = false
-	elseif kind == "showScanIsland" then
+	elseif message.type == "showScanIsland" then
 		self.islandOpen = true
-	elseif kind == "dismissScanSummary" then
+	elseif message.type == "dismissScanSummary" then
 		self.summary = nil
 	end
 end

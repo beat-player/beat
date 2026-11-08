@@ -87,7 +87,7 @@ test.it("keeps an album an album-artist tag names, across folders", function()
 end)
 
 test.it("ignores a cache written for another version of the cache", function()
-	local path = configDirectory .. "\\library.json"
+	local path = paths.file("library.json")
 	assert(fs.write(path, '{"version":3,"root":"' .. ROOT .. '","tracks":[]}'))
 	test.equal(LibraryCache.load(ROOT), nil, "an older cache is dropped rather than guessed at")
 	fs.delete(path)

@@ -27,12 +27,17 @@ function picker.start(window, opts)
 		return { file = file, platform = osName}
 	end
 
-	local title = opts ~= nil and opts.title or "Choose music folder"
-	local ok, path = pcall(dialog.pickFolder, window, { title = title })
-
-	if not ok then
+	local pickFolder = dialog.pickFolder
+	if pickFolder == nil then
 		fs.write(file, "__NO_PICKER__")
-	elseif path == nil or path == "" then
+		return { file = file, platform = osName}
+	end
+	local title = opts ~= nil and opts.title or "Choose music folder"
+	local ok, path = pcall(pickFolder, window, { title = title })
+
+	if not ok or type(path) ~= "string" then
+		fs.write(file, "__NO_PICKER__")
+	elseif path == "" then
 		fs.write(file, "__CANCEL__")
 	else
 		fs.write(file, path)

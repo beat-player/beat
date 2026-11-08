@@ -36,7 +36,7 @@ function measure.estimate(value, size, latin)
 			and previous >= 0x1F1E6 and previous <= 0x1F1FF) then
 				-- A joined emoji or the second half of a flag is the same picture.
 			else
-				width = width + size
+				width += size
 			end
 			joined = false
 		elseif (codepoint >= 0x1100 and codepoint <= 0x115F)
@@ -46,10 +46,10 @@ function measure.estimate(value, size, latin)
 		or (codepoint >= 0xFE30 and codepoint <= 0xFE4F)
 		or (codepoint >= 0xFF00 and codepoint <= 0xFF60)
 		or (codepoint >= 0xFFE0 and codepoint <= 0xFFE6) then
-			width = width + size
+			width += size
 			joined = false
 		else
-			width = width + size * latin
+			width += size * latin
 			joined = false
 		end
 		previous = codepoint
@@ -70,7 +70,7 @@ function measure.run(app, value, style)
 	local line = wonderland.text(value):style(style)
 	local ok = pcall(layout.textPlugin.measure, layout.textPlugin, line)
 	if not ok or line.run == 0 then return nil end
-	return wonderlandElement.runs[line.run]
+	return wonderlandElement.runOf(line)
 end
 
 --- The width Wonderland measures for a line. A style's automatic width means "fill the room I am
@@ -83,12 +83,14 @@ end
 ---@return number?
 function measure.width(app, value, style)
 	local run = measure.run(app, value, style)
-	return run and run.width or nil
+	return run?.width
 end
 
 -- Wrapped strings by width, size and text. A toast is drawn every frame while it fades, and its
 -- lines are only worth working out once.
-local wrapCache, wrapCached = {}, 0
+---@type table<string, string[]>
+local wrapCache = {}
+local wrapCached = 0
 
 --- The lines a string breaks into to fit `width`: after a space or a path separator, and inside a
 --- word only where the word alone is wider than the line. Wonderland draws the lines it is given
@@ -110,42 +112,44 @@ function measure.wrap(app, value, style, size, width, most)
 	end
 	local function trimmed(line) return (line:gsub(" +$", "")) end
 
-	local lines, line = {}, ""
+	---@type string[]
+	local lines = {}
+	local line = ""
 	for piece in value:gmatch("[^ \\/]*[ \\/]*") do
-			if piece ~= "" then
-				if line == "" or fits(trimmed(line .. piece)) then
-					line = line .. piece
-				else
-					lines[#lines + 1] = trimmed(line)
-					line = piece
+		if piece ~= "" then
+			if line == "" or fits(trimmed(line .. piece)) then
+				line ..= piece
+			else
+				lines[#lines + 1] = trimmed(line)
+				line = piece
+			end
+			-- A word wider than a whole line is cut where it stops fitting.
+			while not fits(trimmed(line)) do
+				local at, cut = 1, nil
+				while at <= #line do
+					local _, nextAt = utf8.decode(line, at)
+					if cut ~= nil and not fits(line:sub(1, nextAt - 1)) then break end
+					cut, at = nextAt - 1, nextAt
 				end
-				-- A word wider than a whole line is cut where it stops fitting.
-				while not fits(trimmed(line)) do
-						local at, cut = 1, nil
-						while at <= #line do
-								local _, nextAt = utf8.decode(line, at)
-								if cut ~= nil and not fits(line:sub(1, nextAt - 1)) then break end
-								cut, at = nextAt - 1, nextAt
-							end
-						lines[#lines + 1] = line:sub(1, cut)
-						line = line:sub(cut + 1)
-					end
+				lines[#lines + 1] = line:sub(1, cut)
+				line = line:sub(cut + 1)
 			end
 		end
+	end
 	if trimmed(line) ~= "" then lines[#lines + 1] = trimmed(line) end
 
 	if #lines > most then
 		for at = #lines, most + 1, -1 do lines[at] = nil end
 		local last = lines[most]
 		while #last > 0 and not fits(last .. "…") do
-				local at, before = 1, 0
-				while at <= #last do
-						before = at
-						local _, nextAt = utf8.decode(last, at)
-						at = nextAt
-					end
-				last = last:sub(1, before - 1)
+			local at, before = 1, 0
+			while at <= #last do
+				before = at
+				local _, nextAt = utf8.decode(last, at)
+				at = nextAt
 			end
+			last = last:sub(1, before - 1)
+		end
 		lines[most] = trimmed(last) .. "…"
 	end
 

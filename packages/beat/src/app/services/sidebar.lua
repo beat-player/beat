@@ -3,7 +3,6 @@
 -- answer belongs to the sidebar and not to the page underneath. It lives only while the pointer
 -- is still: any other message means the pointer left the row or something was pressed, and the
 -- frame built for it must not keep the old label.
-local Signal = require("beat.app.signal")
 
 ---@class beat.SidebarHover
 ---@field id number
@@ -12,7 +11,7 @@ local Signal = require("beat.app.signal")
 ---@field x number?
 ---@field height number?
 
----@class beat.SidebarService
+---@class beat.SidebarService: beat.Service
 ---@field hover beat.SidebarHover?
 ---@field collections beat.CollectionsService
 local Sidebar = {}
@@ -36,7 +35,7 @@ end
 -- found and the service keeps it only when that is a playlist that still exists.
 function Sidebar:update(message)
 	local id = tonumber(message.id)
-	local playlist = id ~= nil and self.collections.taxonomy:playlist(id) or nil
+	local playlist = id ~= nil ? (self.collections.taxonomy:playlist(id)) : nil
 	if playlist == nil then
 		self.hover = nil
 		return

@@ -15,7 +15,7 @@ local section = {}
 function section.view(app, props)
 	local theme = app.services.appearance.theme
 	local children = {
-	text(props.title):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
+		text(props.title):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
 	}
 
 	if props.action ~= nil then

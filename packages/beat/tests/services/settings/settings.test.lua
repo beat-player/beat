@@ -45,7 +45,7 @@ test.it("round-trips the settings a launch remembers", function()
 	value.equalizerPreset = "Custom 2"
 	value.equalizerGains = { 5, 3, 0, 2, 4}
 	value.equalizerCustomPresets = { { name = "Custom", gains = { 1, 2, 3, 4, 5}},
-	{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
+		{ name = "Custom 2", gains = { 5, 3, 0, 2, 4}}}
 	value.disabledPlugins = { "rym.lua"}
 
 	local ok, err = settingsModel.save(value, dir)
@@ -64,12 +64,14 @@ test.it("round-trips the settings a launch remembers", function()
 	test.equal(again.lastfmSessionKey, "session")
 	test.equal(again.lastfmUsername, "scrobbler")
 	test.equal(again.lastfmEnabled, false)
+	local gains = assert(again.equalizerGains)
+	local presets = assert(again.equalizerCustomPresets)
 	test.equal(again.equalizerPreset, "Custom 2")
-	test.equal(again.equalizerGains[1], 5)
-	test.equal(again.equalizerGains[5], 4)
-	test.equal(#again.equalizerCustomPresets, 2)
-	test.equal(again.equalizerCustomPresets[1].name, "Custom")
-	test.equal(again.equalizerCustomPresets[2].gains[4], 2)
+	test.equal(gains[1], 5)
+	test.equal(gains[5], 4)
+	test.equal(#presets, 2)
+	test.equal(presets[1].name, "Custom")
+	test.equal(presets[2].gains[4], 2)
 	test.equal(#again.disabledPlugins, 1)
 	test.equal(again.disabledPlugins[1], "rym.lua")
 
@@ -80,7 +82,7 @@ end)
 test.it("keeps only real file names in the switched-off plugin list", function()
 	local dir = tempDir()
 	fs.write(path.join(dir, "settings.json"),
-		'{ "disabledPlugins": [ "rym.lua", 4, "", true, "lastfm.lua" ] }')
+	'{ "disabledPlugins": [ "rym.lua", 4, "", true, "lastfm.lua" ] }')
 
 	local loaded = settingsModel.load(dir)
 	test.equal(#loaded.disabledPlugins, 2, "numbers, empty strings and booleans are not names")

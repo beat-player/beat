@@ -22,8 +22,8 @@ function button.view(app, props)
 	local theme = app.services.appearance.theme
 	local height = props.height or theme:px(36)
 	local colour = props.primary and theme.accentInk or theme:color("text")
-	local background = props.primary and theme:color("accent") or theme:color("elevated")
-	local hover = props.primary and theme:color("accent", 0.86) or theme:color("hover")
+	local background = props.primary ? (theme:color("accent")) : (theme:color("elevated"))
+	local hover = props.primary ? (theme:color("accent", 0.86)) : (theme:color("hover"))
 	local gap = theme:px(6)
 
 	local function base(fill)

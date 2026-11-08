@@ -7,7 +7,7 @@ local paths = {}
 
 ---@return string
 function paths.directory()
-	local osName = jit and jit.os or ""
+	local osName = jit?.os or ""
 	local home = os.getenv("HOME") or os.getenv("USERPROFILE") or "."
 
 	if osName == "Windows" then
