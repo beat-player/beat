@@ -3,6 +3,7 @@ local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
 local button = require("beat.app.components.button")
+local iconButton = require("beat.app.components.icon_button")
 local cover = require("beat.app.components.cover")
 local emptyState = require("beat.app.components.empty_state")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -19,6 +20,41 @@ local SORT_LABELS = {
 	recent = "Recently added",
 	modified = "File modified",
 }
+
+--- The view the shelf would switch to, drawn rather than taken from the icon face: the face has
+--- no grid, and a list from it next to a drawn grid would not match it in weight.
+---@param app beat.App
+---@param size number
+---@param grid boolean # Four tiles; otherwise three rows
+---@return wonderland.Element
+local function viewButton(app, size, grid)
+	local theme = app.services.appearance.theme
+	local colour = theme:color("muted")
+	local inner = math.max(12, math.floor(size * 0.5 + 0.5))
+
+	return iconButton.surface(app, {
+		size = size,
+		onClick = { type = "toggleView"},
+		content = div():style(sty():size(inner, inner)):canvas(function(canvas)
+			local gap = math.max(2, math.floor(inner * 0.16))
+			if grid then
+				local tile = math.floor((canvas.width - gap) / 2)
+				for at = 0, 3 do
+					canvas:rect((at % 2) * (tile + gap), math.floor(at / 2) * (tile + gap), tile, tile,
+					colour, math.max(1, math.floor(tile * 0.25)))
+				end
+			else
+				local line = math.max(2, math.floor(inner * 0.14))
+				local step = math.floor((canvas.height - line) / 2)
+				for at = 0, 2 do
+					local y = at * step
+					canvas:rect(0, y, line, line, colour, line / 2)
+					canvas:rect(line + gap, y, canvas.width - line - gap, line, colour, line / 2)
+				end
+			end
+		end),
+	})
+end
 
 function libraryPage.update(app, page, message)
 	if message.type == "toggleView" then
@@ -64,7 +100,7 @@ function libraryPage.view(app, page, window)
 	-- other, so the controls move under the title and the header grows by a row.
 	local stacked = content < 480
 	local headerHeight = stacked and theme:px(104) or theme:px(58)
-	local viewWidth = content < 320 and theme:px(56) or theme:px(70)
+	local viewWidth = theme:px(32)
 	local sortWidth = math.max(theme:px(88),
 	math.min(theme:px(150), content - viewWidth - theme:px(8)))
 	local titleWidth = math.max(theme:px(0), content - sortWidth - viewWidth - theme:space(16))
@@ -87,12 +123,7 @@ function libraryPage.view(app, page, window)
 	height = theme:px(32),
 	width = sortWidth,
 	}),
-	button.view(app, {
-	label = list and "Grid" or "List",
-	onClick = { type = "toggleView"},
-	height = theme:px(32),
-	width = viewWidth,
-	}),
+	viewButton(app, viewWidth, list),
 	})
 
 	local header = div()
