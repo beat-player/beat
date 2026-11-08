@@ -105,7 +105,7 @@ function queuePanel.view(app, overlay, _window)
 				:bg(theme:color("hover")))
 				:onClick({ type = "jumpTrack", trackId = nextTrack.id})
 				:children({
-				div():style(sty():column():w(infoWidth)):children({
+				div():style(sty():column():w(infoWidth):h(rowHeight):justify("center")):children({
 				text(nextTrack.title):style(theme:s():w(infoWidth):text(theme:type("sm"))
 				:weight("semibold"):fg(theme:color("text")):ellipsis()),
 				text(nextTrack.artist):style(theme:s():w(infoWidth):text(theme:type("xs"))
