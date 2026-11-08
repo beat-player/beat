@@ -22,15 +22,16 @@ local SESSION_STRIDE = 10
 ---@field library beat.LibraryService
 ---@field collections beat.CollectionsService
 ---@field toasts beat.ToastsService
+---@field emit fun(message: table) # Sends an event to whoever is listening; delivered after this message
 ---@field sessionKey string # What the session file holds, as `sessionKeyOf` puts it
 ---@field sessionDueAt number? # When a changed session is to be written
 local Playback = {}
 Playback.__index = Playback
-Playback.needs = { "settings", "library", "collections", "toasts"}
+Playback.needs = { "settings", "library", "collections", "toasts", "emit"}
 Playback.handles = {
 	"togglePlay", "next", "previous", "seek", "volume", "mute", "shuffle", "repeat",
 	"playAlbum", "playTrack", "playArtist", "playPlaylist", "playPlaylistTrack", "jumpTrack",
-	"play", "pause", "stop",
+	"play", "pause", "stop", "queueAlbum",
 }
 
 ---@param deps {
@@ -38,6 +39,7 @@ Playback.handles = {
 --- library: beat.LibraryService,
 --- collections: beat.CollectionsService,
 --- toasts: beat.ToastsService,
+--- emit: fun(message: table),
 --- }
 ---@return beat.PlaybackService
 function Playback.new(deps)
@@ -46,6 +48,7 @@ function Playback.new(deps)
 		library = deps.library,
 		collections = deps.collections,
 		toasts = deps.toasts,
+		emit = deps.emit,
 		player = Player.new(),
 		spectrum = Spectrum.new(),
 		lastListenedTrackId = nil,
@@ -63,6 +66,18 @@ function Playback.new(deps)
 
 	self:restoreSession()
 	self.sessionKey = self:sessionKeyOf()
+
+	-- The player knows when a track actually starts or stops; everything listening to playback
+	-- -- the tag store, Last.fm, a plugin -- hears it as a message rather than watching the queue.
+	self.player.onTrackStarted = function(track, position)
+		self.emit({ type = "trackStarted", track = track, position = position})
+	end
+	self.player.onTrackEnded = function(track, completed)
+		self.emit({ type = "trackEnded", track = track, completed = completed})
+	end
+	self.player.onQueueChanged = function()
+		self.emit({ type = "queueChanged"})
+	end
 	return self
 end
 
@@ -147,16 +162,18 @@ function Playback:toggle()
 	if self.player:isPlaying() then self:pause() else self:play() end
 end
 
---- An album's play or shuffle. Playing the album already in the queue is the pause button.
+--- An album's play or shuffle. Playing the album already in the queue is the pause button, unless
+--- the message asks for a restart: a menu's "Play album" means from the top, whatever is playing.
 ---@param albumId number
 ---@param shuffle boolean
-function Playback:playAlbum(albumId, shuffle)
+---@param restart boolean
+function Playback:playAlbum(albumId, shuffle, restart)
 	local library = self.library.current
 	local album = library ~= nil and library:album(albumId) or nil
 	if album == nil then return end
 
 	local current = self.player:current()
-	if not shuffle and current ~= nil and current.albumId == album.id then
+	if not shuffle and not restart and current ~= nil and current.albumId == album.id then
 		self.player:toggle()
 	elseif shuffle then
 		self.player:playTracks(album.tracks, 1, { shuffle = true, source = "album"})
@@ -165,7 +182,27 @@ function Playback:playAlbum(albumId, shuffle)
 	end
 end
 
+--- An album put after the current track, or after everything queued, without interrupting what
+--- plays now. This is the album menu's "Play next" and "Add to queue", which used to reach into
+--- the player from the overlay.
+---@param albumId number
+---@param asNext boolean? # True puts it after the current track; false at the end of the queue
+function Playback:queueAlbum(albumId, asNext)
+	local library = self.library.current
+	local album = library ~= nil and library:album(albumId) or nil
+	if album == nil then return end
+
+	if asNext then
+		self.player:playNext(album.tracks)
+		self.toasts:show("Playing next · " .. album.title)
+	else
+		self.player:addToQueue(album.tracks)
+		self.toasts:show("Added to queue · " .. album.title)
+	end
+end
+
 --- A track row. Which album or artist it was clicked on decides what the queue holds after it.
+--- The current track's row is its pause button, unless the message asks for a restart.
 ---@param message table
 function Playback:playTrack(message)
 	local library = self.library.current
@@ -180,7 +217,7 @@ function Playback:playTrack(message)
 	end
 
 	local current = self.player:current()
-	if track ~= nil and current ~= nil and current.id == track.id then
+	if track ~= nil and not message.restart and current ~= nil and current.id == track.id then
 		self.player:toggle()
 	elseif track ~= nil then
 		self.player:playTrack(track, tracks)
@@ -263,7 +300,9 @@ function Playback:update(message)
 	elseif kind == "repeat" then
 		self.player:cycleRepeat()
 	elseif kind == "playAlbum" then
-		self:playAlbum(message.id --[[@as number]], message.shuffle == true)
+		self:playAlbum(message.id --[[@as number]], message.shuffle == true, message.restart == true)
+	elseif kind == "queueAlbum" then
+		self:queueAlbum(message.id --[[@as number]], message.next == true)
 	elseif kind == "playTrack" then
 		self:playTrack(message)
 	elseif kind == "playArtist" then
@@ -327,6 +366,10 @@ end
 --- The old player goes when the app is set up again, so a test that makes many apps does not keep
 --- one alive per app.
 function Playback:close()
+	-- The app is being torn down, not a track being ended for anybody still listening.
+	self.player.onTrackStarted = nil
+	self.player.onTrackEnded = nil
+	self.player.onQueueChanged = nil
 	self.player:close()
 	self.spectrum:clear()
 end

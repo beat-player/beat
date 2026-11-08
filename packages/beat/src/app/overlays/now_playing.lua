@@ -9,7 +9,6 @@ local playingBars = require("beat.app.components.playing_bars")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
 local metrics = require("beat.app.components.helpers.metrics")
-local surfaces = require("beat.app.surfaces")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -116,7 +115,7 @@ local function anchored(app, name, anchor, window)
 	local overlay = app:overlay(name)
 	if overlay == nil then return nil end
 	overlay.state.anchor = anchor
-	return surfaces.overlay(name).view(app, overlay, window)
+	return app.registry:overlay(name).view(app, overlay, window)
 end
 
 ---@class beat.NowPlayingOverlay: beat.OverlaySurface
@@ -217,7 +216,7 @@ function nowPlaying.view(app, _overlay, window)
 		local coverFrame = div():style(sty():size(coverSize, coverSize):shadow(0, 12, 20, "#00000060"))
 		:onClick({ type = "navigate", page = { kind = "album", id = album.id}})
 		:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-			return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
+			return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 		end)
 		:children(cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true }))
 		local transport = math.max(0.7, math.min(1, progressWidth / theme:px(240)))

@@ -24,6 +24,10 @@ local Queue = require("beat.app.services.playback.queue")
 ---@field fadeActive boolean
 ---@field fadeDuration number
 ---@field onSamples fun(samples: any, frames: number, channels: number)?
+---@field onTrackStarted fun(track: beat.Track, position: number)?
+---@field onTrackEnded fun(track: beat.Track, completed: boolean)?
+---@field onQueueChanged fun()?
+---@field playingTrack beat.Track? # The track listeners were told has started, until told it ended
 ---@field equalizerBands treble.Equalizer.Band[]?
 ---@field startAt number? # Where the current track starts when it next plays: a restored session's place, or a seek made while nothing was loaded
 local Player = {}
@@ -50,6 +54,7 @@ function Player.new()
 	fadeActive = false,
 	fadeDuration = 0.12,
 	equalizerBands = nil,
+	playingTrack = nil,
 	}, Player)
 end
 
@@ -70,6 +75,31 @@ local function beginFade(self)
 	self.fadeGain = 0
 	self.fadeStart = nil
 	self.fadeActive = true
+end
+
+-- A track that starts or stops being the one playing is announced once, here, rather than by
+-- looking at the queue every tick: a repeat-one restart stays on the same track, and a skip moves
+-- the queue before the new track has had a chance to start.
+---@param self beat.Player
+---@param track beat.Track
+---@param position number
+local function beginTrack(self, track, position)
+	self.playingTrack = track
+	if self.onTrackStarted ~= nil then self.onTrackStarted(track, position) end
+end
+
+---@param self beat.Player
+---@param completed boolean # Whether the track played to its end rather than being cut short
+local function endTrack(self, completed)
+	local track = self.playingTrack
+	if track == nil then return end
+	self.playingTrack = nil
+	if self.onTrackEnded ~= nil then self.onTrackEnded(track, completed) end
+end
+
+---@param self beat.Player
+local function queueChanged(self)
+	if self.onQueueChanged ~= nil then self.onQueueChanged() end
 end
 
 ---@param self beat.Player
@@ -100,10 +130,15 @@ function Player:reload(isPlaying, fade)
 	player:close()
 	self.loaded = false
 	self.lastPosition = 0
+	local startAt = self.startAt
 	self.startAt = nil
 
 	local queue = self.queue
 	local track = queue and queue:current()
+	-- Whatever was playing stops being the one playing: a skip has already moved the queue to the
+	-- next track, and a new queue means the old track is gone. A repeat or an automatic advance
+	-- ended it before asking for this reload, so there is nothing left to announce.
+	endTrack(self, false)
 	if queue == nil or track == nil then
 		self.loaded = false
 		return
@@ -131,7 +166,11 @@ function Player:reload(isPlaying, fade)
 	end
 	applyVolume(self)
 
-	if isPlaying ~= false then player:play() end
+	if isPlaying ~= false then
+		player:play()
+		-- A queue put back by a restored session starts where it was left, not at the top.
+		beginTrack(self, track, startAt or 0)
+	end
 end
 
 ---@param queue beat.Queue
@@ -139,6 +178,7 @@ end
 function Player:load(queue, isPlaying)
 	self.queue = queue
 	self.pendingNextAt = nil
+	queueChanged(self)
 	self:reload(isPlaying)
 end
 
@@ -163,6 +203,7 @@ function Player:playNext(tracks)
 
 	self.queue:add(tracks, true)
 	self.pendingNextAt = self.pendingNextAt or (self.queue.position + 1)
+	queueChanged(self)
 end
 
 --- Adds tracks after everything already queued. With no current track they wait, paused, as
@@ -181,6 +222,7 @@ function Player:addToQueue(tracks)
 				self.player:enqueue(track.path)
 			end
 	end
+	queueChanged(self)
 end
 
 ---@param album beat.Album
@@ -260,6 +302,7 @@ end
 
 function Player:stop()
 	if self.player ~= nil then self.player:stop() end
+	endTrack(self, false)
 	self.loaded = false
 	self.lastPosition = 0
 	self.pendingNextAt = nil
@@ -291,6 +334,7 @@ function Player:skip(direction)
 
 	if track == nil then
 		if self.player ~= nil then self.player:stop() end
+		endTrack(self, false)
 		self.loaded = false
 		return
 	end
@@ -375,6 +419,7 @@ function Player:setShuffle(value)
 	if self.queue.shuffle == value then return end
 	self.queue:toggleShuffle()
 	self.orderDirty = true
+	queueChanged(self)
 end
 
 function Player:cycleRepeat()
@@ -447,9 +492,13 @@ function Player:update(now)
 
 	if pending == "ended" then
 		local queue = self.queue
-		if queue == nil then return true end
+		if queue == nil then
+			endTrack(self, true)
+			return true
+		end
 
 		if self.pendingNextAt ~= nil then
+			endTrack(self, true)
 			queue.position = math.max(1, math.min(self.pendingNextAt, #queue.order))
 			self.pendingNextAt = nil
 			self:reload(true, false)
@@ -462,6 +511,9 @@ function Player:update(now)
 		-- makes the staged queue agree with it happens here, at the boundary.
 		local stale = self.orderDirty
 		or (self.loadedRepeatMode == "one") ~= (queue.repeatMode == "one")
+		-- The track played to its end, whichever comes next: the same one for repeat-one, the
+		-- staged one treble already started, or nothing at all at the end of the queue.
+		endTrack(self, true)
 		if stale then
 			if action == "stop" then
 				if self.player ~= nil then self.player:stop() end
@@ -478,6 +530,7 @@ function Player:update(now)
 			self.fadeGain = 1
 			self.fadeActive = false
 			applyVolume(self)
+			beginTrack(self, queue:current() --[[@as beat.Track]], 0)
 		else
 			self.loaded = false
 			self.fadeGain = 1
@@ -496,6 +549,8 @@ function Player:update(now)
 end
 
 function Player:close()
+	endTrack(self, false)
+	if self.queue ~= nil then queueChanged(self) end
 	if self.player ~= nil then
 		self.player:close()
 		self.player = nil

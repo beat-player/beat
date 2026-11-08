@@ -5,7 +5,6 @@
 local wonderland = require("wonderland")
 local logo = require("beat.app.components.logo")
 local metrics = require("beat.app.components.helpers.metrics")
-local surfaces = require("beat.app.surfaces")
 local sidebar = require("beat.app.components.chrome.sidebar")
 local topbar = require("beat.app.components.chrome.topbar")
 local playerBar = require("beat.app.components.chrome.player_bar")
@@ -54,7 +53,7 @@ local function overlays(app, window, from)
 	local elements = {}
 	for at = from, #app.overlays do
 			local overlay = app.overlays[at]
-			local surface = surfaces.overlay(overlay.name)
+			local surface = app.registry:overlay(overlay.name)
 			if not surface.anchored and not surface.fullscreen and surface.view ~= nil then
 				local element = surface.view(app, overlay, window)
 				if element ~= nil then elements[#elements + 1] = element end
@@ -83,7 +82,7 @@ function shell.view(app, window)
 	-- edges is left showing. What was opened over it is drawn over it.
 	for at = #app.overlays, 1, -1 do
 			local overlay = app.overlays[at]
-			local surface = surfaces.overlay(overlay.name)
+			local surface = app.registry:overlay(overlay.name)
 			if surface.fullscreen and surface.view ~= nil then
 				-- The screen itself may be padded, but overlays are placed in window coordinates. A
 				-- bare wrapper keeps their fill and offsets measured from the window.
@@ -113,13 +112,13 @@ function shell.view(app, window)
 		text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold")
 		:fg(theme:color("text"))),
 		}),
-		surfaces.page("folders").view(app, page, window),
+		app.registry:page("folders").view(app, page, window),
 		}),
 		}),
 		})
 	end
 
-	local content = surfaces.page(page.kind).view(app, page, window)
+	local content = app.registry:page(page.kind).view(app, page, window)
 
 	local bottomHeight = metrics.bottomHeight(app, width)
 	local pageHeight = height - bottomHeight

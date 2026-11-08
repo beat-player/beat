@@ -162,7 +162,7 @@ function playlists.view(app, page, window)
 		:bg(theme:color("hover")))
 		:onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id}})
 		:onContextMenu(function(_, _, _, _, _, windowX, windowY)
-			return { type = "open", overlay = "playlist_menu", id = playlist.id, x = windowX, y = windowY}
+			return { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY}
 		end)
 		:children({
 		PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }),

@@ -94,6 +94,39 @@ pages, two-column shelves and stacked collection heroes. Album and playlist page
 layout. `packages/beat/docs/mobile.md` records the responsive rules and why a real touch build still needs a
 winit mobile backend for touch, density, IME and lifecycle events.
 
+## Plugins
+
+Beat is a small core plus built-in plugins. A plugin is a table with a name, a version and a
+`setup` that registers what it adds through the handle it is given:
+
+```lua
+return {
+	name = "rateyourmusic",
+	version = "1.0.0",
+	setup = function(beat)
+		beat.action({
+			menu = "album",
+			title = "Open in Rate Your Music",
+			message = function(ctx)
+				local query = (ctx.album.artist .. " " .. ctx.album.title):gsub("[^%w]", function(c)
+					return string.format("%%%02X", c:byte())
+				end)
+				return { type = "openURL",
+					url = "https://rateyourmusic.com/search?searchtype=l&searchterm=" .. query }
+			end,
+		})
+	end,
+}
+```
+
+`beat.service`, `beat.page`, `beat.overlay` and `beat.action` add things; `beat.on` and
+`beat.intercept` watch messages after and before delivery; `beat.wrap` and `beat.replace` change
+what another plugin registered (`service:playback`, `page:home`, `overlay:queue`). An outside
+plugin names its services, pages, overlays and the message types it handles `<plugin>:<name>`, and
+may require other plugins by version (`^1.2.0`, `~1.2.0`, `>=1.2.0` or exact). Beat loads its own
+plugins first, then the ones passed to `App:init({ plugins = { ... } })`. A plugin that does not fit
+is reported and left out; one that raises later is switched off rather than taking the app with it.
+
 ## Last.fm
 
 Last.fm is optional. The application's API key and shared secret are compiled into beat, so a

@@ -53,7 +53,7 @@ function albumPage.view(app, page, window)
 		return cover.view(app, { album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true })
 	end,
 	coverMenu = function(_, _, _, _, _, windowX, windowY)
-		return { type = "open", overlay = "album_menu", id = album.id, x = windowX, y = windowY}
+		return { type = "open", overlay = "menu", menu = "album", id = album.id, x = windowX, y = windowY}
 	end,
 	title = album.title,
 	subtitle = album.artist,
