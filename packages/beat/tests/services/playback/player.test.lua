@@ -242,7 +242,7 @@ end)
 -- A device that knows whether it is playing and what it was handed, for the tests that start and
 -- stop it: the stand-in above is always playing.
 local function device(player)
-	local calls = { closes = 0, enqueued = {}}
+	local calls = { closes = 0, enqueued = {}, seeks = {}}
 	local playing = false
 	player.player = {
 	close = function()
@@ -253,6 +253,7 @@ local function device(player)
 	play = function() playing = true end,
 	pause = function() playing = false end,
 	stop = function() playing = false end,
+	seek = function(_, seconds) calls.seeks[#calls.seeks + 1] = seconds end,
 	update = function() end,
 	position = function() return 0 end,
 	isPlaying = function() return playing end,
@@ -309,4 +310,22 @@ test.it("opens no audio device for controls with nothing queued", function()
 	player:play()
 	test.equal(player.player, nil)
 	test.falsy(player:isPlaying())
+end)
+
+test.it("comes back paused where it was, and plays on from there", function()
+	local player = Player.new()
+	player:restore(Queue.new(album, 2), 75)
+	test.equal(player.player, nil, "putting a queue back opens no device")
+	test.falsy(player:isPlaying())
+	test.equal(player:current().id, 2)
+	test.equal(player:position(), 75, "the bar shows where it was")
+
+	player:seek(90)
+	test.equal(player:position(), 90, "a seek before playing moves where it will start")
+
+	local calls = device(player)
+	player:play()
+	test.truthy(player:isPlaying())
+	test.equal(calls.enqueued[1], "/tmp/two.wav", "the queue is staged from the restored track")
+	test.equal(calls.seeks[1], 90, "and plays from the place it was left at")
 end)

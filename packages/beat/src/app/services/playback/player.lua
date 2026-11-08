@@ -25,6 +25,7 @@ local Queue = require("beat.app.services.playback.queue")
 ---@field fadeDuration number
 ---@field onSamples fun(samples: any, frames: number, channels: number)?
 ---@field equalizerBands treble.Equalizer.Band[]?
+---@field startAt number? # Where the current track starts when it next plays: a restored session's place, or a seek made while nothing was loaded
 local Player = {}
 Player.__index = Player
 
@@ -99,6 +100,7 @@ function Player:reload(isPlaying, fade)
 	player:close()
 	self.loaded = false
 	self.lastPosition = 0
+	self.startAt = nil
 
 	local queue = self.queue
 	local track = queue and queue:current()
@@ -235,12 +237,25 @@ function Player:play()
 	if self.queue == nil or self.queue:current() == nil then return end
 	local player = ensurePlayer(self)
 	if not self.loaded then
+		local startAt = self.startAt
 		self:reload(true)
+		if startAt ~= nil then self:seek(startAt) end
 	elseif not player:isPlaying() then
 		beginFade(self)
 		applyVolume(self)
 		player:play()
 	end
+end
+
+--- A saved queue put back, paused at a place in its track. Nothing is staged and no device is
+--- opened until it is played.
+---@param queue beat.Queue
+---@param seconds number
+function Player:restore(queue, seconds)
+	self.queue = queue
+	self.pendingNextAt = nil
+	self.loaded = false
+	self.startAt = seconds
 end
 
 function Player:stop()
@@ -250,6 +265,7 @@ function Player:stop()
 	self.pendingNextAt = nil
 	self.fadeGain = 1
 	self.fadeActive = false
+	self.startAt = nil
 end
 
 function Player:pause()
@@ -306,6 +322,11 @@ end
 
 ---@param seconds number
 function Player:seek(seconds)
+	-- With nothing loaded there is nothing to move; the place is kept for when the track starts.
+	if not self.loaded then
+		if self.queue ~= nil then self.startAt = math.max(0, seconds) end
+		return
+	end
 	if self.player == nil then return end
 	self.player:seek(seconds)
 	self.lastPosition = self.player:position()
@@ -367,6 +388,7 @@ end
 
 ---@return number
 function Player:position()
+	if self.startAt ~= nil then return self.startAt end
 	if self.player == nil then return 0 end
 	return self.player:position()
 end
@@ -483,6 +505,7 @@ function Player:close()
 	self.fadeGain = 1
 	self.fadeStart = nil
 	self.fadeActive = false
+	self.startAt = nil
 end
 
 return Player

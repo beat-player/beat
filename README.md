@@ -58,7 +58,11 @@ appended to `beat.log` in the same folder, rotated after a megabyte. Settings ho
 theme, accent, volume,
 mute, sort order, sidebar width and collapsed state, UI scale, reduced-motion preference, and the
 connected Last.fm account's username and session key. The tag file holds track paths, their tags,
-and the smart and manual playlist definitions. No media data is persisted. The file is kept private to the account that runs beat because the Last.fm
+and the smart and manual playlist definitions. `session.json` holds where listening stopped: the
+queue by track path, its order, shuffle and repeat, and how far into the current track it got. A
+launch puts it back, paused at that point; tracks deleted since are left out. It is written a moment
+after the queue changes, every ten seconds while a track plays, and when the window closes. No media
+data is persisted. The settings file is kept private to the account that runs beat because the Last.fm
 session key can act on that account.
 
 ## Tags and playlists
