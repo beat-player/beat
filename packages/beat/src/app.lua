@@ -17,7 +17,7 @@ local iconData = require("beat.app.icon")
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
 -- overlays of one feature; outside plugins are loaded after them, from the config directory's
 -- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
-local BUILT_IN = { "core", "plugins", "library", "collections", "playback", "lastfm" }
+local BUILT_IN = { "core", "tasks", "plugins", "library", "collections", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
 	playPause = "togglePlay",
@@ -59,6 +59,7 @@ local MEDIA_MESSAGES = {
 ---@field settings beat.SettingsService
 ---@field sidebar beat.SidebarService
 ---@field system beat.SystemService
+---@field tasks beat.TasksService
 ---@field toasts beat.ToastsService
 
 --- The window calls the app makes that the layout's own window alias does not name: a backend may
@@ -262,6 +263,7 @@ function App:init(opts)
 	collection:provide("emit", |message| -> self:act(message))
 	collection:provide("messages", self.messages)
 	collection:provide("options", opts)
+	collection:provide("registry", self.registry)
 	collection:provide("settingsValues", settingsValues)
 	collection:provide("window", || -> self.window)
 	collection:provide("pointer", function()

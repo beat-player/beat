@@ -13,16 +13,54 @@ local SAVE_DELAY = 0.6
 
 ---@class beat.SettingsService: beat.Service
 ---@field values beat.Settings
+---@field registry beat.Registry?
+---@field toasts beat.ToastsService?
 ---@field dirtyAt number? # When the deferred save is due; nil when disk has the current values
 local Settings = {}
 Settings.__index = Settings
-Settings.needs = { "settingsValues" }
-Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled" }
+Settings.needs = { "settingsValues", "registry", "toasts" }
+Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled", "pluginSetting" }
 
----@param deps { settingsValues: beat.Settings }?
+---@param deps { settingsValues: beat.Settings, registry: beat.Registry?, toasts: beat.ToastsService? }?
 ---@return beat.SettingsService
 function Settings.new(deps)
-	return setmetatable({ values = deps and deps.settingsValues or settingsModel.load(), dirtyAt = nil }, Settings)
+	deps = deps or {}
+	return setmetatable(
+		{
+			values = deps.settingsValues or settingsModel.load(),
+			registry = deps.registry,
+			toasts = deps.toasts,
+			dirtyAt = nil
+		},
+		Settings
+	)
+end
+
+--- A plugin's values as the app reads them: what the file holds, with the defaults its settings
+--- definition names filled in for anything it has never changed. The table is the one the service
+--- keeps, so repeated calls are the same table; a change is a `pluginSetting` message rather than
+--- an edit here, because the service is what saves.
+---@param name string
+---@return table<string, any>
+function Settings:plugin(name)
+	local stored = self.values.plugins[name]
+	if type(stored) ~= "table" then
+		stored = {}
+		self.values.plugins[name] = stored
+	end
+
+	local definition = self.registry ~= nil and self.registry.settingsByName[name] or nil
+	if definition ~= nil then
+		for key, value in pairs(definition.defaults) do
+			if stored[key] == nil then stored[key] = value end
+		end
+	end
+	return stored
+end
+
+---@param text string
+function Settings:refuse(text)
+	if self.toasts ~= nil then self.toasts:show(text, "error") end
 end
 
 --- A value changed: save once the changes settle.
@@ -59,6 +97,26 @@ function Settings:update(message)
 		elseif at ~= nil then
 			table.remove(list, at)
 		end
+	elseif message.type == "pluginSetting" then
+		if type(message.plugin) ~= "string" or message.plugin == "" then
+			self:refuse("A plugin setting needs a plugin name")
+			return
+		end
+		if type(message.key) ~= "string" or message.key == "" then
+			self:refuse("A plugin setting needs a key")
+			return
+		end
+		if not settingsModel.isJSONValue(message.value) then
+			self:refuse("Plugin " .. message.plugin .. " tried to save a value that is not JSON")
+			return
+		end
+
+		local values = self.values.plugins[message.plugin]
+		if type(values) ~= "table" then
+			values = {}
+			self.values.plugins[message.plugin] = values
+		end
+		values[message.key] = message.value
 	else
 		return
 	end
