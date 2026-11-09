@@ -212,7 +212,7 @@ function App:takeMediaKeys(window)
 	if self.mediaKeysTaken or window.captureMediaKeys == nil then return end
 	self.mediaKeysTaken = true
 
-	local refused = window.captureMediaKeys()
+	local refused = window:captureMediaKeys()
 	if #refused > 0 then
 		self:act(
 			{

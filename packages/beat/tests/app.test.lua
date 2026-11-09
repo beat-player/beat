@@ -484,6 +484,28 @@ test.it("starts an album from its menu even while it is the one playing", functi
 	player:close()
 end)
 
+test.it("asks the window for the media keys once, as one of its own methods", function()
+	App:init({ scan = false })
+	App.mediaKeysTaken = nil
+	local asked = 0
+	local window = { width = 800, height = 600 }
+	function window:captureMediaKeys()
+		asked = asked + 1
+		test.equal(self, window, "the window is the method's own")
+		return { "stop" }
+	end
+
+	App:takeMediaKeys(window)
+	App:takeMediaKeys(window)
+	test.equal(asked, 1, "the keys are taken once")
+
+	local warned = false
+	for _, toast in ipairs(App.services.toasts.list) do
+		if toast.text:find("stop", 1, true) then warned = true end
+	end
+	test.truthy(warned, "a key another program holds is named in a toast")
+end)
+
 test.it("plays, pauses, stops and skips from the media keys", function()
 	App:init({ scan = false })
 	local library = fixture()
