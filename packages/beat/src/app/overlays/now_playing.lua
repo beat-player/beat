@@ -2,8 +2,7 @@
 -- them. It is opened over the page rather than replacing it, so what is left of the app stays
 -- underneath while a transition runs.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
-local iconButton = require("beat.app.components.icon_button")
+local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
@@ -15,11 +14,12 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 --- child of the button: a positioned panel inside a size-locked button shifted the row's paint
 --- order on short windows, clipping the play control.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param size number
-local function volumeButton(app, size)
+local function volumeButton(app, ctx, size)
 	local muted = app.services.settings.values.isMuted
-	return iconButton.view(
-		app,
+	return ui.iconButton(
+		ctx,
 		{
 			name = muted ? "mute" : "volume",
 			size = size,
@@ -32,14 +32,15 @@ end
 --- Three dots, drawn rather than taken from the icon face: the face has no ellipsis, and a
 --- text fallback would sit on the wrong baseline next to the other controls.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param size number
 ---@param onClick any
 ---@param active boolean?
-local function moreButton(app, size, onClick, active)
+local function moreButton(app, ctx, size, onClick, active)
 	local theme = app.services.appearance.theme
 	local colour = active ? (theme:color("text")) : (theme:color("muted"))
 
-	return iconButton.surface(app, { size = size, onClick = onClick, content = div():style(sty():size(size, size)):canvas(function(canvas)
+	return ui.iconButton(ctx, { size = size, onClick = onClick, content = div():style(sty():size(size, size)):canvas(function(canvas)
 		local radius = math.max(1.2, math.floor(size * 0.064))
 		local y = math.floor(canvas.height / 2 - radius)
 		for at = 0, 2 do
@@ -52,15 +53,16 @@ end
 --- The equalizer has no behaviour yet, so this is only its mark: four static bars, quieter than
 --- the playing indicator because nothing here is measuring audio.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param size number
 ---@param onClick any
 ---@param active boolean?
-local function equalizerButton(app, size, onClick, active)
+local function equalizerButton(app, ctx, size, onClick, active)
 	local theme = app.services.appearance.theme
 	local colour = active ? (theme:color("text")) : (theme:color("muted"))
 	local inner = math.max(12, math.floor(size * 0.72 + 0.5))
 
-	return iconButton.surface(app, { size = size, onClick = onClick, content = div():style(sty():size(inner, inner)):canvas(function(canvas)
+	return ui.iconButton(ctx, { size = size, onClick = onClick, content = div():style(sty():size(inner, inner)):canvas(function(canvas)
 		local levels = { 0.36, 0.7, 0.48, 0.58 }
 		local barWidth = math.max(2, math.floor(inner * 0.1))
 		local gap = math.max(2, math.floor((canvas.width - barWidth * #levels) / (#levels + 1)))
@@ -160,6 +162,7 @@ end
 ---@return wonderland.Element
 function nowPlaying.view(app, _overlay, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local mobile = metrics.mobile(app, window.width)
 	local stacked = mobile and window.height >= theme:px(560)
 	local track = app.services.playback:current()
@@ -183,8 +186,8 @@ function nowPlaying.view(app, _overlay, window)
 		:style(sty():row():wrel(1.0):h(theme:px(36)):justify("end"):align("center"):offset(0, 0):z(110))
 		:children(
 			{
-				iconButton.view(
-					app,
+				ui.iconButton(
+					ctx,
 					{ name = "chevronDown", size = theme:px(34), onClick = { type = "expandNowPlaying", open = false } }
 				)
 			}
@@ -246,8 +249,8 @@ function nowPlaying.view(app, _overlay, window)
 						:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
 						:children(
 							{
-								iconButton.view(
-									app,
+								ui.iconButton(
+									ctx,
 									{
 										name = "playlists",
 										size = toolSize,
@@ -255,19 +258,19 @@ function nowPlaying.view(app, _overlay, window)
 										active = app:overlay("queue") ~= nil
 									}
 								),
-								moreButton(app, toolSize, { type = "toggleMore" }, app:overlay("more") ~= nil)
+								moreButton(app, ctx, toolSize, { type = "toggleMore" }, app:overlay("more") ~= nil)
 							}
 						),
 					div()
 						:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
 						:children(
 							{
-								iconButton.view(
-									app,
+								ui.iconButton(
+									ctx,
 									{ name = "shuffle", size = toolSize, onClick = { type = "shuffle" }, active = queue?.shuffle ?? false }
 								),
-								iconButton.view(
-									app,
+								ui.iconButton(
+									ctx,
 									{ name = repeatIcon, size = toolSize, onClick = { type = "repeat" }, active = repeatActive }
 								)
 							}
@@ -286,7 +289,7 @@ function nowPlaying.view(app, _overlay, window)
 		local skipSize = theme:px(30 * transport)
 		local playSize = theme:px(54 * transport)
 		local controlChildren = {
-			volumeButton(app, theme:px(28 * transport)),
+			volumeButton(app, ctx, theme:px(28 * transport)),
 			div():style(sty():w("auto"):h(controlHeight)),
 			div()
 				:style(
@@ -296,7 +299,7 @@ function nowPlaying.view(app, _overlay, window)
 				)
 				:children(
 					{
-						iconButton.view(app, { name = "previous", size = skipSize, onClick = { type = "previous" } }),
+						ui.iconButton(ctx, { name = "previous", size = skipSize, onClick = { type = "previous" } }),
 						div()
 							:style(
 								sty()
@@ -304,8 +307,8 @@ function nowPlaying.view(app, _overlay, window)
 									:justify("center")
 							):onClick({ type = "togglePlay" })
 							:children(
-								icon.view(
-									app,
+								ui.icon(
+									ctx,
 									{
 										name = (app.services.playback.player:isPlaying()) ? "pause" : "play",
 										size = theme:px(24 * transport),
@@ -313,11 +316,11 @@ function nowPlaying.view(app, _overlay, window)
 									}
 								)
 							),
-						iconButton.view(app, { name = "next", size = skipSize, onClick = { type = "next" } })
+						ui.iconButton(ctx, { name = "next", size = skipSize, onClick = { type = "next" } })
 					}
 				),
 			div():style(sty():w("auto"):h(controlHeight)),
-			equalizerButton(app, theme:px(28 * transport), { type = "toggleEqualizer" }, app:overlay("equalizer") ~= nil)
+			equalizerButton(app, ctx, theme:px(28 * transport), { type = "toggleEqualizer" }, app:overlay("equalizer") ~= nil)
 		}
 		local panelHeight = theme:px(44)
 		local volumePanel = anchored(

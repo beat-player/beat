@@ -3,14 +3,13 @@
 -- popover like the queue and the sort menu: a press outside it closes it, and the controls take
 -- the messages they send rather than letting the press close the panel first.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local Scroll = require("beat.app.services.scroll")
 local messages = require("beat.message")
-local button = require("beat.app.components.button")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-local time = wonderland.time
 
 local STATE = {
 	running = "Running",
@@ -48,78 +47,60 @@ function tasksPanel.update(app, overlay, message)
 	return false
 end
 
---- A bar a task's progress is drawn in. A task that has not said how far it has got gets a band
---- that moves, rather than a bar that claims a fraction it does not know. The band's position is
---- the frame's clock, which the tasks service keeps a frame for while anything is running.
----@param app beat.App
----@param task beat.Task
----@param width number
----@param height number
-local function progressBar(app, task, width, height)
-	local theme = app.services.appearance.theme
-	local track = theme:color("text", 0.12)
-	local tone = task.state == "failed" and theme:color("danger")
-		or task.state == "done" and theme:color("success")
-		or task.state == "cancelled" and theme:color("muted")
-		or theme:color("accent")
-	local fraction = task.state == "done" and 1 or task.progress
-	local moving = fraction == nil and (task.state == "running" or task.state == "cancelling")
-
-	return div():style(sty():w(width):h(height):radius(theme:radius("full"))):clip():canvas(function(canvas)
-		canvas:rect(0, 0, canvas.width, canvas.height, track, canvas.height / 2)
-		if moving then
-			local band = canvas.width * 0.3
-			local span = canvas.width + band
-			local start = (time.now() * 0.6) % 1 * span - band
-			local left = math.max(0, start)
-			local right = math.min(canvas.width, start + band)
-			if right > left then
-				canvas:rect(left, 0, right - left, canvas.height, tone, canvas.height / 2)
-			end
-		elseif fraction ~= nil and fraction > 0 then
-			canvas:rect(0, 0, math.floor(canvas.width * fraction), canvas.height, tone, canvas.height / 2)
-		end
-	end)
-end
-
 --- One task: what it is doing, how far it has got, and the button that ends it or puts its failure
 --- away. A task without a cancel message has no Cancel button, because there is nothing to hear.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param task beat.Task
 ---@param width number
 ---@param height number
-local function taskRow(app, task, width, height)
+local function taskRow(app, ctx, task, width, height)
 	local theme = app.services.appearance.theme
 	local gap = theme:px(10)
 	local actionWidth = theme:px(76)
 	local actionHeight = theme:px(24)
 	local action
 	if task.state == "running" and task.cancel ~= nil then
-		action = button.view(
-			app,
+		action = ui.button(
+			ctx,
 			{ label = "Cancel", onClick = messages.taskCancel(task.id), height = actionHeight, width = actionWidth }
 		)
 	elseif task.state == "failed" then
-		action = button.view(
-			app,
+		action = ui.button(
+			ctx,
 			{ label = "Dismiss", onClick = messages.taskDismiss(task.id), height = actionHeight, width = actionWidth }
 		)
 	end
 
 	local textWidth = width - (action ~= nil and (actionWidth + gap) or 0)
 	local detail = task.detail or STATE[task.state] or ""
-	local tone = task.state == "failed" and theme:color("danger")
-		or task.state == "done" and theme:color("success")
-		or task.state == "running" and theme:color("muted")
-		or theme:color("faint")
+	local textTone = task.state == "failed" and "danger"
+		or task.state == "done" and "success"
+		or task.state == "running" and "muted"
+		or "faint"
+	local barTone = task.state == "failed" and "danger"
+		or task.state == "done" and "success"
+		or task.state == "cancelled" and "muted"
+		or "accent"
+	local fraction = task.state == "done" and 1 or task.progress
+	local moving = fraction == nil and (task.state == "running" or task.state == "cancelling")
 
 	local column = div()
 		:style(sty():column():w(textWidth):h(height):justify("center"):gap(theme:px(4)))
 		:children(
 			{
 				text(task.title):style(theme:s():w(textWidth):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-				text(detail):style(theme:s():w(textWidth):text(theme:type("xs")):fg(tone):ellipsis()),
-				progressBar(app, task, textWidth, theme:px(4))
+				text(detail):style(theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color(textTone)):ellipsis()),
+				ui.progressBar(
+					ctx,
+					{
+						value = fraction,
+						indeterminate = moving,
+						width = textWidth,
+						height = theme:px(4),
+						tone = barTone
+					}
+				)
 			}
 		)
 
@@ -134,8 +115,9 @@ end
 ---@return wonderland.Element
 function tasksPanel.view(app, _overlay, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local tasks = app.services.tasks:tasks()
-	local mobile = metrics.mobile(app, window.width)
+	local mobile = ctx.mobile
 	local margin = metrics.pad(app, window.width)
 	-- The panel hangs under the task button, which sits left of settings in the top bar.
 	local right = margin + theme:px(mobile ? 40 : 32) + theme:px(10)
@@ -177,7 +159,7 @@ function tasksPanel.view(app, _overlay, window)
 			local task = tasks[at]
 			list[#list + 1] = div()
 				:style(sty():w(listWidth):h(rowStep))
-				:children({ taskRow(app, task, listWidth, rowHeight) })
+				:children({ taskRow(app, ctx, task, listWidth, rowHeight) })
 		end
 		local bottom = full - place - (last - first + 1) * rowStep
 		if bottom > 0 then list[#list + 1] = div():style(sty():w(listWidth):h(bottom)) end

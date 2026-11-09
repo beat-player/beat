@@ -1,7 +1,6 @@
 -- The top bar: back and forward, the search field, and the way into settings.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
-local iconButton = require("beat.app.components.icon_button")
+local ui = require("beat-ui")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -12,8 +11,9 @@ local topbar = {}
 --- running task when there is only one. It is absent when there are no tasks, so the top bar does
 --- not have a control with nothing behind it.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param size number # The hit area
-local function tasksButton(app, size)
+local function tasksButton(app, ctx, size)
 	local theme = app.services.appearance.theme
 	local list = app.services.tasks:tasks()
 	local count = #list
@@ -33,8 +33,8 @@ local function tasksButton(app, size)
 			div()
 				:style(sty():size(glyphSize, glyphSize):offset((size - glyphSize) / 2, (size - glyphSize) / 2))
 				:children(
-					icon.view(
-						app,
+					ui.icon(
+						ctx,
 						{
 							name = "playlists",
 							size = glyphSize,
@@ -70,17 +70,19 @@ local function tasksButton(app, size)
 		content:children({ bar })
 	end
 
-	return iconButton.surface(app, { size = size, onClick = { type = "open", overlay = "tasks" }, content = content })
+	return ui.iconButton(ctx, { size = size, onClick = { type = "open", overlay = "tasks" }, content = content })
 end
 
 ---@class beat.components.chrome.TopbarProps
 ---@field width number # The window's width
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.chrome.TopbarProps
 ---@return wonderland.Element
 function topbar.view(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local theme = app.services.appearance.theme
 	local mobile = metrics.mobile(app, width)
 	local focused = app.layoutPlugin ~= nil and app.window ~= nil and app.layoutPlugin:getFocusedId(app.window) == "search"
@@ -111,7 +113,7 @@ function topbar.view(app, props)
 
 	local field = div()
 		:style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center"))
-		:children({ icon.view(app, { name = "search", size = theme:px(16), colour = theme:color("faint") }), searchArea })
+		:children({ ui.icon(ctx, { name = "search", size = theme:px(16), colour = theme:color("faint") }), searchArea })
 
 	if search ~= "" then
 		local closeColour = theme:color("muted")
@@ -128,7 +130,10 @@ function topbar.view(app, props)
 	---@param action beat.Message
 	---@param enabled boolean
 	local function navButton(name, action, enabled)
-		return iconButton.view(app, { name = name, size = iconSize, onClick = enabled and action or nil, active = enabled })
+		return ui.iconButton(
+			ctx,
+			{ name = name, size = iconSize, onClick = enabled and action or nil, active = enabled }
+		)
 	end
 
 	local searchStyle = sty()
@@ -160,9 +165,9 @@ function topbar.view(app, props)
 		:style(sty():row():w(leftWidth):h(pillHeight):gap(theme:px(10)):align("center")):children(leftChildren)
 
 	local rightChildren = {}
-	if hasTasks then rightChildren[#rightChildren + 1] = tasksButton(app, iconSize) end
-	rightChildren[#rightChildren + 1] = iconButton.view(
-		app,
+	if hasTasks then rightChildren[#rightChildren + 1] = tasksButton(app, ctx, iconSize) end
+	rightChildren[#rightChildren + 1] = ui.iconButton(
+		ctx,
 		{ name = "settings", size = iconSize, onClick = { type = "navigate", page = { kind = "settings" } } }
 	)
 	local right = div()

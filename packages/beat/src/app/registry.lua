@@ -71,7 +71,7 @@ local messages = require("beat.message")
 ---@class beat.NavEntry
 ---@field id string # The plugin's name and the entry's own: `bandcamp:search`
 ---@field title string
----@field icon string # A glyph name from `components/icon.lua`
+---@field icon string # A glyph name from beat-ui's icon component
 ---@field page beat.Route
 ---@field order number?
 

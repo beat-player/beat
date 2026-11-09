@@ -1,5 +1,6 @@
 local ffi = require("ffi")
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local artwork = require("beat.music.artwork")
 local fs = require("fs")
 
@@ -7,6 +8,7 @@ local shell = require("beat.app.shell")
 local Registry = require("beat.app.registry")
 local Plugins = require("beat.app.plugins")
 local PluginFiles = require("beat.app.plugin_files")
+local metrics = require("beat.app.components.helpers.metrics")
 local settingsModel = require("beat.app.services.settings.model")
 local ServiceCollection = require("beat.app.service_collection")
 local Signal = require("beat.app.signal")
@@ -17,7 +19,7 @@ local iconData = require("beat.app.icon")
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
 -- overlays of one feature; outside plugins are loaded after them, from the config directory's
 -- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
-local BUILT_IN = { "core", "tasks", "plugins", "library", "collections", "playback", "lastfm" }
+local BUILT_IN = { "beat_ui", "core", "tasks", "plugins", "library", "collections", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
 	playPause = "togglePlay",
@@ -99,6 +101,7 @@ local MEDIA_MESSAGES = {
 ---@field messages beat.Signal # Every message, as it is delivered
 ---@field queue table[] # Messages waiting their turn
 ---@field delivering boolean
+---@field uiContext { window: wonderland.RenderWindow, theme: beat.Theme, assets: wonderland.Assets?, width: number, height: number, contentWidth: number, contentHeight: number, mobile: boolean, focusedId: string?, context: beat.ui.Context }?
 local App = wonderland.app("Beat")
 
 --- Which page a route or a page is: two with the same key are the same page, and share where
@@ -233,6 +236,7 @@ function App:init(opts)
 	end
 	self.queue = {}
 	self.delivering = false
+	self.uiContext = nil
 	self.messages = Signal.new()
 	self.registry = Registry.new(self)
 	-- Read once, before any service exists, because what is switched off decides which plugin
@@ -301,6 +305,67 @@ end
 function App:refresh()
 	local window = self.window
 	if window ~= nil then self:present(window) end
+end
+
+--- The UI context a component reads: the live theme, the window's box, the page's content box,
+--- the phone breakpoint and where keyboard focus is. It is cached per window and input, so every
+--- component in a frame shares one table rather than making its own.
+---
+--- This is the only beat API a plugin needs in order to draw with beat-ui:
+--- `require("beat-ui").button(app:ui(window), props)`.
+---@param window { width: number, height: number } # The window the frame is drawn for
+---@return beat.ui.Context
+function App:ui(window)
+	local theme = self.services.appearance.theme
+	local width, height = window.width, window.height
+	local mobile = metrics.mobile(self, width)
+	local contentWidth = metrics.contentWidth(self, width)
+	-- Depends on whether something is playing (the player bar), so it is part of the cache key.
+	local contentHeight = metrics.viewportHeight(self, width, height)
+	local focusedId = nil
+	if self.layoutPlugin ~= nil and self.layoutPlugin.getFocusedId ~= nil then
+		focusedId = self.layoutPlugin:getFocusedId(window --[[@as wonderland.RenderWindow]])
+	end
+
+	local cached = self.uiContext
+	if
+		cached ~= nil
+		and cached.window == window
+		and cached.theme == theme
+		and cached.assets == self.assets
+		and cached.width == width
+		and cached.height == height
+		and cached.contentWidth == contentWidth
+		and cached.contentHeight == contentHeight
+		and cached.mobile == mobile
+		and cached.focusedId == focusedId
+	then
+		return cached.context
+	end
+
+	local context = ui.Context.new({
+		theme = theme,
+		assets = self.assets,
+		width = width,
+		height = height,
+		contentWidth = contentWidth,
+		contentHeight = contentHeight,
+		mobile = mobile,
+		focusedId = focusedId
+	} --[[@as beat.ui.ContextValues]])
+	self.uiContext = {
+		window = window,
+		theme = theme,
+		assets = self.assets,
+		width = width,
+		height = height,
+		contentWidth = contentWidth,
+		contentHeight = contentHeight,
+		mobile = mobile,
+		focusedId = focusedId,
+		context = context
+	}
+	return context
 end
 
 --- Put the caret in a dialog's field as soon as it opens, so typing is the next thing that

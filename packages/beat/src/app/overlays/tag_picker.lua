@@ -1,9 +1,8 @@
 -- The tags on the track that is playing, as toggles. Clicking the dark area dismisses it;
 -- clicking the panel itself does not.
 local wonderland = require("wonderland")
-local button = require("beat.app.components.button")
+local ui = require("beat-ui")
 local tagPills = require("beat.app.components.tag_pills")
-local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -50,6 +49,7 @@ function tagPicker.view(app, overlay, window)
 	local track = library ~= nil and library:track(state.trackId) or app.services.playback:current()
 	if track == nil then return nil end
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local tags = app.services.collections.taxonomy:visibleTags()
 	local selected = {}
 	local assigned = app.services.collections.taxonomy.byPath[track.path]
@@ -57,7 +57,7 @@ function tagPicker.view(app, overlay, window)
 		for id in pairs(assigned) do selected[id] = true end
 	end
 
-	local panelWidth = metrics.panelWidth(app, window, 380)
+	local panelWidth = ctx:panelWidth(380)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2
 	local pills = tagPills.view(
@@ -85,8 +85,8 @@ function tagPicker.view(app, overlay, window)
 		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
 		:children(
 			{
-				button.view(
-					app,
+				ui.button(
+					ctx,
 					{
 						label = "New tag",
 						onClick = { type = "open", overlay = "tag_dialog" },

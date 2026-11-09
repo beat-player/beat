@@ -3,8 +3,7 @@
 local wonderland = require("wonderland")
 local fs = require("fs")
 local path = require("path")
-local icon = require("beat.app.components.icon")
-local button = require("beat.app.components.button")
+local ui = require("beat-ui")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -83,26 +82,27 @@ end
 function folders.view(app, page, window)
 	local state = page.state
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local mobile = metrics.mobile(app, window.width)
 	local pad = metrics.pad(app, window.width)
 	local rows = {}
 
-	local choose = button.view(
-		app,
+	local choose = ui.button(
+		ctx,
 		{
 			label = "Choose folder…",
 			onClick = { type = "chooseFolder" },
-			primary = true,
+			variant = "primary",
 			height = theme:px(30),
 			width = theme:px(142)
 		}
 	)
-	local up = button.view(
-		app,
+	local up = ui.button(
+		ctx,
 		{ label = "Up", onClick = { type = "folderUp" }, height = theme:px(30), width = theme:px(48) }
 	)
-	local select = button.view(
-		app,
+	local select = ui.button(
+		ctx,
 		{
 			label = "Select this folder",
 			onClick = { type = "folderSelect", path = state.path },
@@ -110,8 +110,8 @@ function folders.view(app, page, window)
 			width = theme:px(150)
 		}
 	)
-	local cancel = app.services.library.current ~= nil ? button.view(
-		app,
+	local cancel = app.services.library.current ~= nil ? ui.button(
+		ctx,
 		{ label = "Cancel", onClick = { type = "cancelFolders" }, height = theme:px(30), width = theme:px(80) }
 	) : nil
 
@@ -133,17 +133,19 @@ function folders.view(app, page, window)
 	end
 
 	for _, entry in ipairs(state.entries) do
-		rows[#rows + 1] = div()
-			:style(sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")))
-			:hover(
-				sty():row():h(theme:px(44)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover"))
-			):onClick({ type = "folderOpen", path = entry.path })
-			:children(
-				{
-					icon.view(app, { name = "folder", size = theme:px(20), colour = theme:color("muted") }),
+		rows[#rows + 1] = ui.listRow(
+			ctx,
+			{
+				height = theme:px(44),
+				gap = theme:px(10),
+				padding = 0,
+				onClick = { type = "folderOpen", path = entry.path },
+				children = {
+					ui.icon(ctx, { name = "folder", size = theme:px(20), colour = theme:color("muted") }),
 					text(entry.name):style(theme:s():text(theme:type("base")):fg(theme:color("text")))
 				}
-			)
+			}
+		)
 	end
 
 	local content = div():style(sty():column():wrel(1.0):h("auto"):gap(theme:space(10)))

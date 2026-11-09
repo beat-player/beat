@@ -1,8 +1,7 @@
 -- The playlist a New playlist button starts: a name, and the tags that make it follow tracks by
 -- themselves rather than only hold what is dropped on it.
 local wonderland = require("wonderland")
-local button = require("beat.app.components.button")
-local field = require("beat.app.components.field")
+local ui = require("beat-ui")
 local tagPills = require("beat.app.components.tag_pills")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -88,16 +87,17 @@ end
 function playlistDialog.view(app, overlay, window)
 	local state = overlay.state
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local tags = app.services.collections.taxonomy:visibleTags()
-	local panelWidth = metrics.panelWidth(app, window, 440)
+	local panelWidth = ctx:panelWidth(440)
 	local pad = theme:px(18)
 	local content = panelWidth - pad * 2
 	local children = {
 		text("New playlist"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
 		text("Tags add tracks automatically; you can still add the rest by hand.")
 			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-		field.view(
-			app,
+		ui.field(
+			ctx,
 			{
 				name = "playlistName",
 				value = state.name,
@@ -108,6 +108,7 @@ function playlistDialog.view(app, overlay, window)
 		)
 	}
 
+	local columns = metrics.mobile(app, window.width) ? 2 : 3
 	local pills = tagPills.view(
 		app,
 		{
@@ -115,7 +116,7 @@ function playlistDialog.view(app, overlay, window)
 			selected = state.tagIds,
 			action = |tag| -> { type = "playlistDraftTag", id = tag.id },
 			width = content,
-			columns = metrics.mobile(app, window.width) ? 2 : 3
+			columns = columns
 		}
 	)
 	children[#children + 1] = pills or text("Create a tag to make this playlist smart too.")
@@ -125,24 +126,24 @@ function playlistDialog.view(app, overlay, window)
 		:children(
 			{
 				text("Match"):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
-				button.view(
-					app,
+				ui.button(
+					ctx,
 					{
 						label = "All tags",
 						onClick = { type = "playlistDraftMatch", value = "all" },
 						height = theme:px(26),
 						width = theme:px(82),
-						primary = state.match == "all"
+						variant = state.match == "all" and "primary" or nil
 					}
 				),
-				button.view(
-					app,
+				ui.button(
+					ctx,
 					{
 						label = "Any tag",
 						onClick = { type = "playlistDraftMatch", value = "any" },
 						height = theme:px(26),
 						width = theme:px(82),
-						primary = state.match == "any"
+						variant = state.match == "any" and "primary" or nil
 					}
 				)
 			}
@@ -152,13 +153,13 @@ function playlistDialog.view(app, overlay, window)
 		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
 		:children(
 			{
-				button.view(app, { label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(30), width = theme:px(80) }),
-				button.view(
-					app,
+				ui.button(ctx, { label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(30), width = theme:px(80) }),
+				ui.button(
+					ctx,
 					{
 						label = "Create",
 						onClick = { type = "createPlaylist" },
-						primary = true,
+						variant = "primary",
 						height = theme:px(30),
 						width = theme:px(86)
 					}
@@ -166,14 +167,17 @@ function playlistDialog.view(app, overlay, window)
 			}
 		)
 
-	local tagRows = math.max(1, math.ceil(math.min(#tags, 12) / 3))
-	local pillsHeight = #tags > 0 and (tagRows * theme:px(28) + math.max(0, tagRows - 1) * theme:px(8) + (#tags > 12 and theme:px(
-		18
-	) or 0)) or theme:px(20)
-	local rowCount = state.smart ? 6 : 4
-	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32) + theme:px(10) * (rowCount - 1) + (state.smart and pillsHeight + theme:px(
-		28
-	) or 0)
+	local tagRows = math.max(1, math.ceil(#tags / columns))
+	local pillsHeight = #tags > 0 and (tagRows * theme:px(28) + math.max(0, tagRows - 1) * theme:px(8)) or theme:px(20)
+	-- Six children -- title, copy, field, pills, match row, actions -- and a gap between each.
+	local panelHeight = pad * 2
+		+ theme:px(24)
+		+ theme:px(20)
+		+ theme:px(34)
+		+ pillsHeight
+		+ theme:px(28)
+		+ theme:px(32)
+		+ theme:px(10) * 5
 	local panel = div()
 		:style(
 			sty()

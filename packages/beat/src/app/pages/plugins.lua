@@ -5,10 +5,8 @@
 -- and the row says so until then.
 local wonderland = require("wonderland")
 local path = require("path")
+local ui = require("beat-ui")
 local messages = require("beat.message")
-local button = require("beat.app.components.button")
-local icon = require("beat.app.components.icon")
-local iconButton = require("beat.app.components.icon_button")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -81,9 +79,10 @@ local function detail(entry, values)
 end
 
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param entry beat.PluginStatus
 ---@param width number # The card's inner width, which the name and the check box share
-local function row(app, entry, width)
+local function row(app, ctx, entry, width)
 	local theme = app.services.appearance.theme
 	local values = app.services.settings.values
 	local state = STATE[entry.state] or STATE.failed
@@ -104,23 +103,15 @@ local function row(app, entry, width)
 	}
 	if file ~= nil then
 		local on = not isOff(values, entry)
-		local size = theme:px(CHECK)
-		local box = sty():size(size, size):radius(theme:radius("sm")):align("center"):justify("center")
-		if on then
-			box:bg(theme:color("accent")):border(theme:px(1), theme:color("accent"))
-		else
-			box:border(theme:px(1.5), theme:color("muted"))
-		end
-		children[#children + 1] = div()
-			:style(sty():size(theme:px(CHECK_TARGET), theme:px(CHECK_TARGET)):align("center"):justify("center"))
-			:onClick({ type = "pluginEnabled", file = file, enabled = not on })
-			:children(
-				{
-					div()
-						:style(box)
-						:children(on and icon.view(app, { name = "check", size = theme:px(14), colour = theme.accentInk }) or div())
-				}
-			)
+		children[#children + 1] = ui.checkbox(
+			ctx,
+			{
+				checked = on,
+				onClick = { type = "pluginEnabled", file = file, enabled = not on },
+				size = theme:px(CHECK),
+				target = theme:px(CHECK_TARGET)
+			}
+		)
 	end
 
 	return div():style(sty():row():wrel(1.0):h(theme:px(ROW)):gap(theme:px(10)):align("center")):children(children)
@@ -140,11 +131,12 @@ end
 --- A view or height that raises switches the plugin off the same way any other hook does, and the
 --- card is left out of this frame.
 ---@param app beat.App
+---@param uiCtx beat.ui.Context
 ---@param entry beat.PluginSettings
 ---@param width number # The inner width the plugin's view is given
 ---@return wonderland.Element?
 ---@return number height
-local function settingsCard(app, entry, width)
+local function settingsCard(app, uiCtx, entry, width)
 	local theme = app.services.appearance.theme
 	local plugin = entry.plugin
 
@@ -179,18 +171,16 @@ local function settingsCard(app, entry, width)
 	local titleHeight = theme:px(SETTINGS_TITLE)
 	local gap = theme:space(12)
 	local cardHeight = theme:px(PAD * 2) + titleHeight + gap + height
-	local card = div()
-		:style(
-			sty()
-				:column():wrel(1.0):h(cardHeight):gap(gap):pad(theme:px(PAD)):radius(theme:radius("md"))
-				:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
-		):children(
-			{
-				text(entry.title)
-					:style(theme:s():wrel(1.0):h(titleHeight):text(theme:type("lg")):weight("bold"):fg(theme:color("text")):ellipsis()),
-				view
-			}
-		)
+	local card = ui.card(
+		uiCtx,
+		{
+			title = entry.title,
+			children = { view },
+			height = cardHeight,
+			padding = theme:px(PAD),
+			gap = gap
+		}
+	)
 
 	return card, cardHeight
 end
@@ -201,11 +191,12 @@ end
 ---@return wonderland.Element
 function plugins.view(app, page, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local narrow = window.width < 560
 	local inner = metrics.contentWidth(app, window.width) - theme:px(PAD) * 2 - theme:px(2)
 
 	local rows = {}
-	for _, entry in ipairs(outsidePlugins(app)) do rows[#rows + 1] = row(app, entry, inner) end
+	for _, entry in ipairs(outsidePlugins(app)) do rows[#rows + 1] = row(app, ctx, entry, inner) end
 	if #rows == 0 then
 		rows[1] = div()
 			:style(sty():row():wrel(1.0):h(theme:px(ROW)):align("center"))
@@ -217,30 +208,29 @@ function plugins.view(app, page, window)
 			)
 	end
 
-	-- The folder is where a plugin is installed, so it is opened from the list it fills.
-	local header = div()
-		:style(sty():row():wrel(1.0):h(theme:px(32)):align("center"):justify("space-between"))
-		:children(
-			{
-				text("Installed"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-				iconButton.view(app, { name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder" } })
-			}
-		)
+	-- The folder is where a plugin is installed, so it is opened from the list it fills. Every
+	-- child is followed by a gap but the last: the line under the title, and the rows.
 	local content = {
-		header,
 		text("Plugins are files made with lde bundle. Changes apply after a restart.")
 			:style(theme:s():wrel(1.0):h(theme:px(20)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
 	}
 	for _, item in ipairs(rows) do content[#content + 1] = item end
 
-	-- Every child is followed by a gap but the last: the header, the line under it, and the rows.
-	local cardHeight = PAD * 2 + 2 + 32 + 20 + #rows * ROW + (#content - 1) * GAP
-	local card = div()
-		:style(
-			sty()
-				:column():wrel(1.0):h(theme:px(cardHeight)):gap(theme:px(GAP)):pad(theme:px(PAD)):radius(theme:radius("md"))
-				:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
-		):children(content)
+	local cardHeight = PAD * 2 + 2 + 32 + 20 + #rows * ROW + (#content) * GAP
+	local card = ui.card(
+		ctx,
+		{
+			title = "Installed",
+			action = ui.iconButton(
+				ctx,
+				{ name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder" } }
+			),
+			children = content,
+			height = theme:px(cardHeight),
+			padding = theme:px(PAD),
+			gap = theme:px(GAP)
+		}
+	)
 
 	-- Below the installed list, one card for each loaded plugin that asked for settings. The card
 	-- is drawn at the height the plugin's own `height` said, and its view gets the same inner width
@@ -248,7 +238,7 @@ function plugins.view(app, page, window)
 	local cards = { card }
 	local cardsHeight = theme:px(cardHeight)
 	for _, entry in ipairs(app.registry:settings()) do
-		local element, height = settingsCard(app, entry, inner)
+		local element, height = settingsCard(app, ctx, entry, inner)
 		if element ~= nil then
 			cards[#cards + 1] = element
 			cardsHeight += theme:space(16) + height
@@ -267,8 +257,8 @@ function plugins.view(app, page, window)
 					:children(
 						{
 							text("Plugins"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-							button.view(
-								app,
+							ui.button(
+								ctx,
 								{
 									label = "Back to settings",
 									onClick = { type = "navigate", page = { kind = "settings" } },

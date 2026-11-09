@@ -1,7 +1,7 @@
 -- The messages that slide in over the top right corner: a failure and what it was about, or what
 -- just happened.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local measure = require("beat.app.components.helpers.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -18,6 +18,7 @@ function toasts.view(app, props)
 	local window = props.window
 	if #app.services.toasts.list == 0 then return nil end
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local motion = app.services.motion
 	local now = wonderland.time.now()
 	local children = {}
@@ -66,7 +67,7 @@ function toasts.view(app, props)
 			):onClick({ type = "dismissToast", at = toast.at })
 			:children(
 				{
-					icon.view(app, { name = toast.tone == "error" ? "close" : "check", size = (theme:px(18)), colour = tone }),
+					ui.icon(ctx, { name = toast.tone == "error" ? "close" : "check", size = (theme:px(18)), colour = tone }),
 					text(message):style(theme:s():w(lineWidth):h(textHeight):text(size):fg(theme:color("text", alpha)))
 				}
 			)

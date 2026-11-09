@@ -1,6 +1,6 @@
 -- An album as the shelf shows it: its cover with a play control, and the title block beneath.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -12,6 +12,7 @@ local albumCard = {}
 ---@field width number # The card's width; the cover is square
 ---@field onOpen any # The message a click on the card sends
 ---@field onPlay any # The message the play control sends, unless this album is already playing
+---@field ui beat.ui.Context
 ---
 ---@class beat.components.AlbumCardHeightProps
 ---@field width number # The card's width
@@ -32,6 +33,7 @@ end
 ---@return wonderland.Element
 function albumCard.view(app, props)
 	local theme = app.services.appearance.theme
+	local ctx = props.ui
 	local album, width, onPlay = props.album, props.width, props.onPlay
 	local current = app.services.playback:current()
 	local thisAlbum = current?.albumId == album.id
@@ -69,7 +71,7 @@ function albumCard.view(app, props)
 										:justify("center")
 								):onClick(onPlay)
 								:children(
-									icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(18)), colour = theme.accentInk })
+									ui.icon(ctx, { name = playing ? "pause" : "play", size = (theme:px(18)), colour = theme.accentInk })
 								)
 						}
 					),

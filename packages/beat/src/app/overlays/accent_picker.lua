@@ -1,7 +1,6 @@
 -- A small confirmable colour grid, opened by the Appearance section's Custom button.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
-local button = require("beat.app.components.button")
+local ui = require("beat-ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -89,6 +88,7 @@ end
 function accentPicker.view(app, overlay, window)
 	local state = overlay.state
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local draft = state.draft
 	local narrow = window.width < 560
 	local columns = narrow ? 6 : 12
@@ -117,8 +117,8 @@ function accentPicker.view(app, overlay, window)
 							:border(((theme:px(selected ? 2 : 1))), selected ? (theme:color("text")) : (theme:color("border")))
 					):onClick({ type = "pickAccent", value = colour })
 					:children(
-						selected ? icon.view(
-							app,
+						selected ? ui.icon(
+							ctx,
 							{ name = "check", size = (theme:px(14)), colour = app.services.appearance:accentInk(colour) }
 						) : div()
 					)
@@ -158,8 +158,8 @@ function accentPicker.view(app, overlay, window)
 					:style(sty():row():h(footerHeight):gap(theme:px(8)):align("center"):justify("end"))
 					:children(
 						{
-							button.view(
-								app,
+							ui.button(
+								ctx,
 								{ label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(32), width = theme:px(82) }
 							),
 							div()

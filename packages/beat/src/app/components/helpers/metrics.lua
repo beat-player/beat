@@ -76,13 +76,6 @@ function metrics.gridColumns(content)
 end
 
 --- A floating panel that a phone can still hold: never wider than the window less its gutter.
----@param app beat.App
----@param window wonderland.RenderWindow
----@param max number
----@return number
-function metrics.panelWidth(app, window, max)
-	local gutter = (app.services.appearance.theme:space(metrics.mobile(app, window.width) ? 16 : 24))
-	return math.min(app.services.appearance.theme:px(max), window.width - gutter * 2)
-end
+--- The context's `panelWidth` is the beat-ui copy of this, and views use that.
 
 return metrics

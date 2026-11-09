@@ -1,11 +1,9 @@
 -- The artist screen: a hero of their first cover, their top tracks, and every album.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
-local icon = require("beat.app.components.icon")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
-local section = require("beat.app.components.section")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -28,11 +26,12 @@ end
 ---@return wonderland.Element
 function artistPage.view(app, page, window)
 	local id = assert(page.id)
+	local ctx = app:ui(window)
 	local library = app.services.library.current
 	local artist = library ~= nil ? (library:artist(id)) : nil
 	if artist == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Artist not found",
 				copy = "The scan no longer has them.",
@@ -92,7 +91,7 @@ function artistPage.view(app, page, window)
 													:size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
 													:justify("center")
 											):onClick({ type = "playArtist", id = artist.id })
-											:children(icon.view(app, { name = "play", size = theme:px(18), colour = theme.accentInk })),
+											:children(ui.icon(ctx, { name = "play", size = theme:px(18), colour = theme.accentInk })),
 										text("Play all")
 											:style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text")))
 											:onClick({ type = "playArtist", id = artist.id })
@@ -133,7 +132,8 @@ function artistPage.view(app, page, window)
 					album = release,
 					width = cardWidth,
 					onOpen = { type = "navigate", page = { kind = "album", id = release.id } },
-					onPlay = { type = "playAlbum", id = release.id }
+					onPlay = { type = "playAlbum", id = release.id },
+					ui = ctx
 				}
 			)
 		end
@@ -148,9 +148,9 @@ function artistPage.view(app, page, window)
 		:children(
 			{
 				hero,
-				section.view(app, { title = "Top tracks" }),
+				ui.section(ctx, { title = "Top tracks" }),
 				div():style(sty():column():wrel(1.0):h(topHeight):gap(2)):children(top),
-				section.view(app, { title = "Albums" }),
+				ui.section(ctx, { title = "Albums" }),
 				div():style(sty():column():wrel(1.0):h(albumsHeight):gap(gap)):children(rows)
 			}
 		)

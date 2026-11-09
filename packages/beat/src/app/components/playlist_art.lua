@@ -2,7 +2,7 @@
 -- marks for how it fills, and when it was last edited.
 local wonderland = require("wonderland")
 local utf8 = require("utf8")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -109,6 +109,7 @@ end
 ---@field size number # The square's width and height
 ---@field radius number? # Default theme:radius("sm")
 ---@field name string # The playlist's name, reduced to its initials
+---@field ui beat.ui.Context
 
 --- A playlist's square: four evenly spread album pictures behind the playlist's initials. A
 --- one-track playlist is one cover, and two or three leave their remaining cells black. The
@@ -167,6 +168,7 @@ end
 
 ---@class beat.components.PlaylistIconsProps
 ---@field playlist beat.Playlist
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.PlaylistIconsProps
@@ -174,12 +176,13 @@ end
 function PlaylistArt.icons(app, props)
 	local playlist = props.playlist
 	local theme = app.services.appearance.theme
+	local ctx = props.ui
 	local children = {}
 	if playlist.smart and #playlist.tagIds > 0 then
-		children[#children + 1] = icon.view(app, { name = "tag", size = theme:px(13), colour = theme:color("accent") })
+		children[#children + 1] = ui.icon(ctx, { name = "tag", size = theme:px(13), colour = theme:color("accent") })
 	end
 	if playlist.manual then
-		children[#children + 1] = icon.view(app, { name = "hand", size = theme:px(13), colour = theme:color("muted") })
+		children[#children + 1] = ui.icon(ctx, { name = "hand", size = theme:px(13), colour = theme:color("muted") })
 	end
 	return div()
 		:style(sty():row():w(theme:px(#children * 17)):h(theme:px(16)):gap(theme:px(4)):align("center")):children(children)
