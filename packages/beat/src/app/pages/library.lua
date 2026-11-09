@@ -111,9 +111,9 @@ function libraryPage.view(app, page, window)
 		:style(sty():column():w(stacked and content or titleWidth):h(stacked ? (theme:px(58)) : headerHeight):gap(4))
 		:children(
 			{
-				text("Your library")
+				text("Library")
 					:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis()),
-				text(format.count(#albums, "album") .. " · " .. format.count(#library.tracks, "track"))
+				text(format.count(#albums, "album") .. ", " .. format.count(#library.tracks, "track"))
 					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
 			}
 		)
