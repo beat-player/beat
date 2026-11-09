@@ -33,6 +33,7 @@ function sidebar.view(app, props)
 		{ kind = "library", icon = "library", label = "Library" },
 		{ kind = "playlists", icon = "playlists", label = "Playlists" }
 	}
+
 	-- A plugin's destinations come after the app's own, in the order they asked for.
 	for _, entry in ipairs(app.registry:nav()) do
 		nav[#nav + 1] = { page = entry.page, icon = entry.icon, label = entry.title }
@@ -202,7 +203,7 @@ function sidebar.view(app, props)
 
 	return div():style(sty():w(side):hrel(1.0):column():pad(0, theme:px(16), 0, theme:px(16)):gap(theme:px(4)):bg(theme:color("sidebar"))):resize({ edge = "right", min = theme:px(200), max = theme:px(360), grab = theme:px(5), onchange = |size| -> { type = "sidebarWidth", width = size / theme.scale } }):onMouseMove(|_, relY| -> hoverAt(tonumber(relY) or 0)):children({ div():style(brandStyle):onClick({ type = "toggleSidebar" }):children(brandChildren), div():style(sty():h(1):bg(theme:color("border"))), div():style(sty():column():h(navHeight):gap(theme:px(2)):pad(theme:px(10), 0, 0, 0)):children(navChildren), div():style(sty():h(1):bg(theme:color("border"))), div():style(sty():h(theme:px(16))), div():style(sty():column():h((theme:px(collapsed ? 0 : 28)) + listHeight):gap(sectionGap)):children({ (function()
 		if collapsed then return div():style(sty():h(theme:px(0))) end
-		return div():style(sty():row():wrel(1.0):h(theme:px(24)):align("center"):justify("space-between")):children({ text("PLAYLISTS"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))) })
+		return div():style(sty():row():wrel(1.0):h(theme:px(24)):align("center"):justify("space-between")):children({ text("Playlists"):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("text"))) })
 	end)(), div():style(sty():column():h(listHeight):gap(rowGap)):children(rows) }) })
 end
 
