@@ -19,7 +19,7 @@ local SAVE_DELAY = 0.6
 local Settings = {}
 Settings.__index = Settings
 Settings.needs = { "settingsValues", "registry", "toasts" }
-Settings.handles = { "sidebarWidth", "toggleSidebar", "pluginEnabled", "pluginSetting" }
+Settings.handles = { "sidebarWidth", "toggleSidebar", "minimizeToTray", "pluginEnabled", "pluginSetting" }
 
 ---@param deps { settingsValues: beat.Settings, registry: beat.Registry?, toasts: beat.ToastsService? }?
 ---@return beat.SettingsService
@@ -81,6 +81,8 @@ function Settings:update(message)
 		self.values.sidebarWidth = math.max(200, math.min(360, message.width or 264))
 	elseif message.type == "toggleSidebar" then
 		self.values.sidebarCollapsed = not self.values.sidebarCollapsed
+	elseif message.type == "minimizeToTray" then
+		self.values.minimizeToTray = message.value == true
 	elseif message.type == "pluginEnabled" then
 		if type(message.file) ~= "string" or message.file == "" then return end
 		local list = self.values.disabledPlugins

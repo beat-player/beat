@@ -142,6 +142,26 @@ function settings.view(app, page, window)
 			}
 		)
 
+	-- Hiding the window keeps its loop, media keys and audio alive, so only a backend that can put
+	-- an icon in the notification area offers it.
+	local trayRow = div()
+		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"))
+		:children(
+			{
+				text("Minimize to tray"):style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
+				ui.button(
+					ctx,
+					{
+						label = app.services.settings.values.minimizeToTray ? "Enabled" : "Disabled",
+						onClick = { type = "minimizeToTray", value = not app.services.settings.values.minimizeToTray },
+						height = theme:px(28),
+						width = (theme:px(narrowTheme ? 76 : 88)),
+						variant = app.services.settings.values.minimizeToTray and "primary" or nil
+					}
+				)
+			}
+		)
+
 	local mobileSidebar = metrics.mobile(app, window.width)
 	local sidebarControls = {
 		text(mobileSidebar ? "Hidden on phones" : "Width")
@@ -383,38 +403,41 @@ function settings.view(app, page, window)
 	local libraryHeight = (narrowTheme and 210 or 170) + (scan.skipped > 0 and (12 + math.min(#scan.errors, 3) * 16) or 0)
 	local aboutHeight = narrowTheme ? 196 : 156
 	local pluginsHeight = 120
+	local trayHeight = 136
+
+	---@type wonderland.Element[]
+	local sections = {
+		section(
+			"Appearance",
+			"Theme, accent, custom colour, scale and motion.",
+			{ themeRow, accentRow, customRow, scaleRow, motionRow },
+			appearanceHeight
+		),
+		section("Sidebar", "Width and rail behaviour.", { sidebarRow }, 136)
+	}
+	local height = 32 + appearanceHeight + 136 + libraryHeight + 134 + lastfmHeight + pluginsHeight + aboutHeight
+
+	if window.setTray ~= nil then
+		sections[#sections + 1] = section("Window", "Where minimizing sends the window.", { trayRow }, trayHeight)
+		height += trayHeight
+	end
+	sections[#sections + 1] = section("Library", "Where the library is read from.", libraryRows, libraryHeight)
+	sections[#sections + 1] = section("Audio", "Output volume.", { audioRow }, 134)
+	sections[#sections + 1] = section("Last.fm", "Authorize your account to send now-playing updates and scrobbles.", lastfmRows, lastfmHeight)
+	sections[#sections + 1] = section(
+		"Plugins",
+		"The plugins in your plugins folder, and which of them load. A change applies after a restart.",
+		{ pluginsRow },
+		pluginsHeight
+	)
+	sections[#sections + 1] = section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", { githubRow }, aboutHeight)
+
+	local children = { text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))) }
+	for _, built in ipairs(sections) do children[#children + 1] = built end
+
 	return div()
-		:style(
-			sty()
-				:column():wrel(1.0)
-				:h(
-					theme:px(
-						32 + appearanceHeight + 136 + libraryHeight + 134 + lastfmHeight + pluginsHeight + aboutHeight + 7 * 16 + 24
-					)
-				):gap(theme:space(16))
-		)
-		:children(
-			{
-				text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-				section(
-					"Appearance",
-					"Theme, accent, custom colour, scale and motion.",
-					{ themeRow, accentRow, customRow, scaleRow, motionRow },
-					appearanceHeight
-				),
-				section("Sidebar", "Width and rail behaviour.", { sidebarRow }, 136),
-				section("Library", "Where the library is read from.", libraryRows, libraryHeight),
-				section("Audio", "Output volume.", { audioRow }, 134),
-				section("Last.fm", "Authorize your account to send now-playing updates and scrobbles.", lastfmRows, lastfmHeight),
-				section(
-					"Plugins",
-					"The plugins in your plugins folder, and which of them load. A change applies after a restart.",
-					{ pluginsRow },
-					pluginsHeight
-				),
-				section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", { githubRow }, aboutHeight)
-			}
-		)
+		:style(sty():column():wrel(1.0):h(theme:px(height + #sections * 16 + 24)):gap(theme:space(16)))
+		:children(children)
 end
 
 return settings

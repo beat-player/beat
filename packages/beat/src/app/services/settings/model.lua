@@ -20,6 +20,7 @@ local settings = {}
 ---@field sidebarCollapsed boolean
 ---@field uiScale number
 ---@field reduceMotion boolean
+---@field minimizeToTray boolean # Minimizing sends the window to the tray instead of the taskbar
 ---@field lastfmSessionKey string
 ---@field lastfmUsername string
 ---@field lastfmEnabled boolean
@@ -42,6 +43,7 @@ local DEFAULTS = {
 	sidebarCollapsed = false,
 	uiScale = 1,
 	reduceMotion = false,
+	minimizeToTray = false,
 	lastfmSessionKey = "",
 	lastfmUsername = "",
 	lastfmEnabled = true,
@@ -172,6 +174,7 @@ function settings.load(dir)
 		sidebarCollapsed = data.sidebarCollapsed == true,
 		uiScale = math.max(0.75, math.min(1.5, number(data.uiScale, DEFAULTS.uiScale))),
 		reduceMotion = data.reduceMotion == true,
+		minimizeToTray = data.minimizeToTray == true,
 		lastfmSessionKey = type(data.lastfmSessionKey) == "string" and data.lastfmSessionKey or "",
 		lastfmUsername = type(data.lastfmUsername) == "string" and data.lastfmUsername or "",
 		lastfmEnabled = data.lastfmEnabled ~= false,

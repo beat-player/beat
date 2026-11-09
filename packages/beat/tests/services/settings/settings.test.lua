@@ -20,6 +20,7 @@ test.it("loads defaults when there is no file", function()
 	test.equal(loaded.volume, 0.8)
 	test.equal(loaded.uiScale, 1)
 	test.falsy(loaded.root)
+	test.falsy(loaded.minimizeToTray)
 	test.equal(loaded.lastfmSessionKey, "")
 	test.truthy(loaded.lastfmEnabled)
 
@@ -39,6 +40,7 @@ test.it("round-trips the settings a launch remembers", function()
 	value.sidebarWidth = 300
 	value.uiScale = 1.25
 	value.reduceMotion = true
+	value.minimizeToTray = true
 	value.lastfmSessionKey = "session"
 	value.lastfmUsername = "scrobbler"
 	value.lastfmEnabled = false
@@ -60,6 +62,7 @@ test.it("round-trips the settings a launch remembers", function()
 	test.equal(again.sidebarWidth, 300)
 	test.equal(again.uiScale, 1.25)
 	test.truthy(again.reduceMotion)
+	test.truthy(again.minimizeToTray)
 	test.equal(again.lastfmSessionKey, "session")
 	test.equal(again.lastfmUsername, "scrobbler")
 	test.equal(again.lastfmEnabled, false)

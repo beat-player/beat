@@ -155,6 +155,9 @@
 ---@class beat.ReduceMotionMessage: beat.MessageFields
 ---@field type "reduceMotion"
 ---@field value boolean
+---@class beat.MinimizeToTrayMessage: beat.MessageFields
+---@field type "minimizeToTray"
+---@field value boolean
 ---@class beat.ThemeMessage: beat.MessageFields
 ---@field type "theme"
 ---@field name string
@@ -401,6 +404,7 @@
 --- | beat.ToggleSidebarMessage
 --- | beat.UiScaleMessage
 --- | beat.ReduceMotionMessage
+--- | beat.MinimizeToTrayMessage
 --- | beat.ThemeMessage
 --- | beat.AccentMessage
 --- | beat.ToggleViewMessage
