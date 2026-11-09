@@ -341,7 +341,9 @@ end
 ---@param a beat.Track
 ---@param b beat.Track
 local function trackOrder(a, b)
-	if a.disc ~= b.disc then return a.disc < b.disc end
+	-- TODO: This doesn't really make sense to users as we don't normalize
+	-- the track number to each disc (so if track 19 is on disc 2, it'll count as #19 instead of #1).
+	-- if a.disc ~= b.disc then return a.disc < b.disc end
 	local an, bn = a.number or math.huge, b.number or math.huge
 	if an ~= bn then return an < bn end
 	if a.title ~= b.title then return names.fold(a.title) < names.fold(b.title) end
