@@ -27,6 +27,7 @@ local settings = {}
 ---@field equalizerGains number[]?
 ---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
 ---@field disabledPlugins string[] # Plugin files switched off by name; applied at the next start
+---@field plugins table<string, table<string, any>> # A plugin's own values, by plugin name
 
 ---@type beat.Settings
 local DEFAULTS = {
@@ -47,7 +48,8 @@ local DEFAULTS = {
 	equalizerPreset = "flat",
 	equalizerGains = { 0, 0, 0, 0, 0 },
 	equalizerCustomPresets = {},
-	disabledPlugins = {}
+	disabledPlugins = {},
+	plugins = {}
 }
 
 ---@param value any
@@ -70,6 +72,71 @@ local function pluginNames(value)
 	return names
 end
 
+--- A value a plugin can keep: what JSON holds, and nothing else. A table is either a list of
+--- whole-number keys from one or an object of string keys; a metatable or a cycle is not
+--- something JSON can write, and neither is a number with no finite value.
+---@param value any
+---@param seen table<table, boolean>?
+local function serialisable(value, seen)
+	if value == json.null then return false end
+	local kind = type(value)
+	if kind == "nil" or kind == "string" or kind == "boolean" then return true end
+	if kind == "number" then return value == value and value ~= math.huge and value ~= -math.huge end
+	if kind ~= "table" then return false end
+
+	seen = seen or {}
+	if getmetatable(value) ~= nil or seen[value] then return false end
+	seen[value] = true
+
+	local numeric, strings, most = 0, 0, 0
+	for key in pairs(value) do
+		if type(key) == "number" then
+			if key < 1 or key % 1 ~= 0 then
+				seen[value] = nil
+				return false
+			end
+			numeric += 1
+			if key > most then most = key end
+		elseif type(key) == "string" then
+			strings += 1
+		else
+			seen[value] = nil
+			return false
+		end
+	end
+	if (numeric > 0 and strings > 0) or (numeric > 0 and most ~= numeric) then
+		seen[value] = nil
+		return false
+	end
+
+	for _, child in pairs(value) do
+		if not serialisable(child, seen) then
+			seen[value] = nil
+			return false
+		end
+	end
+	seen[value] = nil
+	return true
+end
+
+--- Whether a value can be written to settings.json and read back: the rule `pluginSetting`
+--- messages are held to. `settings.isJSONValue` is the same check, for the settings service.
+---@param value any
+function settings.isJSONValue(value)
+	return serialisable(value, {})
+end
+
+--- A plugin's values as the file holds them. An entry that is not a table, or holds something
+--- JSON cannot hold, loads empty rather than stopping the settings file from being read at all.
+--- Names are kept even when no plugin is loaded: a plugin that is gone for a run still finds its
+--- values when it comes back.
+---@param value any
+---@return table<string, any>
+local function pluginValues(value)
+	if type(value) ~= "table" or not serialisable(value, {}) then return {} end
+	return value
+end
+
 ---@param dir string?
 ---@return beat.Settings
 ---@return string
@@ -81,6 +148,15 @@ function settings.load(dir)
 	if bytes ~= nil then
 		local ok, parsed = pcall(|| -> json.decode(bytes):unpack())
 		if ok and type(parsed) == "table" then data = parsed end
+	end
+
+	---@type table<string, table<string, any>>
+	local plugins = {}
+	local stored = data.plugins
+	if type(stored) == "table" then
+		for name, value in pairs(stored) do
+			if type(name) == "string" and name ~= "" then plugins[name] = pluginValues(value) end
+		end
 	end
 
 	---@type beat.Settings
@@ -105,7 +181,8 @@ function settings.load(dir)
 		equalizerPreset = data.equalizerPreset,
 		equalizerGains = data.equalizerGains,
 		equalizerCustomPresets = data.equalizerCustomPresets,
-		disabledPlugins = pluginNames(data.disabledPlugins)
+		disabledPlugins = pluginNames(data.disabledPlugins),
+		plugins = plugins
 	}
 
 	return loaded, file

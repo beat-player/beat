@@ -5,6 +5,7 @@
 -- and the row says so until then.
 local wonderland = require("wonderland")
 local path = require("path")
+local messages = require("beat.message")
 local button = require("beat.app.components.button")
 local icon = require("beat.app.components.icon")
 local iconButton = require("beat.app.components.icon_button")
@@ -20,6 +21,8 @@ local ROW = 44
 -- The check box, and the larger square around it a click lands in.
 local CHECK = 20
 local CHECK_TARGET = 32
+-- A settings card's title, and the space between it and the plugin's own view.
+local SETTINGS_TITLE = 24
 
 local STATE = {
 	loaded = { label = "Loaded", tone = "success" },
@@ -133,6 +136,65 @@ local function outsidePlugins(app)
 	return found
 end
 
+--- One plugin's settings card: its title and the view it returned, at the height it asked for.
+--- A view or height that raises switches the plugin off the same way any other hook does, and the
+--- card is left out of this frame.
+---@param app beat.App
+---@param entry beat.PluginSettings
+---@param width number # The inner width the plugin's view is given
+---@return wonderland.Element?
+---@return number height
+local function settingsCard(app, entry, width)
+	local theme = app.services.appearance.theme
+	local plugin = entry.plugin
+
+	---@type beat.PluginSettingsContext
+	local ctx = {
+		plugin = plugin.name,
+		values = app.services.settings:plugin(plugin.name),
+		width = width,
+		set = function(key, value) return messages.pluginSetting(plugin.name, key, value) end
+	}
+
+	local okHeight, height = pcall(entry.height, app, ctx)
+	if not okHeight then
+		app.registry:disable(plugin, height)
+		return nil, 0
+	end
+	if type(height) ~= "number" or height ~= height or height < 0 then
+		app.registry:disable(plugin, "settings height must be a size")
+		return nil, 0
+	end
+
+	local okView, view = pcall(entry.view, app, ctx)
+	if not okView then
+		app.registry:disable(plugin, view)
+		return nil, 0
+	end
+	if view == nil then
+		app.registry:disable(plugin, "settings view returned nothing")
+		return nil, 0
+	end
+
+	local titleHeight = theme:px(SETTINGS_TITLE)
+	local gap = theme:space(12)
+	local cardHeight = theme:px(PAD * 2) + titleHeight + gap + height
+	local card = div()
+		:style(
+			sty()
+				:column():wrel(1.0):h(cardHeight):gap(gap):pad(theme:px(PAD)):radius(theme:radius("md"))
+				:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
+		):children(
+			{
+				text(entry.title)
+					:style(theme:s():wrel(1.0):h(titleHeight):text(theme:type("lg")):weight("bold"):fg(theme:color("text")):ellipsis()),
+				view
+			}
+		)
+
+	return card, cardHeight
+end
+
 ---@param app beat.App
 ---@param page beat.PageInstance
 ---@param window wonderland.RenderWindow
@@ -180,8 +242,24 @@ function plugins.view(app, page, window)
 				:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
 		):children(content)
 
+	-- Below the installed list, one card for each loaded plugin that asked for settings. The card
+	-- is drawn at the height the plugin's own `height` said, and its view gets the same inner width
+	-- as the installed rows.
+	local cards = { card }
+	local cardsHeight = theme:px(cardHeight)
+	for _, entry in ipairs(app.registry:settings()) do
+		local element, height = settingsCard(app, entry, inner)
+		if element ~= nil then
+			cards[#cards + 1] = element
+			cardsHeight += theme:space(16) + height
+		end
+	end
+
+	local stack = div()
+		:style(sty():column():wrel(1.0):h(cardsHeight):gap(theme:space(16))):children(cards)
+
 	return div()
-		:style(sty():column():wrel(1.0):h(theme:px(32 + 16 + cardHeight)):gap(theme:px(16)))
+		:style(sty():column():wrel(1.0):h(theme:px(32) + theme:space(16) + cardsHeight):gap(theme:space(16)))
 		:children(
 			{
 				div()
@@ -200,7 +278,7 @@ function plugins.view(app, page, window)
 							)
 						}
 					),
-				card
+				stack
 			}
 		)
 end

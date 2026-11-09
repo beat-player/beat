@@ -339,6 +339,17 @@
 ---@field entry beat.ScanEntry
 ---@field cover string?
 ---@field coverCache string?
+---@class beat.PluginSettingMessage: beat.MessageFields
+---@field type "pluginSetting"
+---@field plugin string
+---@field key string
+---@field value any
+---@class beat.TaskCancelMessage: beat.MessageFields
+---@field type "taskCancel"
+---@field id number
+---@class beat.TaskDismissMessage: beat.MessageFields
+---@field type "taskDismiss"
+---@field id number
 ---@class beat.CustomMessage: beat.MessageFields
 ---@field type string
 ---@field custom true
@@ -453,6 +464,9 @@
 --- | beat.CancelledMessage
 --- | beat.InspectErrorMessage
 --- | beat.TrackMessage
+--- | beat.PluginSettingMessage
+--- | beat.TaskCancelMessage
+--- | beat.TaskDismissMessage
 --- | beat.CustomMessage
 
 --- What an overlay is opened with, beyond the overlay itself. A plugin registers its own overlay,
@@ -526,6 +540,9 @@
 ---@field openURL fun(url: string): beat.OpenURLMessage
 ---@field pickFolder fun(reply: string, start: string?): beat.PickFolderMessage
 ---@field libraryAddFolder fun(path: string): beat.LibraryAddFolderMessage
+---@field pluginSetting fun(plugin: string, key: string, value: any): beat.PluginSettingMessage
+---@field taskCancel fun(id: number): beat.TaskCancelMessage
+---@field taskDismiss fun(id: number): beat.TaskDismissMessage
 ---@field scroll fun(key: string, fields: beat.ScrollFields?): beat.ScrollMessage
 ---@field custom fun(kind: string, fields: beat.CustomFields?): beat.CustomMessage
 
@@ -744,6 +761,22 @@ function messages.pickFolder(reply, start) return { type = "pickFolder", reply =
 ---@param path string
 ---@return beat.LibraryAddFolderMessage
 function messages.libraryAddFolder(path) return { type = "libraryAddFolder", path = path } end
+
+---@param plugin string
+---@param key string
+---@param value any
+---@return beat.PluginSettingMessage
+function messages.pluginSetting(plugin, key, value)
+	return { type = "pluginSetting", plugin = plugin, key = key, value = value }
+end
+
+---@param id number
+---@return beat.TaskCancelMessage
+function messages.taskCancel(id) return { type = "taskCancel", id = id } end
+
+---@param id number
+---@return beat.TaskDismissMessage
+function messages.taskDismiss(id) return { type = "taskDismiss", id = id } end
 
 ---@param kind string
 ---@param fields beat.CustomFields?

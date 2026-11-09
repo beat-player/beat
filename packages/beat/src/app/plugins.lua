@@ -160,6 +160,8 @@ local function handleFor(registry, plugin, undo)
 	---@param name string
 	---@param module beat.Service
 	function handle.service(name, module) record(registry:addService(name, module, plugin)) end
+	---@param definition beat.PluginSettingsDefinition
+	function handle.settings(definition) record(registry:addSettings(definition, plugin)) end
 	---@param kind string
 	---@param surface beat.PageSurface
 	function handle.page(kind, surface) record(registry:addPage(kind, surface, plugin)) end

@@ -139,10 +139,37 @@ local messages = require("beat.message")
 ---@field requires table<string, string>? # Plugin name to the version it needs
 ---@field setup fun(handle: beat.PluginHandle)
 
+--- What a plugin's settings view is given: the plugin it belongs to, the values it has now with
+--- its defaults filled in, the room it has, and the message that changes one value. `set` returns
+--- the message so a control can use it for a click or a field's `oninput`.
+---@class beat.PluginSettingsContext
+---@field plugin string
+---@field values table<string, any>
+---@field width number # The inner width the view can use, in the same pixels as a window's width
+---@field set fun(key: string, value: any): beat.Message
+
+--- What a plugin asks the Plugins page to show under the installed list: a title, the values it
+--- starts with, and the view and height of the card. The height is in the same pixels as `width`.
+---@class beat.PluginSettingsDefinition
+---@field title string?
+---@field defaults table<string, any>
+---@field view fun(app: beat.App, ctx: beat.PluginSettingsContext): wonderland.Element
+---@field height fun(app: beat.App, ctx: beat.PluginSettingsContext): number
+
+--- One plugin's settings as the registry keeps them.
+---@class beat.PluginSettings
+---@field plugin beat.Plugin
+---@field title string
+---@field defaults table<string, any>
+---@field view fun(app: beat.App, ctx: beat.PluginSettingsContext): wonderland.Element
+---@field height fun(app: beat.App, ctx: beat.PluginSettingsContext): number
+---@field index number
+
 --- What a plugin registers through: one function per kind of registration, each answering the
 --- undo that takes it out again.
 ---@class beat.PluginHandle
 ---@field msg beat.Messages
+---@field settings fun(definition: beat.PluginSettingsDefinition)
 ---@field service fun(name: string, module: beat.Service)
 ---@field page fun(kind: string, surface: beat.PageSurface)
 ---@field overlay fun(name: string, surface: beat.OverlaySurface)
@@ -167,6 +194,8 @@ local messages = require("beat.message")
 ---@field handled table<string, beat.Registration> # The service that answers each message type
 ---@field actionsList beat.ActionEntry[] # In registration order; sorted when a menu asks
 ---@field navList table[] # Sidebar entries in registration order; sorted when a sidebar asks
+---@field settingsList beat.PluginSettings[] # In registration order, which is the card order
+---@field settingsByName table<string, beat.PluginSettings>
 ---@field listeners table<string, beat.ListenerEntry[]>
 ---@field interceptors table<string, beat.InterceptorEntry[]>
 ---@field reports string[] # Problems found before the toasts service could be told
@@ -191,6 +220,8 @@ function Registry.new(app)
 			handled = {},
 			actionsList = {},
 			navList = {},
+			settingsList = {},
+			settingsByName = {},
 			listeners = {},
 			interceptors = {},
 			reports = {},
@@ -464,6 +495,58 @@ function Registry:addNav(entry, plugin)
 			end
 		end
 	end
+end
+
+--- The settings card a plugin asks the Plugins page to show. A plugin has one card; a second call
+--- is a mistake rather than a second card. The registration is remembered with the plugin so a
+--- failed setup takes the card back with everything else it registered.
+---@param definition beat.PluginSettingsDefinition
+---@param plugin beat.Plugin
+---@return fun() undo
+function Registry:addSettings(definition, plugin)
+	if type(definition) ~= "table" then error("settings must be a table", 0) end
+	if type(definition.defaults) ~= "table" then error("settings need defaults", 0) end
+	if type(definition.view) ~= "function" then error("settings need view(app, ctx)", 0) end
+	if type(definition.height) ~= "function" then error("settings need height(app, ctx)", 0) end
+	if definition.title ~= nil and type(definition.title) ~= "string" then
+		error("settings title must be a string", 0)
+	end
+	if self.settingsByName[plugin.name] ~= nil then
+		error("plugin " .. plugin.name .. " registered settings twice", 0)
+	end
+
+	---@type beat.PluginSettings
+	local entry = {
+		plugin = plugin,
+		title = definition.title or plugin.name,
+		defaults = definition.defaults,
+		view = definition.view,
+		height = definition.height,
+		index = #self.settingsList + 1
+	}
+	self.settingsList[#self.settingsList + 1] = entry
+	self.settingsByName[plugin.name] = entry
+
+	return function()
+		if self.settingsByName[plugin.name] == entry then self.settingsByName[plugin.name] = nil end
+		for at, candidate in ipairs(self.settingsList) do
+			if candidate == entry then
+				table.remove(self.settingsList, at)
+				return
+			end
+		end
+	end
+end
+
+--- The settings cards the Plugins page shows, in the order their plugins registered them. A plugin
+--- that has been switched off is not there: its hooks are not called any more.
+---@return beat.PluginSettings[]
+function Registry:settings()
+	local list = {}
+	for _, entry in ipairs(self.settingsList) do
+		if not entry.plugin.disabled then list[#list + 1] = entry end
+	end
+	return list
 end
 
 ---@param kind string
