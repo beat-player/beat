@@ -1,11 +1,8 @@
 -- The playlists page: the playlists to open and the tags that make the smart ones. A tag's
 -- name is edited in place here, so the draft and the one being edited belong to this page.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
-local button = require("beat.app.components.button")
-local field = require("beat.app.components.field")
-local iconButton = require("beat.app.components.icon_button")
-local section = require("beat.app.components.section")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
 local PlaylistArt = require("beat.app.components.playlist_art")
@@ -109,24 +106,25 @@ end
 function playlists.view(app, page, window)
 	local state = page.state
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local mobile = metrics.mobile(app, window.width)
 	local taxonomy = app.services.collections.taxonomy
 	local content = metrics.contentWidth(app, window.width)
 	local tags = taxonomy:visibleTags()
 
 	local headerActions = {
-		button.view(
-			app,
+		ui.button(
+			ctx,
 			{
 				label = "New playlist",
 				onClick = { type = "open", overlay = "playlist_dialog", smart = false },
-				primary = true,
+				variant = "primary",
 				height = theme:px(30),
 				width = theme:px(128)
 			}
 		),
-		button.view(
-			app,
+		ui.button(
+			ctx,
 			{
 				label = "New tag",
 				onClick = { type = "open", overlay = "tag_dialog" },
@@ -170,12 +168,12 @@ function playlists.view(app, page, window)
 		local rowStyle = sty()
 			:row():wrel(1.0):h(theme:px(72)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
 			:radius(theme:radius("md")):bg(theme:color("surface"))
-		return div():style(rowStyle):hover(sty():row():wrel(1.0):h(theme:px(72)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center"):radius(theme:radius("md")):bg(theme:color("hover"))):onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id } }):onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY }):children({ PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name }), div():style(sty():column():w(infoWidth):hrel(1.0):justify("center"):gap(theme:px(4))):children({
+		return div():style(rowStyle):hover(sty():row():wrel(1.0):h(theme:px(72)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center"):radius(theme:radius("md")):bg(theme:color("hover"))):onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id } }):onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY }):children({ PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name, ui = ctx }), div():style(sty():column():w(infoWidth):hrel(1.0):justify("center"):gap(theme:px(4))):children({
 			-- The type marks sit against the end of the name rather than at the far edge of
 			-- the row. The estimate only caps an unusually long name; real names measure short.
-			div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({ text(playlist.name):style(theme:s():w(nameWidth):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()), PlaylistArt.icons(app, { playlist = playlist }) }),
+			div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({ text(playlist.name):style(theme:s():w(nameWidth):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()), PlaylistArt.icons(app, { playlist = playlist, ui = ctx }) }),
 			text(format.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs")):fg(theme:color("muted")):ellipsis())
-		}), iconButton.view(app, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id } }) })
+		}), ui.iconButton(ctx, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id } }) })
 	end
 
 	local rows = {}
@@ -231,8 +229,8 @@ function playlists.view(app, page, window)
 			local editWidth = math.min(content, math.max(estimatedWidth, theme:px(190)))
 			usedWidth = editWidth
 			local fieldWidth = math.max(theme:px(80), editWidth - theme:px(20) - theme:px(24) * 2 - theme:px(8))
-			local nameField = field.view(
-				app,
+			local nameField = ui.field(
+				ctx,
 				{
 					name = "tagName",
 					value = state.tagEditDraft,
@@ -251,8 +249,8 @@ function playlists.view(app, page, window)
 				:children(
 					{
 						nameField,
-						iconButton.view(app, { name = "check", size = theme:px(24), onClick = { type = "renameTag" } }),
-						iconButton.view(app, { name = "close", size = theme:px(22), onClick = { type = "cancelTagEdit" } })
+						ui.iconButton(ctx, { name = "check", size = theme:px(24), onClick = { type = "renameTag" } }),
+						ui.iconButton(ctx, { name = "close", size = theme:px(22), onClick = { type = "cancelTagEdit" } })
 					}
 				)
 		else
@@ -302,7 +300,7 @@ function playlists.view(app, page, window)
 			{
 				header,
 				div():style(sty():column():wrel(1.0):h(playlistHeight):gap(theme:px(8))):children(rows),
-				section.view(app, { title = "Tags" }),
+				ui.section(ctx, { title = "Tags" }),
 				div():style(sty():column():wrel(1.0):h(tagHeight):gap(theme:px(8))):children(tagRows)
 			}
 		)

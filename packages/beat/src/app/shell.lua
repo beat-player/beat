@@ -78,6 +78,7 @@ function shell.view(app, window)
 	local width = window.width
 	local height = window.height
 	local mobile = metrics.mobile(app, width)
+	local uiCtx = app:ui(window)
 	local bar = (app.services.playback:current()) ~= nil ? (theme:px(mobile ? 64 : 88)) : 0
 	local page = app:currentPage()
 
@@ -182,25 +183,28 @@ function shell.view(app, window)
 		end)
 	end
 	main:children(
-		{ topbar.view(app, { width = width }), div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip }) }
+		{
+			topbar.view(app, { width = width, ui = uiCtx }),
+			div():style(sty():column():wrel(1.0):h(bodyHeight)):children({ pageClip })
+		}
 	)
 
 	local shellChildren = { main }
 	if not mobile then
-		table.insert(shellChildren, 1, sidebar.view(app, { width = width, height = pageHeight }))
+		table.insert(shellChildren, 1, sidebar.view(app, { width = width, height = pageHeight, ui = uiCtx }))
 	end
 	local frame = div():style(sty():row():wrel(1.0):h(pageHeight)):children(shellChildren)
 
 	local rootChildren = { frame }
 	if mobile then
-		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, { width = width }) end
-		rootChildren[#rootChildren + 1] = mobileNav.view(app, { width = width })
+		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, { width = width, ui = uiCtx }) end
+		rootChildren[#rootChildren + 1] = mobileNav.view(app, { width = width, ui = uiCtx })
 	elseif bar > 0 then
-		rootChildren[#rootChildren + 1] = playerBar.view(app, { width = width })
+		rootChildren[#rootChildren + 1] = playerBar.view(app, { width = width, ui = uiCtx })
 	end
-	local scanIsland = scanStatus.island(app, { width = width })
+	local scanIsland = scanStatus.island(app, { width = width, ui = uiCtx })
 	if scanIsland ~= nil then rootChildren[#rootChildren + 1] = scanIsland end
-	local scanSummary = scanStatus.summary(app, { width = width })
+	local scanSummary = scanStatus.summary(app, { width = width, ui = uiCtx })
 	if scanSummary ~= nil then rootChildren[#rootChildren + 1] = scanSummary end
 	if not mobile then
 		local tooltip = sidebar.tooltip(app, { width = width, height = height })

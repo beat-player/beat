@@ -1,7 +1,7 @@
 -- The phone's bottom tabs. Search lives here as a destination as well as in the top bar, so a
 -- thumb can reach every primary page without the desktop rail.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -9,12 +9,14 @@ local mobileNav = {}
 
 ---@class beat.components.chrome.MobileNavProps
 ---@field width number # The window's width
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.chrome.MobileNavProps
 ---@return wonderland.Element
 function mobileNav.view(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local theme = app.services.appearance.theme
 	local height = theme:px(58)
 	local items = {
@@ -30,7 +32,7 @@ function mobileNav.view(app, props)
 	local tabWidth = math.floor(width / #items)
 	local tabs = {}
 	for _, item in ipairs(items) do
-		local route = item.page or { kind = item.kind }
+		local route = (item.page or { kind = item.kind }) --[[@as { kind: string, id: number? }]]
 		local active
 		if item.page ~= nil then
 			active = app.page.kind == route.kind and (route.id == nil or app.page.id == route.id)
@@ -44,7 +46,7 @@ function mobileNav.view(app, props)
 			:onClick({ type = "navigate", page = route })
 			:children(
 				{
-					icon.view(app, { name = item.icon, size = theme:px(21), colour = colour }),
+					ui.icon(ctx, { name = item.icon, size = theme:px(21), colour = colour }),
 					text(item.label):style(theme:s():text(theme:type("xs")):weight("semibold"):fg(colour))
 				}
 			)

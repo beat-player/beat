@@ -4,7 +4,7 @@
 -- exist, what they hold and what changing one means is the equalizer service's; this file draws
 -- them and sends what was clicked.
 local wonderland = require("wonderland")
-local iconButton = require("beat.app.components.icon_button")
+local ui = require("beat-ui")
 local slider = require("beat.app.components.slider")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -62,6 +62,7 @@ end
 ---@return wonderland.Element
 function equalizer.view(app, _overlay, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local service = app.services.equalizer
 	local compact = window.height < theme:px(520)
 	local width = math.min(theme:px(460), window.width - theme:px(24))
@@ -90,8 +91,8 @@ function equalizer.view(app, _overlay, window)
 					:style(sty():row():w(theme:px(24) * 2 + theme:px(4)):h(headerHeight):gap(theme:px(4)):align("center"))
 					:children(
 						{
-							iconButton.view(app, { name = "add", size = theme:px(24), onClick = { type = "newEqualizerPreset" } }),
-							iconButton.view(app, { name = "close", size = theme:px(24), onClick = { type = "dismiss" } })
+							ui.iconButton(ctx, { name = "add", size = theme:px(24), onClick = { type = "newEqualizerPreset" } }),
+							ui.iconButton(ctx, { name = "close", size = theme:px(24), onClick = { type = "dismiss" } })
 						}
 					)
 			}

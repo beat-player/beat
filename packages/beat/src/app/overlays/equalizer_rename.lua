@@ -4,8 +4,7 @@
 -- what the player hears afterwards are the equalizer service's rules, reached by the one message
 -- each button sends.
 local wonderland = require("wonderland")
-local button = require("beat.app.components.button")
-local field = require("beat.app.components.field")
+local ui = require("beat-ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -59,6 +58,7 @@ function equalizerRename.view(app, overlay, window)
 	local state = overlay.state
 	local name = state.name
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local width = math.min(theme:px(340), window.width - theme:px(32))
 	local padding = theme:px(16)
 	local height = theme:px(220)
@@ -71,8 +71,8 @@ function equalizerRename.view(app, overlay, window)
 		:children(
 			{
 				text("Rename preset"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-				field.view(
-					app,
+				ui.field(
+					ctx,
 					{
 						name = "equalizerPresetName",
 						value = state.draft,
@@ -85,8 +85,8 @@ function equalizerRename.view(app, overlay, window)
 					:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
 					:children(
 						{
-							button.view(
-								app,
+							ui.button(
+								ctx,
 								{
 									label = "Cancel",
 									onClick = { type = "cancelEqualizerPresetRename" },
@@ -94,20 +94,20 @@ function equalizerRename.view(app, overlay, window)
 									width = theme:px(80)
 								}
 							),
-							button.view(
-								app,
+							ui.button(
+								ctx,
 								{
 									label = "Save",
 									onClick = { type = "saveEqualizerPresetRename", name = name, value = state.draft },
-									primary = true,
+									variant = "primary",
 									height = theme:px(30),
 									width = theme:px(74)
 								}
 							)
 						}
 					),
-				button.view(
-					app,
+				ui.button(
+					ctx,
 					{
 						label = "Delete preset",
 						onClick = { type = "deleteEqualizerPreset", name = name },

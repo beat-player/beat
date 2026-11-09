@@ -1,6 +1,6 @@
 -- The sort choices, anchored under the library's sort button.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -40,6 +40,7 @@ end
 ---@param window wonderland.RenderWindow
 function sortMenu.view(app, overlay, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local panelWidth = theme:px(210)
 	local rows = {}
 	for _, option in ipairs(SORT_OPTIONS) do
@@ -59,7 +60,7 @@ function sortMenu.view(app, overlay, window)
 			:children(
 				{
 					text(option.label):style(theme:s():w(theme:px(150)):text(theme:type("sm")):ellipsis()),
-					active and icon.view(app, { name = "check", size = theme:px(15), colour = theme.accentInk }) or div()
+					active and ui.icon(ctx, { name = "check", size = theme:px(15), colour = theme.accentInk }) or div()
 				}
 			)
 	end

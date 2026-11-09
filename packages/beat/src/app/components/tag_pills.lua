@@ -36,7 +36,7 @@ function tagPills.view(app, props)
 			:style(
 				sty()
 					:w(pillWidth):h(theme:px(28)):pad(0, theme:px(10), 0, theme:px(10)):radius(theme:radius("full")):align("center")
-					:justify("center"):bg(active ? (theme:color("accent")) : (theme:color("elevated")))
+					:justify("center"):bg(active ? (theme:color("accent")) : (theme:color("hover")))
 					:border(((theme:px(1))), active ? (theme:color("accent")) : (theme:color("border")))
 			)
 			:children(

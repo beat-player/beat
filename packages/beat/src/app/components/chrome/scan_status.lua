@@ -2,11 +2,9 @@
 -- the summary that replaces it once the scan is done.
 local wonderland = require("wonderland")
 local path = require("path")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
-local button = require("beat.app.components.button")
-local iconButton = require("beat.app.components.icon_button")
 local playingBars = require("beat.app.components.playing_bars")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -145,6 +143,7 @@ end
 
 ---@class beat.components.chrome.ScanStatusProps
 ---@field width number # The window's width, which the card is placed against
+---@field ui beat.ui.Context
 
 --- The compact scan card: a floating island while the worker is reading, with the same progress
 --- the sidebar footer keeps after it is collapsed. It only appears once there is a track to browse.
@@ -153,6 +152,7 @@ end
 ---@return wonderland.Element?
 function scanStatus.island(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local library = app.services.library
 	local scan = app.services.scan
 	if scan.job == nil or not scan.islandOpen or library.current == nil or #library.current.tracks == 0 then
@@ -174,7 +174,7 @@ function scanStatus.island(app, props)
 
 	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):canvas(function(canvas)
 		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = fraction, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
-	end):children({ div():style(sty():row():wrel(1.0):h(theme:px(22)):align("center"):justify("space-between")):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ playingBars.view(app, { playing = true }), text("Scanning music"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), iconButton.view(app, { name = "chevronUp", size = theme:px(22), onClick = { type = "hideScanIsland" } }) }), div():style(sty():row():wrel(1.0):h(theme:px(16)):align("center"):justify("space-between")):children({ text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))), button.view(app, { label = "Cancel", onClick = { type = "cancelScan" }, height = theme:px(26), width = theme:px(66) }) }), current ~= nil and text(tostring(current)):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()) or text(""):style(sty():h(theme:px(0))) })
+	end):children({ div():style(sty():row():wrel(1.0):h(theme:px(22)):align("center"):justify("space-between")):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ playingBars.view(app, { playing = true }), text("Scanning music"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), ui.iconButton(ctx, { name = "chevronUp", size = theme:px(22), onClick = { type = "hideScanIsland" } }) }), div():style(sty():row():wrel(1.0):h(theme:px(16)):align("center"):justify("space-between")):children({ text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))), ui.button(ctx, { label = "Cancel", onClick = { type = "cancelScan" }, height = theme:px(26), width = theme:px(66) }) }), current ~= nil and text(tostring(current)):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()) or text(""):style(sty():h(theme:px(0))) })
 end
 
 --- The card that replaces the scanning island once the scan is done: same place, size and
@@ -184,6 +184,7 @@ end
 ---@return wonderland.Element?
 function scanStatus.summary(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local summary = app.services.scan.summary
 	if summary == nil then return nil end
 
@@ -200,7 +201,7 @@ function scanStatus.summary(app, props)
 
 	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):onClick({ type = "dismissScanSummary" }):canvas(function(canvas)
 		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = 1, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
-	end):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ icon.view(app, { name = "check", size = theme:px(18), colour = theme:color("accent") }), text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))), text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)) })
+	end):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ ui.icon(ctx, { name = "check", size = theme:px(18), colour = theme:color("accent") }), text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))), text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)) })
 end
 
 return scanStatus

@@ -4,6 +4,9 @@
 	"bin": "main.lua",
 	"dependencies": {
 		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
+		"beat-ui": {
+			"path": "../beat-ui"
+		},
 		"wonderland": {
 			"version": "^0.1.8"
 		},

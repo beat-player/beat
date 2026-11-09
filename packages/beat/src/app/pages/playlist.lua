@@ -1,9 +1,8 @@
 -- The playlist screen: the collection view with its own cover, its kind, and the control
 -- that adds more to it.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
-local icon = require("beat.app.components.icon")
-local emptyState = require("beat.app.components.empty_state")
 local PlaylistArt = require("beat.app.components.playlist_art")
 local collection = require("beat.app.components.collection")
 
@@ -25,10 +24,11 @@ end
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
 function playlistPage.view(app, page, window)
+	local ctx = app:ui(window)
 	local playlist = app.services.collections.taxonomy:playlist(page.id --[[@as number]] )
 	if playlist == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Playlist not found",
 				actionLabel = "Playlists",
@@ -62,8 +62,8 @@ function playlistPage.view(app, page, window)
 		:style(sty():column():wrel(1.0):h(120):align("center"):justify("center"):gap(10))
 		:children(
 			{
-				icon.view(
-					app,
+				ui.icon(
+					ctx,
 					{
 						name = "playlists",
 						size = app.services.appearance.theme:px(34),
@@ -88,10 +88,16 @@ function playlistPage.view(app, page, window)
 		{
 			window = window,
 			label = "PLAYLIST",
-			icons = PlaylistArt.icons(app, { playlist = playlist }),
+			icons = PlaylistArt.icons(app, { playlist = playlist, ui = ctx }),
 			cover = |size| -> PlaylistArt.view(
 				app,
-				{ tracks = tracks, size = size, radius = app.services.appearance.theme:radius("lg"), name = playlist.name }
+				{
+					tracks = tracks,
+					size = size,
+					radius = app.services.appearance.theme:radius("lg"),
+					name = playlist.name,
+					ui = ctx
+				}
 			),
 			title = playlist.name,
 			subtitle = subtitle,

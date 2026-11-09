@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Regenerates packages/beat/src/assets/fonts/Ionicons.ttf from the Ionicons SVGs in
+// Regenerates packages/beat-ui/src/assets/fonts/Ionicons.ttf from the Ionicons SVGs in
 // packages/beat/assets/ionicons.
 //
-// The face belongs to beat's icon component (src/app/components/icon.lua), which embeds it in a
-// Lua module so a compiled binary carries it. The codepoint table below must match the GLYPHS
-// table in that component.
+// The face belongs to beat-ui's icon component (src/icon.lua), which embeds it in a Lua module so
+// a compiled binary carries it. The codepoint table below must match the GLYPHS table in that
+// component.
 //
 //   npm install --no-save svgicons2svgfont svg2ttf
 //   node tools/build-icon-font.cjs
@@ -21,7 +21,7 @@ const svg2ttf = require("svg2ttf");
 
 const root = path.resolve(__dirname, "..");
 const source = path.join(root, "packages", "beat", "assets", "ionicons");
-const output = path.join(root, "packages", "beat", "src", "assets", "fonts", "Ionicons.ttf");
+const output = path.join(root, "packages", "beat-ui", "src", "assets", "fonts", "Ionicons.ttf");
 
 const icons = [
 	["play", 0xE000, "play"],

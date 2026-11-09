@@ -1,11 +1,9 @@
 -- The album shelf: every album in the library, as cards or as rows, windowed as it scrolls.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
-local button = require("beat.app.components.button")
-local iconButton = require("beat.app.components.icon_button")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -24,14 +22,15 @@ local SORT_LABELS = {
 --- The view the shelf would switch to, drawn rather than taken from the icon face: the face has
 --- no grid, and a list from it next to a drawn grid would not match it in weight.
 ---@param app beat.App
+---@param ctx beat.ui.Context
 ---@param size number
 ---@param grid boolean # Four tiles; otherwise three rows
-local function viewButton(app, size, grid)
+local function viewButton(app, ctx, size, grid)
 	local theme = app.services.appearance.theme
 	local colour = theme:color("muted")
 	local inner = math.max(12, math.floor(size * 0.5 + 0.5))
 
-	return iconButton.surface(app, { size = size, onClick = { type = "toggleView" }, content = div():style(sty():size(inner, inner)):canvas(function(canvas)
+	return ui.iconButton(ctx, { size = size, onClick = { type = "toggleView" }, content = div():style(sty():size(inner, inner)):canvas(function(canvas)
 		local gap = math.max(2, math.floor(inner * 0.16))
 		if grid then
 			local tile = math.floor((canvas.width - gap) / 2)
@@ -67,10 +66,11 @@ end
 ---@param window wonderland.RenderWindow
 function libraryPage.view(app, page, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local library = app.services.library.current
 	if library == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Awkward. Nothing's here.",
 				actionLabel = "Choose a folder",
@@ -123,8 +123,8 @@ function libraryPage.view(app, page, window)
 		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify(stacked ? "start" : "end"))
 		:children(
 			{
-				button.view(
-					app,
+				ui.button(
+					ctx,
 					{
 						label = sortWidth < (theme:px(130)) ? "Sort" : "Sort: " .. (SORT_LABELS[sort] or sort),
 						onClick = { type = "open", overlay = "sort_menu" },
@@ -132,7 +132,7 @@ function libraryPage.view(app, page, window)
 						width = sortWidth
 					}
 				),
-				viewButton(app, viewWidth, list)
+				viewButton(app, ctx, viewWidth, list)
 			}
 		)
 
@@ -143,8 +143,8 @@ function libraryPage.view(app, page, window)
 		):children({ titleBlock, controls })
 
 	if #albums == 0 then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Awkward. Nothing's here.",
 				actionLabel = "Choose a folder",
@@ -223,7 +223,8 @@ function libraryPage.view(app, page, window)
 					album = album,
 					width = cardWidth,
 					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-					onPlay = { type = "playAlbum", id = album.id }
+					onPlay = { type = "playAlbum", id = album.id },
+					ui = ctx
 				}
 			)
 			if #row == columns or at == last then

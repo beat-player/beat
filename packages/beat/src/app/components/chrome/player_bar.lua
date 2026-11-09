@@ -1,9 +1,8 @@
 -- The bar along the bottom that follows the queue: the desktop one with transport, progress and
 -- volume, and the phone's one row that opens the individual track view.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
-local iconButton = require("beat.app.components.icon_button")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
 local volume = require("beat.app.components.volume")
@@ -14,12 +13,14 @@ local playerBar = {}
 
 ---@class beat.components.chrome.PlayerBarProps
 ---@field width number # The window's width
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.chrome.PlayerBarProps
 ---@return wonderland.Element
 function playerBar.view(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local theme = app.services.appearance.theme
 	local track = app.services.playback:current()
 	local player = app.services.playback.player
@@ -57,21 +58,21 @@ function playerBar.view(app, props)
 		:style(sty():row():align("center"):justify("center"):gap(theme:px(10)))
 		:children(
 			{
-				iconButton.view(
-					app,
+				ui.iconButton(
+					ctx,
 					{ name = "shuffle", size = theme:px(28), onClick = { type = "shuffle" }, active = player.queue?.shuffle ?? false }
 				),
-				iconButton.view(app, { name = "previous", size = theme:px(28), onClick = { type = "previous" } }),
+				ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = { type = "previous" } }),
 				div()
 					:style(
 						sty()
 							:size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
 							:justify("center")
 					):onClick({ type = "togglePlay" })
-					:children(icon.view(app, { name = isPlaying ? "pause" : "play", size = (theme:px(20)), colour = theme.accentInk })),
-				iconButton.view(app, { name = "next", size = theme:px(28), onClick = { type = "next" } }),
-				iconButton.view(
-					app,
+					:children(ui.icon(ctx, { name = isPlaying ? "pause" : "play", size = (theme:px(20)), colour = theme.accentInk })),
+				ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = { type = "next" } }),
+				ui.iconButton(
+					ctx,
 					{
 						name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
 						size = theme:px(28),
@@ -114,11 +115,18 @@ function playerBar.view(app, props)
 					:children(
 						{
 							progress.view(app, { track = track, player = player, width = progressWidth }),
-							volume.view(app, { width = progressWidth, trackWidth = progressWidth - theme:px(34) * 2 - theme:px(8) * 2 })
+							volume.view(
+								app,
+								{
+									width = progressWidth,
+									trackWidth = progressWidth - theme:px(34) * 2 - theme:px(8) * 2,
+									ui = ctx
+								}
+							)
 						}
 					),
-				iconButton.view(
-					app,
+				ui.iconButton(
+					ctx,
 					{ name = "chevronUp", size = theme:px(30), onClick = { type = "open", overlay = "now_playing" } }
 				)
 			}
@@ -137,6 +145,7 @@ end
 ---@return wonderland.Element
 function playerBar.mobile(app, props)
 	local width = props.width
+	local ctx = props.ui
 	local theme = app.services.appearance.theme
 	local track = app.services.playback:current()
 	local height = theme:px(64)
@@ -171,7 +180,7 @@ function playerBar.mobile(app, props)
 		if fraction > 0 then
 			canvas:rect(0, canvas.height - line, math.floor(canvas.width * fraction), line, theme:color("accent"))
 		end
-	end):children({ cover.view(app, { album = album, size = artSize, radius = theme:radius("sm") }), div():style(sty():column():w(math.max(theme:px(70), textWidth)):hrel(1.0):justify("center"):gap(1)):children({ text(track.title):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()), text(track.artist):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("xs")):fg(theme:color("muted")):ellipsis()) }), div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({ type = "togglePlay" }):children(icon.view(app, { name = playing ? "pause" : "play", size = (theme:px(19)), colour = theme.accentInk })), iconButton.view(app, { name = "next", size = nextSize, onClick = { type = "next" } }) })
+	end):children({ cover.view(app, { album = album, size = artSize, radius = theme:radius("sm") }), div():style(sty():column():w(math.max(theme:px(70), textWidth)):hrel(1.0):justify("center"):gap(1)):children({ text(track.title):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()), text(track.artist):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("xs")):fg(theme:color("muted")):ellipsis()) }), div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({ type = "togglePlay" }):children(ui.icon(ctx, { name = playing ? "pause" : "play", size = (theme:px(19)), colour = theme.accentInk })), ui.iconButton(ctx, { name = "next", size = nextSize, onClick = { type = "next" } }) })
 end
 
 return playerBar

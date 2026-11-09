@@ -2,8 +2,8 @@
 -- straight away, but one that has is also what its automatic playlist is built from. The
 -- dialog says how many tracks are involved before anything is removed.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
-local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -62,16 +62,11 @@ function tagDelete.view(app, overlay, window)
 	if tag == nil then return nil end
 
 	local theme = app.services.appearance.theme
-	local panelWidth = metrics.panelWidth(app, window, 380)
+	local ctx = app:ui(window)
+	local panelWidth = ctx:panelWidth(380)
 	local pad = theme:px(18)
 	local panelHeight = theme:px(154)
 
-	local cancelStyle = sty()
-		:w(theme:px(80)):h(theme:px(30)):radius(theme:radius("full")):align("center"):justify("center")
-		:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
-	local cancelHover = sty()
-		:w(theme:px(80)):h(theme:px(30)):radius(theme:radius("full")):align("center"):justify("center")
-		:bg(theme:color("hover")):border(theme:px(1), theme:color("border"))
 	local deleteStyle = sty()
 		:w(theme:px(88)):h(theme:px(30)):radius(theme:radius("full")):align("center"):justify("center")
 		:bg(theme:color("danger"))
@@ -98,9 +93,15 @@ function tagDelete.view(app, overlay, window)
 					:style(sty():row():wrel(1.0):h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
 					:children(
 						{
-							div()
-								:style(cancelStyle):hover(cancelHover):onClick({ type = "cancelDeleteTag" })
-								:children(text("Cancel"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text")))),
+							ui.button(
+								ctx,
+								{
+									label = "Cancel",
+									onClick = { type = "cancelDeleteTag" },
+									height = theme:px(30),
+									width = theme:px(80)
+								}
+							),
 							div()
 								:style(deleteStyle):hover(deleteHover):onClick({ type = "confirmDeleteTag" })
 								:children(text("Delete"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("bg"))))

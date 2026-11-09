@@ -1,8 +1,7 @@
 -- One collection is a cover, a title block, and a track table. Albums and playlist pages
 -- differ in the words and the one extra control they offer, not in how the page is built.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
-local iconButton = require("beat.app.components.icon_button")
+local ui = require("beat-ui")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -36,6 +35,7 @@ local collection = {}
 function collection.view(app, props)
 	local window = props.window
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local mobile = metrics.mobile(app, window.width)
 	local stacked = mobile and window.height >= theme:px(560)
 	local content = metrics.contentWidth(app, window.width)
@@ -82,11 +82,11 @@ function collection.view(app, props)
 					:size(theme:px(52), theme:px(52)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
 					:justify("center")
 			):onClick(props.playAction)
-			:children(icon.view(app, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })),
-		iconButton.view(app, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
+			:children(ui.icon(ctx, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })),
+		ui.iconButton(ctx, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
 	}
 	if props.addAction ~= nil then
-		actions[#actions + 1] = iconButton.view(app, { name = "add", size = theme:px(30), onClick = props.addAction })
+		actions[#actions + 1] = ui.iconButton(ctx, { name = "add", size = theme:px(30), onClick = props.addAction })
 	end
 
 	local info = div()

@@ -1,8 +1,9 @@
 -- The album screen: its cover, its details and its track table. The artist's name opens the
 -- artist's page.
+local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
 local collection = require("beat.app.components.collection")
 
 ---@type beat.PageSurface
@@ -40,11 +41,12 @@ end
 ---@return wonderland.Element
 function albumPage.view(app, page, window)
 	local id = assert(page.id)
+	local ctx = app:ui(window)
 	local library = app.services.library.current
 	local album = library ~= nil ? (library:album(id)) : nil
 	if album == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Album not found",
 				copy = "The scan no longer has it.",

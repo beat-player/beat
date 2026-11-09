@@ -1,10 +1,9 @@
 -- Search is one field over artists, albums and tracks; with nothing typed it shows what was just
 -- added, narrowed by whichever tags are selected.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
-local section = require("beat.app.components.section")
 local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -93,11 +92,12 @@ end
 ---@param window wonderland.RenderWindow
 function searchPage.view(app, page, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Search your library",
 				copy = "Choose a folder first.",
@@ -141,7 +141,8 @@ function searchPage.view(app, page, window)
 					album = album,
 					width = cardWidth,
 					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-					onPlay = { type = "playAlbum", id = album.id }
+					onPlay = { type = "playAlbum", id = album.id },
+					ui = ctx
 				}
 			)
 		end
@@ -152,7 +153,7 @@ function searchPage.view(app, page, window)
 					text("Search your library"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
 					text("Artists, albums and tracks are all one field.")
 						:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-					section.view(app, { title = "Recently added" }),
+					ui.section(ctx, { title = "Recently added" }),
 					div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
 				}
 			)
@@ -184,8 +185,8 @@ function searchPage.view(app, page, window)
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then
-		children[#children + 1] = section.view(
-			app,
+		children[#children + 1] = ui.section(
+			ctx,
 			{
 				title = "Albums",
 				action = #albums > albumLimit ? { type = "navigate", page = { kind = "searchAll", category = "albums" } } : nil
@@ -203,7 +204,8 @@ function searchPage.view(app, page, window)
 							album = album,
 							width = cardWidth,
 							onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-							onPlay = { type = "playAlbum", id = album.id }
+							onPlay = { type = "playAlbum", id = album.id },
+							ui = ctx
 						}
 					)
 				end
@@ -213,8 +215,8 @@ function searchPage.view(app, page, window)
 	end
 
 	if artistLimit > 0 then
-		children[#children + 1] = section.view(
-			app,
+		children[#children + 1] = ui.section(
+			ctx,
 			{
 				title = "Artists",
 				action = #artists > artistLimit ? { type = "navigate", page = { kind = "searchAll", category = "artists" } } : nil
@@ -240,8 +242,8 @@ function searchPage.view(app, page, window)
 	end
 
 	if trackLimit > 0 then
-		children[#children + 1] = section.view(
-			app,
+		children[#children + 1] = ui.section(
+			ctx,
 			{
 				title = "Tracks",
 				action = #tracks > trackLimit ? { type = "navigate", page = { kind = "searchAll", category = "tracks" } } : nil
@@ -270,8 +272,8 @@ function searchPage.view(app, page, window)
 			:style(sty():wrel(1.0):h(theme:px(300)))
 			:children(
 				{
-					emptyState.view(
-						app,
+					ui.emptyState(
+						ctx,
 						{
 							title = "No results",
 							copy = "Try a different artist, album or title.",

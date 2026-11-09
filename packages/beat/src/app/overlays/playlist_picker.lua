@@ -1,7 +1,6 @@
 -- Where a track or a whole album goes: one row per playlist, with how many tracks it would hold.
 local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
-local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -84,10 +83,11 @@ function playlistPicker.view(app, overlay, window)
 	local panelHeight = theme:px(20) + theme:px(16) + math.max(0, #rows) * theme:px(38) + math.max(0, #rows) * theme:px(4) + theme:px(
 		4
 	)
+	local ctx = app:ui(window)
 	local panel = div()
 		:style(
 			sty()
-				:w(metrics.panelWidth(app, window, 330)):h(panelHeight):column():pad(theme:px(10)):gap(theme:px(4))
+				:w(ctx:panelWidth(330)):h(panelHeight):column():pad(theme:px(10)):gap(theme:px(4))
 				:radius(theme:radius("md")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				:shadow(0, theme:px(12), theme:px(30), "#00000080")
 		):onClick({ type = "keep" })

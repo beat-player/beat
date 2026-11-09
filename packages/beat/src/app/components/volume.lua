@@ -1,6 +1,6 @@
 -- The volume control: a mute toggle and a slider over the settings' volume.
 local wonderland = require("wonderland")
-local iconButton = require("beat.app.components.icon_button")
+local ui = require("beat-ui")
 local slider = require("beat.app.components.slider")
 
 local div, sty = wonderland.div, wonderland.sty
@@ -10,12 +10,14 @@ local volume = {}
 ---@class beat.components.VolumeProps
 ---@field width number # The whole control, icon and slider together
 ---@field trackWidth number? # The slider track, when it should line up with another slider's track
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.VolumeProps
 ---@return wonderland.Element
 function volume.view(app, props)
 	local theme = app.services.appearance.theme
+	local ctx = props.ui
 	local width = props.width
 	local trackWidth = props.trackWidth
 	local value = app.services.settings.values.isMuted ? 0 : app.services.settings.values.volume
@@ -29,8 +31,8 @@ function volume.view(app, props)
 				div()
 					:style(sty():w(iconSlot):h(theme:px(22)):row():align("center"):justify("center"))
 					:children(
-						iconButton.view(
-							app,
+						ui.iconButton(
+							ctx,
 							{
 								name = app.services.settings.values.isMuted ? "mute" : "volume",
 								size = theme:px(22),

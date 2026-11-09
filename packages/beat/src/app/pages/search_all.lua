@@ -1,10 +1,10 @@
 -- Everything search found in one category, scrolled as a grid of albums or a list of artists or
 -- tracks.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
 local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -85,11 +85,12 @@ end
 function searchAll.view(app, page, window)
 	local category = page.category
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Search your library",
 				copy = "Choose a folder first.",
@@ -99,7 +100,7 @@ function searchAll.view(app, page, window)
 		)
 	end
 	if search.query == "" then
-		return emptyState.view(app, { title = "Search your library", copy = "Artists, albums and tracks are all one field." })
+		return ui.emptyState(ctx, { title = "Search your library", copy = "Artists, albums and tracks are all one field." })
 	end
 
 	local albums, artists, tracks = search:results()
@@ -164,7 +165,8 @@ function searchAll.view(app, page, window)
 						album = album,
 						width = cardWidth,
 						onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-						onPlay = { type = "playAlbum", id = album.id }
+						onPlay = { type = "playAlbum", id = album.id },
+						ui = ctx
 					}
 				)
 			end

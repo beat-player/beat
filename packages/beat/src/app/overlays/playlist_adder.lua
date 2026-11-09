@@ -1,9 +1,7 @@
 -- The panel that adds albums to a playlist, opened from the playlist's own +.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
-local field = require("beat.app.components.field")
-local iconButton = require("beat.app.components.icon_button")
-local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -63,7 +61,8 @@ function playlistAdder.view(app, overlay, window)
 	local library = app.services.library.current
 	if playlist == nil or library == nil then return nil end
 	local theme = app.services.appearance.theme
-	local panelWidth = metrics.panelWidth(app, window, 520)
+	local ctx = app:ui(window)
+	local panelWidth = ctx:panelWidth(520)
 	local rowWidth = panelWidth - theme:px(32)
 	---@type beat.Album[]
 	local albums
@@ -76,19 +75,14 @@ function playlistAdder.view(app, overlay, window)
 	local rows = {}
 	for at = 1, math.min(8, #albums) do
 		local album = albums[at]
-		rows[#rows + 1] = div()
-			:style(
-				sty()
-					:row():wrel(1.0):h(theme:px(42)):gap(theme:px(10)):pad(0, theme:px(6), 0, theme:px(6)):align("center")
-					:radius(theme:radius("sm"))
-			)
-			:hover(
-				sty()
-					:row():wrel(1.0):h(theme:px(42)):gap(theme:px(10)):pad(0, theme:px(6), 0, theme:px(6)):align("center")
-					:radius(theme:radius("sm")):bg(theme:color("hover"))
-			):onClick({ type = "playlistAddAlbum", id = album.id })
-			:children(
-				{
+		rows[#rows + 1] = ui.listRow(
+			ctx,
+			{
+				height = theme:px(42),
+				gap = theme:px(10),
+				padding = theme:px(6),
+				onClick = { type = "playlistAddAlbum", id = album.id },
+				children = {
 					cover.view(app, { album = album, size = theme:px(32), radius = theme:radius("sm") }),
 					div()
 						:style(sty():column():w(rowWidth - theme:px(78)):gap(0))
@@ -99,9 +93,13 @@ function playlistAdder.view(app, overlay, window)
 								text(album.artist):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("muted")):ellipsis())
 							}
 						),
-					iconButton.view(app, { name = "add", size = theme:px(26), onClick = { type = "playlistAddAlbum", id = album.id } })
+					ui.iconButton(
+						ctx,
+						{ name = "add", size = theme:px(26), onClick = { type = "playlistAddAlbum", id = album.id } }
+					)
 				}
-			)
+			}
+		)
 	end
 
 	local panelHeight = theme:px(520)
@@ -122,11 +120,11 @@ function playlistAdder.view(app, overlay, window)
 								:style(
 									theme:s():w(rowWidth - theme:px(28)):text(theme:type("lg")):weight("bold"):fg(theme:color("text")):ellipsis()
 								),
-							iconButton.view(app, { name = "close", size = theme:px(28), onClick = { type = "dismiss" } })
+							ui.iconButton(ctx, { name = "close", size = theme:px(28), onClick = { type = "dismiss" } })
 						}
 					),
-				field.view(
-					app,
+				ui.field(
+					ctx,
 					{
 						name = "playlistAddSearch",
 						value = state.query,

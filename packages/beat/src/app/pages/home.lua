@@ -2,13 +2,11 @@
 -- still being read.
 local wonderland = require("wonderland")
 local path = require("path")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
-local button = require("beat.app.components.button")
 local cover = require("beat.app.components.cover")
-local emptyState = require("beat.app.components.empty_state")
 local playingBars = require("beat.app.components.playing_bars")
-local section = require("beat.app.components.section")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -43,6 +41,7 @@ end
 ---@param window wonderland.RenderWindow
 function home.view(app, page, window)
 	local theme = app.services.appearance.theme
+	local ctx = app:ui(window)
 	local library = app.services.library.current
 	local scan = app.services.scan
 	if library == nil or (scan.job ~= nil and #library.tracks == 0) then
@@ -67,15 +66,15 @@ function home.view(app, page, window)
 				scanning[#scanning + 1] = text(format.count(progress.skipped, "file") .. " skipped")
 					:style(theme:s():text(theme:type("xs")):fg(theme:color("danger")))
 			end
-			scanning[#scanning + 1] = button.view(
-				app,
+			scanning[#scanning + 1] = ui.button(
+				ctx,
 				{ label = "Cancel scan", onClick = { type = "cancelScan" }, height = theme:px(30), width = theme:px(110) }
 			)
 			return div():style(sty():fill():column():align("center"):justify("center"):gap(theme:px(14))):children(scanning)
 		end
 
-		return emptyState.view(
-			app,
+		return ui.emptyState(
+			ctx,
 			{
 				title = "Your library is empty",
 				copy = "Choose a folder and every track in it appears here.",
@@ -104,7 +103,8 @@ function home.view(app, page, window)
 					album = album,
 					width = cardWidth,
 					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-					onPlay = { type = "playAlbum", id = album.id }
+					onPlay = { type = "playAlbum", id = album.id },
+					ui = ctx
 				}
 			)
 		end
@@ -115,13 +115,13 @@ function home.view(app, page, window)
 	local children = {}
 	local height = 0
 	if #listened > 0 then
-		children[#children + 1] = section.view(app, { title = "Recently listened" })
+		children[#children + 1] = ui.section(ctx, { title = "Recently listened" })
 		children[#children + 1] = cardRow(listened)
 		height = height + sectionHeight + cardHeight + gap * 2
 	end
-	children[#children + 1] = section.view(app, { title = "Recently added" })
+	children[#children + 1] = ui.section(ctx, { title = "Recently added" })
 	children[#children + 1] = cardRow(recent)
-	children[#children + 1] = section.view(app, { title = "Your albums" })
+	children[#children + 1] = ui.section(ctx, { title = "Your albums" })
 	children[#children + 1] = cardRow(library.albums, columns)
 	height = height + sectionHeight + cardHeight + sectionHeight + cardHeight + gap * 4
 
@@ -145,7 +145,7 @@ function home.view(app, page, window)
 					}
 				)
 		end
-		children[#children + 1] = section.view(app, { title = "Artists" })
+		children[#children + 1] = ui.section(ctx, { title = "Artists" })
 		children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
 		height = height + sectionHeight + cardHeight + gap * 2
 	end

@@ -3,6 +3,7 @@
 -- by registering an action rather than by writing a second menu, so the look and the closing rules
 -- stay in one place.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -65,6 +66,7 @@ function menu.view(app, overlay, window)
 
 	local entries = app.registry:actions(state.menu, ctx)
 	local theme = app.services.appearance.theme
+	local uiCtx = app:ui(window)
 	local width = theme:px(WIDTH[state.menu] or 218)
 	local rowHeight = theme:px(34)
 	local height = theme:px(8 * 2 + 34 * #entries + 2 * math.max(0, #entries - 1))
@@ -76,15 +78,15 @@ function menu.view(app, overlay, window)
 	for _, entry in ipairs(entries) do
 		local label = theme:s():text(theme:type("sm")):fg(theme:color(entry.tone or "text")):ellipsis()
 		if entry.tone == "danger" then label = label:weight("semibold") end
-		rows[#rows + 1] = div()
-			:style(
-				sty():row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
-			)
-			:hover(
-				sty()
-					:row():wrel(1.0):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
-					:bg(theme:color("hover"))
-			):onClick(entry.message):children(text(entry.title):style(label))
+		rows[#rows + 1] = ui.listRow(
+			uiCtx,
+			{
+				height = rowHeight,
+				padding = theme:px(12),
+				onClick = entry.message,
+				children = { text(entry.title):style(label) }
+			}
+		)
 	end
 
 	local panel = div()

@@ -1,7 +1,7 @@
 -- The rail down the left edge: where the app navigates from, the playlists played last, and the
 -- name a row gives back while the pointer is on it.
 local wonderland = require("wonderland")
-local icon = require("beat.app.components.icon")
+local ui = require("beat-ui")
 local logo = require("beat.app.components.logo")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -15,12 +15,14 @@ local sidebar = {}
 ---@class beat.components.chrome.SidebarProps
 ---@field width number # The window's width
 ---@field height number # The room the rail has
+---@field ui beat.ui.Context
 
 ---@param app beat.App
 ---@param props beat.components.chrome.SidebarProps
 ---@return wonderland.Element
 function sidebar.view(app, props)
 	local width, height = props.width, props.height
+	local ctx = props.ui
 	local theme = app.services.appearance.theme
 	local collapsed = app.services.settings.values.sidebarCollapsed or width < 1040
 	local side = metrics.sidebarWidth(app, width)
@@ -40,30 +42,30 @@ function sidebar.view(app, props)
 	local navHeight = navRowHeight * #nav + math.max(0, #nav - 1) * theme:px(2) + theme:px(20)
 	local navChildren = {}
 	for _, item in ipairs(nav) do
-		local route = item.page or { kind = item.kind }
+		local route = (item.page or { kind = item.kind }) --[[@as { kind: string, id: number? }]]
 		local active = current.kind == route.kind and (route.id == nil or current.id == route.id)
 		local fg = active ? (theme:color("text")) : (theme:color("muted"))
-		local bg = active ? (theme:color("elevated")) : (theme:color("sidebar", 0))
-		local rowStyle = sty()
-			:row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):radius(theme:radius("sm"))
-			:align("center"):bg(bg)
-		local rowHover = sty()
-			:row():wrel(1.0):h(navRowHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):radius(theme:radius("sm"))
-			:align("center"):bg(theme:color("hover"))
-		if collapsed then
-			rowStyle:justify("center")
-			rowHover:justify("center")
-		end
-		local row = div():style(rowStyle):hover(rowHover):onClick({ type = "navigate", page = route })
 
-		row:children(
-			icon.view(app, { name = item.icon, size = theme:px(19), colour = active ? (theme:color("accent")) : fg })
-		)
+		local rowChildren = {
+			ui.icon(ctx, { name = item.icon, size = theme:px(19), colour = active ? (theme:color("accent")) : fg })
+		}
 		if not collapsed then
-			row:children(text(item.label):style(theme:s():text(theme:type("base")):weight("semibold"):fg(fg)))
+			rowChildren[#rowChildren + 1] =
+				text(item.label):style(theme:s():text(theme:type("base")):weight("semibold"):fg(fg))
 		end
 
-		navChildren[#navChildren + 1] = row
+		navChildren[#navChildren + 1] = ui.listRow(
+			ctx,
+			{
+				height = navRowHeight,
+				gap = theme:px(12),
+				padding = theme:px(10),
+				justify = collapsed and "center" or nil,
+				active = active,
+				onClick = { type = "navigate", page = route },
+				children = rowChildren
+			}
+		)
 	end
 
 	local brandChildren = { logo.view(app, { size = theme:px(22), colour = theme:color("accent") }) }
@@ -97,28 +99,28 @@ function sidebar.view(app, props)
 	for _, playlist in ipairs(playlists) do
 		local tracks = PlaylistArt.tracks(app, playlist)
 		local active = current.kind == "playlist" and current.id == playlist.id
-		local style = sty()
-			:row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center"):justify("space-between"):radius(theme:radius("sm"))
-			:bg(active ? (theme:color("elevated")) : (theme:color("sidebar", 0)))
-		local over = sty()
-			:row():wrel(1.0):h(rowHeight):gap(theme:px(10)):align("center"):justify("space-between"):radius(theme:radius("sm"))
-			:bg(theme:color("hover"))
-		if collapsed then
-			style:justify("center")
-			over:justify("center")
-		end
-
-		local row = div()
-			:style(style):hover(over):onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id } })
-			:children(PlaylistArt.view(app, { tracks = tracks, size = artSize, name = playlist.name }))
-
+		local rowChildren = {
+			PlaylistArt.view(app, { tracks = tracks, size = artSize, name = playlist.name, ui = ctx })
+		}
 		if not collapsed then
-			row:children(text(format.count(#tracks, "track")):style(theme:s():text(theme:type("xs")):fg(theme:color("faint"))))
+			rowChildren[#rowChildren + 1] =
+				text(format.count(#tracks, "track")):style(theme:s():text(theme:type("xs")):fg(theme:color("faint")))
 		end
 
 		-- A row that is not being pointed at says nothing; the tooltip is where a playlist gets
 		-- its name back. The list's own hit test is what knows which row the pointer is over.
-		rows[#rows + 1] = row
+		rows[#rows + 1] = ui.listRow(
+			ctx,
+			{
+				height = rowHeight,
+				gap = theme:px(10),
+				padding = 0,
+				justify = collapsed and "center" or "space-between",
+				active = active,
+				onClick = { type = "navigate", page = { kind = "playlist", id = playlist.id } },
+				children = rowChildren
+			}
+		)
 	end
 
 	local createStyle = sty()
@@ -144,7 +146,7 @@ function sidebar.view(app, props)
 						sty()
 							:size(artSize, artSize):radius(theme:radius("sm")):bg(theme:color("accent", 0.18)):align("center")
 							:justify("center")
-					):children(icon.view(app, { name = "add", size = theme:px(18), colour = theme:color("accent") }))
+					):children(ui.icon(ctx, { name = "add", size = theme:px(18), colour = theme:color("accent") }))
 			}
 		)
 	if not collapsed then
