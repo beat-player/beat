@@ -18,6 +18,7 @@ paths.directory = function() return configDirectory end
 test.afterEach(function()
 	if App.services ~= nil and App.services.playback ~= nil then App.services.playback.player:close() end
 	App.window = nil
+	App.instance = nil
 	App.layoutPlugin = nil
 	fs.delete(paths.file("settings.json"))
 end)
@@ -378,4 +379,47 @@ test.skipIf(not canRender)("draws the tray setting at desktop and phone widths",
 	local plainOk, plainErr = plain:save(shotPath("beat-tray-setting-none-1200x760.png"))
 	test.truthy(plainOk, tostring(plainErr))
 	plain:close()
+end)
+
+--- A claim on the config directory that reports one launch asking for the window.
+---@return beat.Instance
+local function askedOnce()
+	local asked = true
+	return {
+		poll = function()
+			local was = asked
+			asked = false
+			return was
+		end,
+		release = function() end
+	}
+end
+
+test.it("another launch brings the window out of the tray", function()
+	App:init({ scan = false })
+	App.services.settings.values.minimizeToTray = true
+	local window = fakeWindow()
+	App.window = window
+	local _, restore = spyFlush()
+	App:event({ name = "minimize", window = asWindow(window) }, fakeHandler())
+	restore()
+
+	App.instance = askedOnce()
+	App:tick(0, window --[[@as wonderland.RenderWindow]])
+	App:tick(0.5, window --[[@as wonderland.RenderWindow]])
+
+	test.equal(window.calls.show, 1, "the window came back once, for the one launch")
+	test.equal(window.calls.removeTray, 1, "and the icon went")
+end)
+
+test.it("another launch brings a minimized window up from the taskbar", function()
+	App:init({ scan = false })
+	local window = fakeWindow()
+	App.window = window
+
+	App.instance = askedOnce()
+	App:tick(0, window --[[@as wonderland.RenderWindow]])
+
+	test.equal(window.calls.show, 1)
+	test.equal(window.calls.removeTray, nil, "there was no icon to take away")
 end)

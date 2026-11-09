@@ -112,6 +112,7 @@ local TRAY_MESSAGES = {
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
 ---@field trayShown boolean? # True while the minimize-to-tray icon is in the notification area
+---@field instance beat.Instance? # The claim on the config directory this copy runs under; another launch asks through it for the window
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
 ---@field pluginStates beat.PluginStatus[] # Every plugin the page lists: loaded, off, failed, doesn't fit. Not `plugins`: that is wonderland's own list of its screen plugins, and the window's events are walked down it
 ---@field services beat.Services # The app's services by name: `app.services.search`
@@ -323,6 +324,18 @@ function App:showFromTray(window)
 	self.trayShown = false
 	if window.show ~= nil then window:show() end
 	if window.removeTray ~= nil then window:removeTray() end
+end
+
+--- What another launch of beat asks for: this copy's window, in front -- out of the tray if it is
+--- there, up from the taskbar if it is minimized. A backend that cannot raise a window leaves it
+--- where it is.
+---@param window wonderland.RenderWindow & beat.WindowCalls
+function App:bringForward(window)
+	if self.trayShown then
+		self:showFromTray(window)
+	elseif window.show ~= nil then
+		window:show()
+	end
 end
 
 --- Writes what services keep until a moment later: a setting still settling, where listening got
@@ -767,6 +780,10 @@ end
 ---@return number
 function App:tick(now, window)
 	self.window = window
+	if self.instance ~= nil and self.instance:poll() then
+		---@cast window wonderland.RenderWindow & beat.WindowCalls
+		self:bringForward(window)
+	end
 	local changed, serviceBusy = false, false
 	-- Each service does what it does on its own -- a scan coming in, a toast fading -- in the
 	-- order they were made, so a service steps after everything it depends on.

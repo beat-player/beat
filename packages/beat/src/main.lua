@@ -10,7 +10,19 @@ local function main()
 	elseif worker == "inspect" then
 		require("beat.workers.inspect")
 	else
-		require("beat.app"):run()
+		-- A launch while beat is already running brings that copy forward instead of starting a
+		-- second one; see `beat.instance`. Workers above are copies the app started itself and
+		-- never take part.
+		local paths = require("beat.paths")
+		local handedOver, claim, claimError = require("beat.instance").start(paths.directory())
+		if handedOver then return end
+		if claimError ~= nil then
+			require("beat.log").write("warn", "running without the single-instance claim: " .. claimError)
+		end
+
+		local App = require("beat.app")
+		App.instance = claim
+		App:run()
 	end
 end
 
