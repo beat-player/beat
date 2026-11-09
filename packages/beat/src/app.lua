@@ -16,6 +16,9 @@ local Signal = require("beat.app.signal")
 -- Written by build.lua from assets/icon-256.png, so a compiled binary carries it too.
 local iconData = require("beat.app.icon")
 
+-- The PNG decoded once: the window, its title bar and the tray all take the same bytes.
+local iconCache
+
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
 -- overlays of one feature; outside plugins are loaded after them, from the config directory's
 -- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
@@ -26,6 +29,13 @@ local MEDIA_MESSAGES = {
 	play = "play",
 	pause = "pause",
 	stop = "stop",
+	next = "next",
+	previous = "previous"
+}
+
+-- What the tray menu's playback items mean to the app: the same messages the player bar sends.
+local TRAY_MESSAGES = {
+	toggle = "togglePlay",
 	next = "next",
 	previous = "previous"
 }
@@ -73,6 +83,10 @@ local MEDIA_MESSAGES = {
 ---@alias beat.AppEvent
 --- | winit.Event
 --- | { name: "windowClose" }
+--- | { window: winit.Window, name: "minimize" }
+--- | { window: winit.Window, name: "restore" }
+--- | { window: winit.Window, name: "trayClick" }
+--- | { window: winit.Window, name: "trayMenu", id: string }
 --- | { name: "fileDrop", paths: string[]? }
 --- | { name: "mediaKey", action: string }
 --- | { name: "mousePress" }
@@ -81,6 +95,10 @@ local MEDIA_MESSAGES = {
 ---@class beat.WindowCalls
 ---@field setIcon (fun(self: wonderland.RenderWindow, width: number, height: number, rgba: string))?
 ---@field captureMediaKeys (fun(self: wonderland.RenderWindow): string[])?
+---@field hide (fun(self: wonderland.RenderWindow))? # Off the screen and the taskbar; the loop and its media keys keep working
+---@field show (fun(self: wonderland.RenderWindow))? # Back on screen, restored and in front
+---@field setTray (fun(self: wonderland.RenderWindow, tray: winit.Tray))? # The notification-area icon and its menu
+---@field removeTray (fun(self: wonderland.RenderWindow))? # Takes the icon away
 
 ---@class beat.App: wonderland.App
 ---@field window wonderland.RenderWindow?
@@ -93,6 +111,7 @@ local MEDIA_MESSAGES = {
 ---@field ticker wonderland.plugin.UI.Ticker?
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
+---@field trayShown boolean? # True while the minimize-to-tray icon is in the notification area
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
 ---@field pluginStates beat.PluginStatus[] # Every plugin the page lists: loaded, off, failed, doesn't fit. Not `plugins`: that is wonderland's own list of its screen plugins, and the window's events are walked down it
 ---@field services beat.Services # The app's services by name: `app.services.search`
@@ -196,16 +215,32 @@ function App:closeTransient()
 	end
 end
 
+--- Beat's logo, decoded once for both the window's icon and the tray's: the same picture, and the
+--- same bytes either backend takes.
+---@return { width: number, height: number, rgba: string }?
+function App:icon()
+	if iconCache == nil then
+		local icon = artwork.decodePNG(iconData)
+		if icon == nil then return nil end
+		iconCache = {
+			width = icon.width,
+			height = icon.height,
+			rgba = ffi.string(icon.pixels, icon.width * icon.height * 4)
+		}
+	end
+	return iconCache
+end
+
 --- Gives the window the logo as its icon, where the backend can take one. X11 reads it from the
 --- `_NET_WM_ICON` property; a backend without `setIcon` leaves the window as it was.
 ---@param window wonderland.RenderWindow & beat.WindowCalls
 function App:setIcon(window)
 	if self.iconSet or window.setIcon == nil then return end
 
-	local icon = artwork.decodePNG(iconData)
+	local icon = self:icon()
 	if icon == nil then return end
 
-	window:setIcon(icon.width, icon.height, ffi.string(icon.pixels, icon.width * icon.height * 4))
+	window:setIcon(icon.width, icon.height, icon.rgba)
 	self.iconSet = true
 end
 
@@ -228,6 +263,76 @@ function App:takeMediaKeys(window)
 	end
 end
 
+--- The icon, tooltip and menu the notification area shows, from what is loaded and playing. The
+--- tooltip names the track; the menu mirrors the player bar's controls, in the order a menu reads.
+---@return winit.Tray?
+function App:trayData()
+	local icon = self:icon()
+	if icon == nil then return nil end
+
+	local playback = self.services.playback
+	local current = playback:current()
+	local tooltip = "beat"
+	if current ~= nil then
+		tooltip = current.artist ~= "" ? (current.title .. " – " .. current.artist) : current.title
+	end
+
+	return {
+		icon = { width = icon.width, height = icon.height, rgba = icon.rgba },
+		tooltip = tooltip,
+		menu = {
+			{ id = "toggle", label = playback.player:isPlaying() ? "Pause" : "Play" },
+			{ id = "next", label = "Next" },
+			{ id = "previous", label = "Previous" },
+			{ separator = true },
+			{ id = "show", label = "Show beat", default = true },
+			{ id = "quit", label = "Quit" }
+		}
+	}
+end
+
+--- Keeps the icon in step with what is loaded and playing. Only while it is showing: a window
+--- that was never minimized has no icon to update.
+function App:updateTray()
+	if not self.trayShown then return end
+	local window = self.window
+	if window == nil or window.setTray == nil then return end
+	local tray = self:trayData()
+	if tray ~= nil then window:setTray(tray) end
+end
+
+--- A minimized window goes off the screen and the taskbar, with its loop, media keys and sound
+--- still running. The icon that brings it back goes into the notification area, and what the
+--- services would have written on close is written now: the process may be killed while hidden.
+---@param window wonderland.RenderWindow & beat.WindowCalls
+function App:minimizeToTray(window)
+	if window.hide == nil or window.setTray == nil then return end
+	local tray = self:trayData()
+	if tray == nil then return end
+	self.window = window
+	window:hide()
+	self.trayShown = true
+	window:setTray(tray)
+	self:flush()
+end
+
+--- Brings a hidden window back, restored and in front, and takes the icon away. A click on the
+--- icon and the menu's default item both come here.
+---@param window wonderland.RenderWindow & beat.WindowCalls
+function App:showFromTray(window)
+	self.trayShown = false
+	if window.show ~= nil then window:show() end
+	if window.removeTray ~= nil then window:removeTray() end
+end
+
+--- Writes what services keep until a moment later: a setting still settling, where listening got
+--- to. The close button and the tray's Quit both take the app away, so both call this.
+function App:flush()
+	for _, service in ipairs(self.serviceOrder) do
+		if service.flush ~= nil then service:flush() end
+	end
+end
+
 ---@param opts { scan: boolean?, plugins: table[]? }?
 function App:init(opts)
 	opts = opts or {}
@@ -237,6 +342,7 @@ function App:init(opts)
 	self.queue = {}
 	self.delivering = false
 	self.uiContext = nil
+	self.trayShown = nil
 	self.messages = Signal.new()
 	self.registry = Registry.new(self)
 	-- Read once, before any service exists, because what is switched off decides which plugin
@@ -469,6 +575,9 @@ function App:act(message)
 	-- Whatever the message changed is worth a frame now rather than one at the idle interval,
 	-- which is longer than the animations it starts.
 	self:wake()
+	-- While the window sits in the tray the menu names the track and its play state, so a message
+	-- that changes either also refreshes the icon.
+	self:updateTray()
 end
 
 --- Hands a message to whatever it is for: the overlays from the top down, then the page, then the
@@ -557,13 +666,46 @@ end
 
 --- What the window's own events mean to the app, as messages: the app decides nothing here.
 ---@param event beat.AppEvent
----@param _handler winit.EventManager
-function App:event(event, _handler)
+---@param handler winit.EventManager
+function App:event(event, handler)
 	if event.name == "windowClose" then
 		-- The app goes with the window. What its services would have written a moment from now --
 		-- a setting still settling, where listening got to -- is written now.
-		for _, service in ipairs(self.serviceOrder) do
-			if service.flush ~= nil then service:flush() end
+		self:flush()
+		return nil
+	end
+
+	local window = event.window or self.window
+
+	if event.name == "minimize" then
+		if window ~= nil and self.services.settings.values.minimizeToTray then
+			---@cast window wonderland.RenderWindow & beat.WindowCalls
+			self:minimizeToTray(window)
+		end
+		return nil
+	end
+
+	if event.name == "trayClick" then
+		if window ~= nil then
+			---@cast window wonderland.RenderWindow & beat.WindowCalls
+			self:showFromTray(window)
+		end
+		return nil
+	end
+
+	if event.name == "trayMenu" then
+		if event.id == "show" then
+			if window ~= nil then
+				---@cast window wonderland.RenderWindow & beat.WindowCalls
+				self:showFromTray(window)
+			end
+		elseif event.id == "quit" then
+			-- The same write the close button does, then the loop stops: nothing is left to save.
+			self:flush()
+			handler:exit()
+		else
+			local messageType = TRAY_MESSAGES[event.id]
+			if messageType ~= nil then self:act({ type = messageType }) end
 		end
 		return nil
 	end
