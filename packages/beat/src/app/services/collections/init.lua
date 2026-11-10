@@ -73,6 +73,17 @@ Collections.on = {
 			self.taxonomy:setRating(track.path, message.stars)
 			self:save()
 		end
+	end,
+
+	---@param self beat.CollectionsService
+	---@param message beat.RateAlbumMessage
+	rateAlbum = function(self, message)
+		local library = self.library.current
+		local album = library ~= nil and library:album(message.id) or nil
+		if album then
+			self.taxonomy:setAlbumRating(album.key, message.stars)
+			self:save()
+		end
 	end
 }
 

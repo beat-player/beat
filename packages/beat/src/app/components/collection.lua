@@ -23,6 +23,8 @@ local collection = {}
 ---@field playIcon string
 ---@field shuffleAction any
 ---@field addAction any? # The extra control, when the collection can grow by hand
+---@field rating number? # The collection's own stars, 0 to 5, drawn beside the buttons
+---@field onRate (fun(stars: number): any)? # The message for setting them; without it there are no header stars
 ---@field tracks beat.Track[]
 ---@field trackAction fun(track: beat.Track, at: number): any
 ---@field trackIndex (fun(track: beat.Track, at: number): number)? # The number a row shows; default its place
@@ -88,6 +90,12 @@ function collection.view(app, props)
 	}
 	if props.addAction ~= nil then
 		actions[#actions + 1] = ui.iconButton(ctx, { name = "add", size = theme:px(30), onClick = props.addAction })
+	end
+	if props.onRate ~= nil then
+		-- Set a little apart from the buttons, and larger than a row's stars, so it reads as the
+		-- collection's own rating rather than one more control or one of its tracks'.
+		actions[#actions + 1] = div():style(sty():w(theme:px(6)))
+		actions[#actions + 1] = ui.rating(ctx, { value = props.rating or 0, onRate = props.onRate, size = theme:px(20) })
 	end
 
 	local info = div()
