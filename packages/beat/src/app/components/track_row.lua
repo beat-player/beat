@@ -1,7 +1,8 @@
 -- A track in a table: its number or the playing mark, the title and artist, its album where there
--- is room for one, and its time. The album page's table sets titles only, because its header
--- names the artist.
+-- is room for one, its rating where the table asks for one, and its time. The album page's table
+-- sets titles only, because its header names the artist.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local playingBars = require("beat.app.components.playing_bars")
 
@@ -18,6 +19,19 @@ local trackRow = {}
 ---@field width number? # Default theme:px(760)
 ---@field showAlbum boolean? # Default true, until the row gets too narrow for the column
 ---@field titleOnly boolean? # Hide the artist's line; the caller's header names it
+---@field rating number? # The track's stars, drawn and set in a column of their own; none hides the column
+---@field ui beat.ui.Context? # Needed with `rating`
+
+--- The stars column: as wide as five stars at the table's size, and kept only while the row is
+--- wide enough for the title to stay readable beside it.
+---@param app beat.App
+---@param width number # The row's width
+---@return number? # The column's width, or nothing when the row cannot afford it
+function trackRow.ratingWidth(app, width)
+	local theme = app.services.appearance.theme
+	if width < theme:px(360) then return nil end
+	return theme:px(14) * 5 + theme:px(2) * 4
+end
 
 ---@param app beat.App
 ---@param props beat.components.TrackRowProps
@@ -43,7 +57,11 @@ function trackRow.view(app, props)
 	-- The album column is the first thing a phone cannot afford. Keeping the title and time
 	-- legible is more useful than three columns squeezed into a narrow list.
 	local albumColumn = props.showAlbum ~= false and width >= theme:px(520)
-	local infoWidth = math.max(theme:px(100), width - (albumColumn and theme:px(324) or theme:px(122)))
+	local ratingWidth = props.rating ~= nil and props.ui ~= nil and trackRow.ratingWidth(app, width) or nil
+	local infoWidth = math.max(
+		theme:px(100),
+		width - (albumColumn and theme:px(324) or theme:px(122)) - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
+	)
 	local info = {
 		text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium"):fg(titleColour):ellipsis())
 	}
@@ -59,6 +77,19 @@ function trackRow.view(app, props)
 		children[#children + 1] = div()
 			:style(sty():w(190):h(48):column():justify("center"))
 			:children(text(track.album):style(theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis()))
+	end
+
+	if ratingWidth ~= nil then
+		-- A star is its own target: setting a rating does not also play the track.
+		children[#children + 1] = ui.rating(
+			assert(props.ui),
+			{
+				value = props.rating or 0,
+				onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
+				size = theme:px(14),
+				gap = theme:px(2)
+			}
+		)
 	end
 
 	children[#children + 1] = div()

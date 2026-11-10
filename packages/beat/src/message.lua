@@ -356,6 +356,10 @@
 ---@class beat.CustomMessage: beat.MessageFields
 ---@field type string
 ---@field custom true
+---@class beat.RateTrackMessage: beat.MessageFields
+---@field type "rateTrack"
+---@field id number
+---@field stars number
 
 --- Every message the app knows, and a plugin's own kind through `custom`.
 ---@alias beat.Message
@@ -472,6 +476,7 @@
 --- | beat.TaskCancelMessage
 --- | beat.TaskDismissMessage
 --- | beat.CustomMessage
+--- | beat.RateTrackMessage
 
 --- What an overlay is opened with, beyond the overlay itself. A plugin registers its own overlay,
 --- so the record is open; the fields the app's own screens pass are named here.
@@ -548,6 +553,7 @@
 ---@field taskCancel fun(id: number): beat.TaskCancelMessage
 ---@field taskDismiss fun(id: number): beat.TaskDismissMessage
 ---@field scroll fun(key: string, fields: beat.ScrollFields?): beat.ScrollMessage
+---@field rateTrack fun(id: number, stars: number): beat.RateTrackMessage
 ---@field custom fun(kind: string, fields: beat.CustomFields?): beat.CustomMessage
 
 local messages = {}
@@ -781,6 +787,11 @@ function messages.taskCancel(id) return { type = "taskCancel", id = id } end
 ---@param id number
 ---@return beat.TaskDismissMessage
 function messages.taskDismiss(id) return { type = "taskDismiss", id = id } end
+
+---@param id number
+---@param stars number
+---@return beat.RateTrackMessage
+function messages.rateTrack(id, stars) return { type = "rateTrack", id = id, stars = stars } end
 
 ---@param kind string
 ---@param fields beat.CustomFields?

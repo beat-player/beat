@@ -1,6 +1,7 @@
--- The three dots open the larger per-track menu: tagging, playlists, and the album and artist
--- pages that the compact controls no longer have room to grow another row for.
+-- The three dots open the larger per-track menu: the rating, tagging, playlists, and the album and
+-- artist pages that the compact controls no longer have room to grow another row for.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local nowPlaying = require("beat.app.overlays.now_playing")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -58,9 +59,9 @@ end
 
 ---@param app beat.App
 ---@param overlay beat.OverlayInstance<beat.MoreState>
----@param _window wonderland.RenderWindow
+---@param window wonderland.RenderWindow
 ---@return wonderland.Element?
-function more.view(app, overlay, _window)
+function more.view(app, overlay, window)
 	local state = overlay.state
 	local anchor = state.anchor
 	if anchor == nil then return nil end
@@ -88,8 +89,27 @@ function more.view(app, overlay, _window)
 	local rowHeight = theme:px(40)
 	local padding = theme:px(8)
 	local gap = theme:px(2)
-	local height = padding * 2 + #entries * rowHeight + math.max(0, #entries - 1) * gap
-	local rows = {}
+	-- The rating leads, as a row of its own: it is the one thing here that is set rather than
+	-- opened, so it is the stars themselves rather than a label that leads somewhere else.
+	local height = padding * 2 + (#entries + 1) * rowHeight + #entries * gap
+	local ctx = app:ui(window)
+	local rows = {
+		div()
+			:style(sty():row():w(width - padding * 2):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"))
+			:children(
+				{
+					text("Rating"):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("medium"):fg(theme:color("muted"))),
+					ui.rating(
+						ctx,
+						{
+							value = app.services.collections.taxonomy:rating(track.path),
+							onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
+							size = theme:px(18)
+						}
+					)
+				}
+			)
+	}
 	for _, entry in ipairs(entries) do
 		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2], width - padding * 2, rowHeight)
 	end

@@ -156,3 +156,42 @@ test.it("records listens for tracks, albums, tags and playlists", function()
 	test.equal(loaded.metrics.tracks["/music/a.flac"].count, 1)
 	test.equal(loaded.metrics.albums["artist\0album"].last, 1234)
 end)
+
+test.it("rates a track from one to five stars, and none takes the rating away", function()
+	local taxonomy = Taxonomy.new()
+	local path = "/music/a.flac"
+	test.equal(taxonomy:rating(path), 0, "an unrated track has none")
+
+	taxonomy:setRating(path, 4)
+	test.equal(taxonomy:rating(path), 4)
+	taxonomy:setRating(path, 9)
+	test.equal(taxonomy:rating(path), 5, "more than five is five")
+	taxonomy:setRating(path, 3.7)
+	test.equal(taxonomy:rating(path), 3, "part of a star is not a star")
+	taxonomy:setRating(path, 0)
+	test.equal(taxonomy:rating(path), 0)
+	test.equal(taxonomy.ratings[path], nil, "an unrated track is not kept")
+end)
+
+test.it("keeps ratings through its packed form, and reads a file from before ratings", function()
+	local taxonomy = Taxonomy.new()
+	local tag = assert(taxonomy:addTag("Chill"))
+	taxonomy:setTag("/music/a.flac", tag.id, true)
+	taxonomy:setRating("/music/a.flac", 5)
+	taxonomy:setRating("/music/b.flac", 2)
+
+	local loaded = Taxonomy.unpack(taxonomy:pack())
+	test.equal(loaded:rating("/music/a.flac"), 5)
+	test.equal(loaded:rating("/music/b.flac"), 2)
+
+	-- tags.json as every version before ratings wrote it: everything else must still load.
+	local older = taxonomy:pack()
+	older.ratings = nil
+	local fromOlder = Taxonomy.unpack(older)
+	test.truthy(fromOlder:isTagged("/music/a.flac", tag.id), "the tags still load")
+	test.equal(fromOlder:rating("/music/a.flac"), 0)
+
+	local edited = taxonomy:pack()
+	edited.ratings = { { path = "/music/c.flac", value = 12 } }
+	test.equal(Taxonomy.unpack(edited):rating("/music/c.flac"), 5, "a hand-edited file is held to five")
+end)
