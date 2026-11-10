@@ -375,6 +375,10 @@
 ---@field type "rateTrack"
 ---@field id number
 ---@field stars number
+---@class beat.RateAlbumMessage: beat.MessageFields
+---@field type "rateAlbum"
+---@field id number
+---@field stars number
 
 --- Every message the app knows, and a plugin's own kind through `custom`.
 ---@alias beat.Message
@@ -497,3 +501,4 @@
 --- | beat.TaskDismissMessage
 --- | beat.CustomMessage
 --- | beat.RateTrackMessage
+--- | beat.RateAlbumMessage

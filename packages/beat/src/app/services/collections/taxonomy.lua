@@ -34,6 +34,7 @@ local names = require("beat.music.names")
 ---@field playlistById table<number, beat.Playlist>
 ---@field nextTagId number
 ---@field nextPlaylistId number
+---@field albumRatings table<string, number>
 ---@field ratings table<string, number>
 ---@field metrics { tracks: table<string, beat.Metric>, albums: table<string, beat.Metric>, tags: table<number, beat.Metric>, playlists: table<number, beat.Metric> }
 local Taxonomy = {}
@@ -51,6 +52,7 @@ function Taxonomy.new()
 			playlistById = {},
 			nextTagId = 1,
 			nextPlaylistId = 1,
+			albumRatings = {},
 			ratings = {},
 			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
 		},
@@ -177,6 +179,9 @@ function Taxonomy:setTag(path, tagId, on)
 	end
 end
 
+---@param s number?
+local clampRating = |s| -> math.max(0, math.min(5, math.floor(s or 0)))
+
 ---@param path string
 ---@return number # 0 when unrated
 function Taxonomy:rating(path)
@@ -187,9 +192,22 @@ end
 ---@param path string
 ---@param value number
 function Taxonomy:setRating(path, value)
-	value = math.max(0, math.min(5, math.floor(value or 0)))
-
+	value = clampRating(value)
 	self.ratings[path] = value > 0 ? value : nil
+end
+
+---@param key string
+---@return number # 0 when unrated
+function Taxonomy:albumRating(key)
+	return self.albumRatings[key] or 0
+end
+
+--- 1-5 stars, 0 for unrated.
+---@param key string
+---@param value number
+function Taxonomy:setAlbumRating(key, value)
+	value = clampRating(value)
+	self.albumRatings[key] = value > 0 ? value : nil
 end
 
 ---@param path string
@@ -502,6 +520,11 @@ function Taxonomy:pack()
 		}
 	end
 
+	local albumRatings = {}
+	for path, value in pairs(self.albumRatings) do
+		albumRatings[#albumRatings + 1] = { path = path, value = value }
+	end
+
 	local ratings = {}
 	for path, value in pairs(self.ratings) do
 		ratings[#ratings + 1] = { path = path, value = value }
@@ -521,7 +544,7 @@ function Taxonomy:pack()
 		metrics.playlists[#metrics.playlists + 1] = { id = id, count = metric.count, last = metric.last }
 	end
 
-	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics, ratings = ratings }
+	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics, ratings = ratings, albumRatings = albumRatings }
 end
 
 ---@param data table
@@ -580,7 +603,13 @@ function Taxonomy.unpack(data)
 
 	for _, raw in ipairs(data.ratings or {}) do
 		if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
-			self.ratings[raw.path] = math.max(0, math.min(5, math.floor(raw.value)))
+			self.ratings[raw.path] = clampRating(raw.value)
+		end
+	end
+
+	for _, raw in ipairs(data.albumRatings or {}) do
+		if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
+			self.albumRatings[raw.path] = clampRating(raw.value)
 		end
 	end
 

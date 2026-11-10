@@ -98,7 +98,7 @@ function more.view(app, overlay, window)
 			:style(sty():row():w(width - padding * 2):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"))
 			:children(
 				{
-					text("Rating"):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("medium"):fg(theme:color("muted"))),
+					text("Rating"):style(theme:s():w("auto"):text(theme:type("sm")):weight("medium"):fg(theme:color("muted"))),
 					ui.rating(
 						ctx,
 						{

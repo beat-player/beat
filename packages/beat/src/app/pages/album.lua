@@ -86,6 +86,8 @@ function albumPage.view(app, page, window)
 			titleOnly = true,
 			ratings = true,
 			shuffleAction = { type = "playAlbum", id = album.id, shuffle = true },
+			rating = app.services.collections.taxonomy:albumRating(album.key),
+			onRate = |stars| -> { type = "rateAlbum", id = album.id, stars = stars },
 			tracks = album.tracks,
 			trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id },
 			trackIndex = |track, at| -> track.number or at
