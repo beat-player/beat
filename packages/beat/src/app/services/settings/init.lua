@@ -19,7 +19,6 @@ local SAVE_DELAY = 0.6
 local Settings = {}
 Settings.__index = Settings
 Settings.needs = { "settingsValues", "registry", "toasts" }
-Settings.handles = { "sidebarWidth", "toggleSidebar", "minimizeToTray", "pluginEnabled", "pluginSetting" }
 
 ---@param deps { settingsValues: beat.Settings, registry: beat.Registry?, toasts: beat.ToastsService? }?
 ---@return beat.SettingsService
@@ -75,31 +74,56 @@ function Settings:save()
 	self.dirtyAt = nil
 end
 
--- The settings screen's sidebar controls. Both redraw through the message that carried them.
-function Settings:update(message)
-	if message.type == "sidebarWidth" then
+-- The settings screen's controls: each value is saved once the changes settle, and the message that
+-- carried it is what redraws the screen.
+Settings.on = {
+	---@param self beat.SettingsService
+	---@param message beat.SidebarWidthMessage
+	sidebarWidth = function(self, message)
 		self.values.sidebarWidth = math.max(200, math.min(360, message.width or 264))
-	elseif message.type == "toggleSidebar" then
+		self:changed()
+	end,
+
+	---@param self beat.SettingsService
+	---@param message beat.ToggleSidebarMessage
+	toggleSidebar = function(self, message)
 		self.values.sidebarCollapsed = not self.values.sidebarCollapsed
-	elseif message.type == "minimizeToTray" then
+		self:changed()
+	end,
+
+	---@param self beat.SettingsService
+	---@param message beat.MinimizeToTrayMessage
+	minimizeToTray = function(self, message)
 		self.values.minimizeToTray = message.value == true
-	elseif message.type == "pluginEnabled" then
+		self:changed()
+	end,
+
+	--- The plugins page's switch says what the next start should load. The entry is the file name
+	--- in the plugins folder: a file that will not load can be switched off too, and a switched-off
+	--- file is never run. Nothing is loaded or unloaded now: the plugin that is running keeps
+	--- running until beat is started again.
+	---@param self beat.SettingsService
+	---@param message beat.PluginEnabledMessage
+	pluginEnabled = function(self, message)
 		if type(message.file) ~= "string" or message.file == "" then return end
 		local list = self.values.disabledPlugins
 		local at = nil
 		for index, name in ipairs(list) do
 			if name == message.file then at = index end
 		end
-		-- The plugins page's switch says what the next start should load. The entry is the file
-		-- name in the plugins folder: a file that will not load can be switched off too, and a
-		-- switched-off file is never run. Nothing is loaded or unloaded now: the plugin that is
-		-- running keeps running until beat is started again.
 		if message.enabled == false then
 			if at == nil then list[#list + 1] = message.file end
 		elseif at ~= nil then
 			table.remove(list, at)
 		end
-	elseif message.type == "pluginSetting" then
+		self:changed()
+	end,
+
+	--- A plugin's value goes into the table the file holds, under the plugin's name; it is written
+	--- with everything else once the changes settle.
+	---@param self beat.SettingsService
+	---@param message beat.PluginSettingMessage
+	pluginSetting = function(self, message)
 		if type(message.plugin) ~= "string" or message.plugin == "" then
 			self:refuse("A plugin setting needs a plugin name")
 			return
@@ -119,11 +143,9 @@ function Settings:update(message)
 			self.values.plugins[message.plugin] = values
 		end
 		values[message.key] = message.value
-	else
-		return
+		self:changed()
 	end
-	self:changed()
-end
+}
 
 function Settings:step(now)
 	if self.dirtyAt ~= nil and now >= self.dirtyAt then self:save() end

@@ -6,7 +6,6 @@
 local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
-local messages = require("beat.message")
 local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -145,7 +144,7 @@ local function settingsCard(app, uiCtx, entry, width)
 		plugin = plugin.name,
 		values = app.services.settings:plugin(plugin.name),
 		width = width,
-		set = function(key, value) return messages.pluginSetting(plugin.name, key, value) end
+		set = |key, value| -> { type = "pluginSetting", plugin = plugin.name, key = key, value = value }
 	}
 
 	local okHeight, height = pcall(entry.height, app, ctx)

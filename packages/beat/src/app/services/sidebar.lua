@@ -17,7 +17,6 @@
 local Sidebar = {}
 Sidebar.__index = Sidebar
 Sidebar.needs = { "collections", "messages" }
-Sidebar.handles = { "hoverPlaylist" }
 
 ---@param deps { collections: beat.CollectionsService, messages: beat.Signal }
 ---@return beat.SidebarService
@@ -31,9 +30,11 @@ function Sidebar.new(deps)
 	return self
 end
 
--- A frame's hit test answering, not a screen deciding what to draw: the row reports the slot it
--- found and the service keeps it only when that is a playlist that still exists.
-function Sidebar:update(message)
+--- A frame's hit test answering, not a screen deciding what to draw: the row reports the slot it
+--- found and the service keeps it only when that is a playlist that still exists.
+---@param self beat.SidebarService
+---@param message beat.HoverPlaylistMessage
+local function applyHover(self, message)
 	local id = tonumber(message.id)
 	local playlist = id ~= nil ? (self.collections.taxonomy:playlist(id)) : nil
 	if playlist == nil then
@@ -56,5 +57,11 @@ function Sidebar:update(message)
 		}
 	end
 end
+
+Sidebar.on = {
+	---@param self beat.SidebarService
+	---@param message beat.HoverPlaylistMessage
+	hoverPlaylist = function(self, message) applyHover(self, message) end
+}
 
 return Sidebar

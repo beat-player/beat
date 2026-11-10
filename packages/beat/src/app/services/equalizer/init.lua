@@ -17,14 +17,6 @@ local bands = require("beat.app.services.equalizer.bands")
 local Equalizer = {}
 Equalizer.__index = Equalizer
 Equalizer.needs = { "settings", "playback", "toasts", "emit" }
-Equalizer.handles = {
-	"equalizerPreset",
-	"newEqualizerPreset",
-	"editEqualizerPreset",
-	"equalizerGain",
-	"saveEqualizerPresetRename",
-	"deleteEqualizerPreset"
-}
 
 -- How many presets the panel's add button will make. A file that already holds more is left alone
 -- on load, because refusing them would throw away shapes someone saved deliberately.
@@ -300,20 +292,38 @@ function Equalizer:closeDialog()
 	self.emit({ type = "dismiss" })
 end
 
-function Equalizer:update(message)
-	if message.type == "equalizerPreset" then
-		self:select(message.id)
-	elseif message.type == "newEqualizerPreset" then
-		self:create()
-	elseif message.type == "editEqualizerPreset" then
-		self:edit(message.name)
-	elseif message.type == "equalizerGain" then
-		self:setGain(message.band, message.value)
-	elseif message.type == "saveEqualizerPresetRename" then
+--- The panel's controls and the dialogs they open.
+Equalizer.on = {
+	--- A preset chip in the panel. An id that no longer exists changes nothing, so the chip for a
+	--- preset deleted from another window is harmless.
+	---@param self beat.EqualizerService
+	---@param message beat.EqualizerPresetMessage
+	equalizerPreset = function(self, message) self:select(message.id) end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.NewEqualizerPresetMessage
+	newEqualizerPreset = function(self, message) self:create() end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.EditEqualizerPresetMessage
+	editEqualizerPreset = function(self, message) self:edit(message.name) end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.EqualizerGainMessage
+	equalizerGain = function(self, message) self:setGain(message.band, message.value) end,
+
+	--- A refused name leaves the dialog open, so the one that went through closes it from here.
+	---@param self beat.EqualizerService
+	---@param message beat.SaveEqualizerPresetRenameMessage
+	saveEqualizerPresetRename = function(self, message)
 		if self:rename(message.name, message.value) then self:closeDialog() end
-	elseif message.type == "deleteEqualizerPreset" then
+	end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.DeleteEqualizerPresetMessage
+	deleteEqualizerPreset = function(self, message)
 		if self:delete(message.name) then self:closeDialog() end
 	end
-end
+}
 
 return Equalizer

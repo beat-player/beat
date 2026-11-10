@@ -8,7 +8,6 @@ local wonderland = require("wonderland")
 local paths = require("beat.paths")
 local App = require("beat.app")
 local beat = require("beat")
-local messages = require("beat.message")
 local settingsModel = require("beat.app.services.settings.model")
 
 local configDirectory = os.tmpname() .. "-beat-plugin-settings"
@@ -92,7 +91,7 @@ end)
 
 test.it("saves one plugin setting and reads it back after a reload", function()
 	App:init({ scan = false, plugins = { settingsPlugin() } })
-	App:act(messages.pluginSetting("tester", "volume", 0.25))
+	App:act({ type = "pluginSetting", plugin = "tester", key = "volume", value = 0.25 })
 	App.services.settings:flush()
 
 	local saved = settingsModel.load()
@@ -105,10 +104,10 @@ end)
 test.it("refuses a value JSON cannot hold", function()
 	App:init({ scan = false, plugins = { settingsPlugin() } })
 
-	App:act(messages.pluginSetting("tester", "volume", function() end))
+	App:act({ type = "pluginSetting", plugin = "tester", key = "volume", value = function() end })
 	test.equal(App.services.settings:plugin("tester").volume, 1, "the refused value did not replace the default")
 
-	App:act(messages.pluginSetting("tester", "volume", { nested = function() end }))
+	App:act({ type = "pluginSetting", plugin = "tester", key = "volume", value = { nested = function() end } })
 	test.equal(App.services.settings:plugin("tester").volume, 1)
 end)
 

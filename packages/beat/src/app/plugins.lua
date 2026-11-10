@@ -3,7 +3,6 @@
 -- registers what it adds through the handle it is given. Built-in plugins are part of beat, so a
 -- mistake in one stops the app; an outside plugin that does not fit is reported and left out,
 -- taking its own registrations with it.
-local Messages = require("beat.message")
 
 local Plugins = {}
 
@@ -152,7 +151,7 @@ end
 ---@param undo fun()[]
 local function handleFor(registry, plugin, undo)
 	---@type beat.PluginHandle
-	local handle = { msg = Messages }
+	local handle = {}
 
 	---@param callback fun()
 	local function record(callback) undo[#undo + 1] = callback end

@@ -30,8 +30,8 @@ function queuePanel.update(app, overlay, message)
 	if message.type == "scroll" and message.key == "queue" then
 		-- The list scrolls by itself. A light overlay closes on a message it does not take, and
 		-- scrolling the queue is not a press elsewhere. It takes the message here, so the redraw
-		-- a service update gets from the message pump has to be asked for.
-		app.services.scroll:update(message)
+		-- a service's answer gets from the message pump has to be asked for.
+		app:toService(message)
 		app:refresh()
 		return true
 	elseif message.type == "toggleQueue" then

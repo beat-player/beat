@@ -8,7 +8,6 @@
 -- they were registered and applied when the value is asked for, so a page is never frozen into
 -- whichever plugin happened to look at it first.
 local Log = require("beat.log")
-local messages = require("beat.message")
 
 --- What a page keeps while it is showing and while it waits in the history. Each page module
 --- declares its own state class, and `new` returns it.
@@ -62,7 +61,6 @@ local messages = require("beat.message")
 --- What a context-menu action is made for. A menu sets the one field it was opened on — an album,
 --- a track, a playlist — and a callback reads that field; the menu name says which one is there.
 ---@class beat.MenuContext: table<string, any>
----@field message beat.Messages # Message constructors for the action's return
 ---@field album beat.Album?
 ---@field track beat.Track?
 ---@field playlist beat.Playlist?
@@ -168,7 +166,6 @@ local messages = require("beat.message")
 --- What a plugin registers through: one function per kind of registration, each answering the
 --- undo that takes it out again.
 ---@class beat.PluginHandle
----@field msg beat.Messages
 ---@field settings fun(definition: beat.PluginSettingsDefinition)
 ---@field service fun(name: string, module: beat.Service)
 ---@field page fun(kind: string, surface: beat.PageSurface)
@@ -305,14 +302,21 @@ local function serviceShape(value)
 	if type(value) ~= "table" then return false, "a service must be a table" end
 	if type(value.new) ~= "function" then return false, "a service needs new(deps)" end
 	if value.needs ~= nil and type(value.needs) ~= "table" then return false, "a service's needs must be a list" end
-	if value.handles ~= nil and type(value.handles) ~= "table" then return false, "a service's handles must be a list" end
+	if value.on ~= nil then
+		if type(value.on) ~= "table" then return false, "a service's on must be a table of handlers" end
+		for kind, handle in pairs(value.on) do
+			if type(kind) ~= "string" then return false, "a service's on must be keyed by message type" end
+			if type(handle) ~= "function" then return false, "the handler for " .. kind .. " must be a function" end
+		end
+	end
 	return true
 end
 
---- The module a service is built from, with its two per-frame entry points guarded when an outside
---- plugin owns it. The guard goes on the instance after it is made, not on a copy of the module:
---- a service's methods are usually found through the metatable its `new` put on the instance, and
---- a copy would never be called.
+--- The module a service is built from, with its per-frame step and its handlers guarded when an
+--- outside plugin owns it. The step's guard goes on the instance after it is made, not on a copy
+--- of the module: a service's methods are usually found through the metatable its `new` put on
+--- the instance, and a copy would never be called. Handlers are the module's own, so they are
+--- guarded where they are declared.
 ---@param self beat.Registry
 ---@param module beat.Service
 ---@param plugin beat.Plugin
@@ -320,8 +324,17 @@ local function guardService(self, module, plugin)
 	if plugin.builtin then return module end
 	-- What the collection asks a module for, and nothing else: the plugin's own fields are not
 	-- the app's to copy, and the guard is about the calls the plugin wrote.
+	---@type table<string, beat.Handler>
+	local on = {}
+	for kind, handle in pairs(module.on or {}) do
+		on[kind] = function(service, message)
+			if plugin.disabled then return end
+			local ok, err = pcall(handle, service, message)
+			if not ok then self:disable(plugin, err) end
+		end
+	end
 	---@type beat.Service
-	local guarded = { needs = module.needs, handles = module.handles }
+	local guarded = { needs = module.needs, on = on }
 
 	---@param ... any
 	---@return beat.ServiceInstance?
@@ -342,15 +355,6 @@ local function guardService(self, module, plugin)
 			end
 		end
 
-		local update = instance.update or module.update
-		if update ~= nil then
-			instance.update = function(service, message)
-				if plugin.disabled then return end
-				local ok, err = pcall(update, service, message)
-				if not ok then self:disable(plugin, err) end
-			end
-		end
-
 		return instance
 	end
 
@@ -367,9 +371,13 @@ function Registry:addService(name, module, plugin)
 	if not ok then error(err, 0) end
 	if self.services[name] ~= nil then error("service " .. name .. " is registered twice", 0) end
 
-	local handles = module.handles or {}
+	-- Sorted, so a type two services claim is reported the same way every time. The shape check
+	-- above has made sure every key is a string.
+	---@type string[]
+	local handles = {}
+	for kind in pairs(module.on or {}) do handles[#handles + 1] = kind --[[@as string]] end
+	table.sort(handles)
 	for _, kind in ipairs(handles) do
-		if type(kind) ~= "string" then error("a service's handles must be message types", 0) end
 		namespace(plugin, "message type", kind)
 		if self.handled[kind] ~= nil then error("message type " .. kind .. " is already handled", 0) end
 	end
@@ -726,9 +734,6 @@ end
 ---@param ctx table
 ---@return { title: string, message: table, tone: string? }[]
 function Registry:actions(menu, ctx)
-	-- The constructors are the context's, so an action written anywhere can make its message
-	-- without the screen that opened the menu having to carry them.
-	ctx.message = messages
 	local shown = {}
 	for _, entry in ipairs(self.actionsList) do
 		if entry.menu == menu and not entry.plugin.disabled then

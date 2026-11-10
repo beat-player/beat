@@ -18,7 +18,6 @@ local time = wonderland.time
 local Scroll = {}
 Scroll.__index = Scroll
 Scroll.needs = { "appearance" }
-Scroll.handles = { "scroll" }
 
 ---@param deps { appearance: beat.AppearanceService }
 ---@return beat.ScrollService
@@ -57,11 +56,13 @@ function Scroll:reset(key)
 	self.targets[key] = nil
 end
 
----@param message beat.Message
-function Scroll:update(message)
+--- A box that scrolls by itself names itself; anything else is the page, and the shell names it
+--- so this service never has to know where the app is. Every scroll message is answered the same
+--- way, whichever box it names.
+---@param self beat.ScrollService
+---@param message beat.ScrollMessage
+local function applyScroll(self, message)
 	local key = message.key
-	-- A box that scrolls by itself names itself; anything else is the page, and the shell names it
-	-- so this service never has to know where the app is.
 	if type(key) ~= "string" then error("a scroll message must name its key", 2) end
 
 	local offset = self.offsets[key] or 0
@@ -91,6 +92,12 @@ function Scroll:update(message)
 		self.lastAt = time.now()
 	end
 end
+
+Scroll.on = {
+	---@param self beat.ScrollService
+	---@param message beat.ScrollMessage
+	scroll = function(self, message) applyScroll(self, message) end
+}
 
 function Scroll:step(now)
 	local dt = math.max(0, math.min(0.1, now - self.lastAt))

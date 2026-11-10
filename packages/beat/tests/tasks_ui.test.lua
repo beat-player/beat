@@ -1,12 +1,12 @@
--- The task list in the app: the top bar's button appears only while there are tasks, and the panel
--- draws a running task with progress, one with none, and a failure. The app is headless here, so
--- the pictures are the test.
+-- The task list in the app: the top bar's button appears only while there are tasks, the panel
+-- draws a running task with progress, one with none, and a failure, and what is pressed in the
+-- panel reaches the services without closing it. The app is headless here, so the pictures are
+-- the test.
 local test = require("lde-test")
 local fs = require("fs")
 local wonderland = require("wonderland")
 local paths = require("beat.paths")
 local App = require("beat.app")
-local messages = require("beat.message")
 
 local configDirectory = os.tmpname() .. "-beat-tasks-ui"
 os.remove(configDirectory)
@@ -141,7 +141,7 @@ test.skipIf(not canRender)("draws the task panel at desktop and phone widths", f
 		title = "Downloading album",
 		detail = "2 of 5 tracks",
 		progress = 0.4,
-		cancel = messages.custom("download:cancel", {})
+		cancel = { type = "download:cancel", custom = true }
 	})
 	tasks:start({ title = "Syncing library", detail = "Waiting for the folder" })
 	tasks:start({ title = "Uploading cover", detail = "Album art" }):fail("Connection refused")
@@ -163,4 +163,19 @@ test.skipIf(not canRender)("draws the task panel at desktop and phone widths", f
 	local saved, saveErr = phone:save(shotPath("beat-tasks-520x760.png"))
 	test.truthy(saved, tostring(saveErr))
 	phone:close()
+end)
+
+-- The panel takes its own scrolling and a cancel for itself, so a light popover does not close on
+-- them, and has to pass both on: a cancel that stops at the panel leaves the task running.
+test.it("passes the list's scroll and a cancel from the open panel on to their services", function()
+	App:init({ scan = false })
+	local task = App.services.tasks:start({ title = "Downloading album", cancel = { type = "toast", text = "Stopping" } })
+	App:open("tasks")
+
+	App:act({ type = "scroll", key = "tasks", to = 30, max = 100 })
+	test.equal(App.services.scroll:offset("tasks"), 30, "the scroll service took the list's scroll")
+	test.truthy(App:overlay("tasks") ~= nil, "and the panel stayed open for it")
+
+	App:act({ type = "taskCancel", id = task.id })
+	test.equal(task.state, "cancelling", "the tasks service took the cancel")
 end)
