@@ -34,6 +34,7 @@ local names = require("beat.music.names")
 ---@field playlistById table<number, beat.Playlist>
 ---@field nextTagId number
 ---@field nextPlaylistId number
+---@field ratings table<string, number>
 ---@field metrics { tracks: table<string, beat.Metric>, albums: table<string, beat.Metric>, tags: table<number, beat.Metric>, playlists: table<number, beat.Metric> }
 local Taxonomy = {}
 Taxonomy.__index = Taxonomy
@@ -50,6 +51,7 @@ function Taxonomy.new()
 			playlistById = {},
 			nextTagId = 1,
 			nextPlaylistId = 1,
+			ratings = {},
 			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
 		},
 		Taxonomy
@@ -173,6 +175,21 @@ function Taxonomy:setTag(path, tagId, on)
 		end
 		if empty then self.byPath[path] = nil end
 	end
+end
+
+---@param path string
+---@return number # 0 when unrated
+function Taxonomy:rating(path)
+	return self.ratings[path] or 0
+end
+
+--- 1-5 stars, 0 for unrated.
+---@param path string
+---@param value number
+function Taxonomy:setRating(path, value)
+	value = math.max(0, math.min(5, math.floor(value or 0)))
+
+	self.ratings[path] = value > 0 ? value : nil
 end
 
 ---@param path string
@@ -485,6 +502,11 @@ function Taxonomy:pack()
 		}
 	end
 
+	local ratings = {}
+	for path, value in pairs(self.ratings) do
+		ratings[#ratings + 1] = { path = path, value = value }
+	end
+
 	local metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
 	for key, metric in pairs(self.metrics.tracks) do
 		metrics.tracks[#metrics.tracks + 1] = { key = key, count = metric.count, last = metric.last }
@@ -499,7 +521,7 @@ function Taxonomy:pack()
 		metrics.playlists[#metrics.playlists + 1] = { id = id, count = metric.count, last = metric.last }
 	end
 
-	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics }
+	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics, ratings = ratings }
 end
 
 ---@param data table
@@ -555,6 +577,13 @@ function Taxonomy.unpack(data)
 			if next(set) ~= nil then self.byPath[raw.path] = set end
 		end
 	end
+
+	for _, raw in ipairs(data.ratings or {}) do
+		if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
+			self.ratings[raw.path] = math.max(0, math.min(5, math.floor(raw.value)))
+		end
+	end
+
 	---@type { tracks: any[], albums: any[], tags: any[], playlists: any[] }
 	local metrics = data.metrics or {}
 	for _, raw in ipairs(metrics.tracks or {}) do

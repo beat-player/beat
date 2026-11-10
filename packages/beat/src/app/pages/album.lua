@@ -84,6 +84,7 @@ function albumPage.view(app, page, window)
 			playAction = thisAlbum ? { type = "togglePlay" } : { type = "playAlbum", id = album.id },
 			playIcon = playing and thisAlbum ? "pause" : "play",
 			titleOnly = true,
+			ratings = true,
 			shuffleAction = { type = "playAlbum", id = album.id, shuffle = true },
 			tracks = album.tracks,
 			trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id },

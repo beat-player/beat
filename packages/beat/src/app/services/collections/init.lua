@@ -13,7 +13,7 @@ local Signal = require("beat.app.signal")
 local Collections = {}
 Collections.__index = Collections
 Collections.needs = { "library", "toasts" }
-Collections.handles = { "deletePlaylist" }
+Collections.handles = { "deletePlaylist", "rateTrack" }
 
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
@@ -64,6 +64,13 @@ end
 function Collections:update(message)
 	if message.type == "deletePlaylist" then
 		self:deletePlaylist(message.id)
+	elseif message.type == "rateTrack" then
+		local library = self.library.current
+		local track = library ~= nil and library:track(message.id) or nil
+		if track then
+			self.taxonomy:setRating(track.path, message.stars)
+			self:save()
+		end
 	end
 end
 

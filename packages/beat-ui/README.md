@@ -126,7 +126,8 @@ ui.icon(ctx, { name = "play", size = ctx:px(18), colour = ctx:color("text") })
 
 `name` is one of: `play`, `pause`, `previous`, `next`, `shuffle`, `repeat`, `repeatOne`, `volume`,
 `mute`, `search`, `home`, `library`, `folder`, `chevronLeft`, `chevronRight`, `chevronDown`,
-`chevronUp`, `close`, `check`, `settings`, `github`, `tag`, `playlists`, `hand`, `edit`, `add`.
+`chevronUp`, `close`, `check`, `settings`, `github`, `tag`, `playlists`, `hand`, `edit`, `add`,
+`star`, `starOutline` (since 0.1.1).
 
 ### `ui.iconButton`
 
@@ -246,6 +247,21 @@ ui.listRow(ctx, {
 
 A row with a hover fill and the message a click sends. `active` fills it for the destination the
 app is showing.
+
+### `ui.rating` (since 0.1.1)
+
+```lua
+ui.rating(ctx, {
+	value = 3, -- 0..5, 0 is unrated
+	onRate = function(stars) return { type = "rateTrack", id = track.id, stars = stars } end,
+	size = ctx:px(16),        -- optional, one star
+	gap = ctx:px(2),          -- optional
+	colour = ctx:color("accent"), -- optional, a set star
+})
+```
+
+Five stars. A click on star n asks for n stars; a click on the star at the current rating asks for
+0, which takes the rating away. It keeps no state: what it draws is `value`.
 
 ## What stays in beat
 

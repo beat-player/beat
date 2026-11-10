@@ -50,6 +50,8 @@ const icons = [
 	["hand", 0xE018, "hand-left"],
 	["edit", 0xE019, "pencil"],
 	["add", 0xE01A, "add"],
+	["star", 0xE01B, "star"],
+	["starOutline", 0xE01C, "star-outline"],
 ];
 
 const converted = fs.mkdtempSync(path.join(os.tmpdir(), "beat-icons-"));

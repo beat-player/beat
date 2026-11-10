@@ -271,3 +271,41 @@ test.skipIf(not canRender)("a card puts its content inside its padding", functio
 	test.equal(content.height, 20, "and keeps its own height")
 	screen:close()
 end)
+
+--- How many nodes in the tree draw exactly `value`.
+---@param ctx table
+---@param index number
+---@param value string
+local function countText(ctx, index, value)
+	local node = ctx.screen:node(index)
+	local element = elements.pointers[node.element]
+	local count = (element ~= nil and elements.textOf(element) == value) and 1 or 0
+	for child = 0, node.childCount - 1 do
+		local childIndex = ctx.screen.childIndices[node.firstChild + child - 1] --[[@as number?]]
+		if childIndex ~= nil then count = count + countText(ctx, childIndex, value) end
+	end
+	return count
+end
+
+test.skipIf(not canRender)("a rating draws its stars and sets or takes back a rating", function()
+	local ctx = context()
+	local screen = wonderland.headless.new(function()
+		return wonderland.div():style(wonderland.sty():column():align("start")):children({
+			ui.rating(ctx, { value = 3, onRate = function(stars) return { stars = stars } end, size = 20, gap = 0 })
+		})
+	end, { width = 200, height = 40 })
+	screen:draw()
+	local screenCtx, rootIndex = laidOut(screen)
+	test.equal(countText(screenCtx, rootIndex, utf8.char(0xE01B)), 3, "three set stars")
+	test.equal(countText(screenCtx, rootIndex, utf8.char(0xE01C)), 2, "and two empty ones")
+
+	local sent
+	screen.onMessage = function(value) sent = value end
+	screen:click(30, 10)
+	test.equal(sent.stars, 2, "a lower star sets that many")
+	screen:click(90, 10)
+	test.equal(sent.stars, 5, "a higher one too")
+	screen:click(50, 10)
+	test.equal(sent.stars, 0, "the star at the rating takes it back")
+	screen:close()
+end)

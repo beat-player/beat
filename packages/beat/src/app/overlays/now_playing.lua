@@ -241,42 +241,56 @@ function nowPlaying.view(app, _overlay, window)
 		local toolSize = theme:px(28)
 		local toolGap = theme:px(4)
 		local toolGroupWidth = toolSize * 2 + toolGap
-		textRows[#textRows + 1] = div()
-			:style(sty():row():wrel(1.0):h(theme:px(34)):align("center"):justify("space-between"))
-			:children(
-				{
-					div()
-						:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
-						:children(
+		local toolChildren = {
+			div()
+				:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
+				:children(
+					{
+						ui.iconButton(
+							ctx,
 							{
-								ui.iconButton(
-									ctx,
-									{
-										name = "playlists",
-										size = toolSize,
-										onClick = { type = "toggleQueue" },
-										active = app:overlay("queue") ~= nil
-									}
-								),
-								moreButton(app, ctx, toolSize, { type = "toggleMore" }, app:overlay("more") ~= nil)
+								name = "playlists",
+								size = toolSize,
+								onClick = { type = "toggleQueue" },
+								active = app:overlay("queue") ~= nil
 							}
 						),
-					div()
-						:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
-						:children(
-							{
-								ui.iconButton(
-									ctx,
-									{ name = "shuffle", size = toolSize, onClick = { type = "shuffle" }, active = queue?.shuffle ?? false }
-								),
-								ui.iconButton(
-									ctx,
-									{ name = repeatIcon, size = toolSize, onClick = { type = "repeat" }, active = repeatActive }
-								)
-							}
-						)
+						moreButton(app, ctx, toolSize, { type = "toggleMore" }, app:overlay("more") ~= nil)
+					}
+				)
+		}
+		-- The rating sits between the two groups where the row has room for it; a narrow stage
+		-- still has it at the top of the three dots' menu.
+		local starSize = theme:px(16)
+		local starGap = theme:px(2)
+		if progressWidth - toolGroupWidth * 2 >= starSize * 5 + starGap * 4 + theme:px(24) then
+			toolChildren[#toolChildren + 1] = ui.rating(
+				ctx,
+				{
+					value = app.services.collections.taxonomy:rating(track.path),
+					onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
+					size = starSize,
+					gap = starGap
 				}
 			)
+		end
+		toolChildren[#toolChildren + 1] = div()
+			:style(sty():row():w(toolGroupWidth):h(theme:px(34)):gap(toolGap):align("center"))
+			:children(
+				{
+					ui.iconButton(
+						ctx,
+						{ name = "shuffle", size = toolSize, onClick = { type = "shuffle" }, active = queue?.shuffle ?? false }
+					),
+					ui.iconButton(
+						ctx,
+						{ name = repeatIcon, size = toolSize, onClick = { type = "repeat" }, active = repeatActive }
+					)
+				}
+			)
+		textRows[#textRows + 1] = div()
+			:style(sty():row():wrel(1.0):h(theme:px(34)):align("center"):justify("space-between"))
+			:children(toolChildren)
 		textRows[#textRows + 1] = progress.view(
 			app,
 			{ track = track, player = app.services.playback.player, width = progressWidth }

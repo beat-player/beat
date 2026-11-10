@@ -24,8 +24,9 @@ local ui = {}
 ---@field progressBar fun(ctx: beat.ui.Context, props: beat.ui.ProgressBarProps): wonderland.Element
 ---@field card fun(ctx: beat.ui.Context, props: beat.ui.CardProps): wonderland.Element
 ---@field listRow fun(ctx: beat.ui.Context, props: beat.ui.ListRowProps): wonderland.Element
+---@field rating fun(ctx: beat.ui.Context, props: beat.ui.RatingProps): wonderland.Element
 
-ui.version = "0.1.0"
+ui.version = "0.1.1"
 ui.Context = require("beat-ui.context")
 ui.button = require("beat-ui.button").view
 ui.icon = require("beat-ui.icon").view
@@ -37,5 +38,6 @@ ui.checkbox = require("beat-ui.checkbox").view
 ui.progressBar = require("beat-ui.progress_bar").view
 ui.card = require("beat-ui.card").view
 ui.listRow = require("beat-ui.list_row").view
+ui.rating = require("beat-ui.rating").view
 
 return ui

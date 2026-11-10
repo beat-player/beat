@@ -42,7 +42,9 @@ local GLYPHS = {
 	playlists = 0xE017,
 	hand = 0xE018,
 	edit = 0xE019,
-	add = 0xE01A
+	add = 0xE01A,
+	star = 0xE01B,
+	starOutline = 0xE01C
 }
 
 local UTF8_GLYPHS = {}

@@ -28,6 +28,7 @@ local collection = {}
 ---@field trackIndex (fun(track: beat.Track, at: number): number)? # The number a row shows; default its place
 ---@field empty wonderland.Element? # What the table shows when there are no tracks
 ---@field titleOnly boolean? # Rows show titles only; the header names the artist
+---@field ratings boolean? # Rows show each track's stars, and set them
 
 ---@param app beat.App
 ---@param props beat.components.CollectionProps
@@ -112,19 +113,27 @@ function collection.view(app, props)
 	end
 
 	local rows = {}
+	local ratingWidth = props.ratings and trackRow.ratingWidth(app, content) or nil
 	if hasTracks then
+		local header = {
+			text("#"):style(theme:s():w(24):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
+			text("TITLE")
+				:style(
+					theme:s()
+						:w(content - theme:px(122) - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0))
+						:text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
+				)
+		}
+		if ratingWidth ~= nil then
+			header[#header + 1] = text("RATING")
+				:style(theme:s():w(ratingWidth):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
+		end
+		header[#header + 1] = text("TIME"):style(theme:s():w(54):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
 		rows[#rows + 1] = div()
 			:style(
 				sty():row():w(content):h(theme:px(34)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
 			)
-			:children(
-				{
-					text("#"):style(theme:s():w(24):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
-					text("TITLE")
-						:style(theme:s():w(content - theme:px(122)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
-					text("TIME"):style(theme:s():w(54):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
-				}
-			)
+			:children(header)
 	end
 
 	local trackStart = heroHeight + theme:space(20) + (hasTracks and theme:px(34) or 0)
@@ -154,7 +163,9 @@ function collection.view(app, props)
 					onClick = props.trackAction(track, at),
 					width = content,
 					showAlbum = false,
-					titleOnly = props.titleOnly
+					titleOnly = props.titleOnly,
+					rating = props.ratings and app.services.collections.taxonomy:rating(track.path) or nil,
+					ui = props.ratings and ctx or nil
 				}
 			)
 		end
