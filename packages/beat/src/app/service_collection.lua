@@ -3,20 +3,27 @@
 -- service is made after everything it needs, and a mistake in what they declare stops the app at
 -- start with a message saying which service and what.
 
+--- What answers one kind of message: the service it belongs to, and the message. Each handler
+--- names its own message class for its parameter, so the fields it reads are checked.
+---@alias beat.Handler fun(self: beat.ServiceInstance, message: beat.Message)
+
 ---@class beat.Service: beat.ServiceInstance
 ---@field needs string[]? # Services, or provided values, this one is made with
----@field handles string[]? # The message types it answers; each type has one owner
+---@field on table<string, beat.Handler>? # The message types it answers, each with its handler; each type has one owner
 ---@field new fun(...): beat.ServiceInstance? # The instance: its state and its methods
 ---@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?)? # For a service that keeps none of its state on the instance
----@field update (fun(self: beat.ServiceInstance, message: beat.Message): boolean?)? # The same, for a module whose messages answer statically
 
 --- What a service's `new` returns. Every field past the state is optional: a service takes only
 --- the calls it has something to do for.
 ---@class beat.ServiceInstance
 ---@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?)? # Called every tick, after everything it needs
----@field update (fun(self: beat.ServiceInstance, message: beat.Message): boolean?)? # Called for the message types in `handles`
 ---@field flush (fun(self: beat.ServiceInstance))? # Writes anything deferred before the app goes
 ---@field close (fun(self: beat.ServiceInstance))? # The app is being set up again
+
+--- The service a message type is delivered to, and the handler that takes it there.
+---@class beat.Owner
+---@field service beat.ServiceInstance
+---@field handle beat.Handler
 
 ---@class beat.ServiceCollection
 ---@field modules table<string, beat.Service>
@@ -27,7 +34,7 @@ Collection.__index = Collection
 ---@class beat.BuiltServices
 ---@field byName table<string, beat.ServiceInstance>
 ---@field order beat.ServiceInstance[] # Every service, each after everything it needs
----@field owners table<string, beat.ServiceInstance> # The service that answers each message type
+---@field owners table<string, beat.Owner> # Who answers each message type, and with what
 
 ---@return beat.ServiceCollection
 function Collection.new()
@@ -104,9 +111,9 @@ function Collection:build()
 
 	local owners = {}
 	for _, name in ipairs(names) do
-		for _, kind in ipairs(self.modules[name].handles or {}) do
+		for kind, handle in pairs(self.modules[name].on or {}) do
 			if owners[kind] ~= nil then error(kind .. " is handled by two services", 0) end
-			owners[kind] = built[name]
+			owners[kind] = { service = built[name], handle = handle }
 		end
 	end
 

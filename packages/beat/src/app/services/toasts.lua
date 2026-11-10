@@ -26,7 +26,6 @@ local MAX_VISIBLE = 3
 local Toasts = {}
 Toasts.__index = Toasts
 Toasts.needs = { "pointer" }
-Toasts.handles = { "toast", "dismissToast" }
 
 ---@param deps { pointer: fun(): { x: number, y: number }? }
 ---@return beat.ToastsService
@@ -51,15 +50,19 @@ function Toasts:show(text, tone)
 	if tone == "error" then Log.write("error", text) end
 end
 
-function Toasts:update(message)
-	if message.type == "toast" then
-		self:show(message.text or "", message.tone)
-	elseif message.type == "dismissToast" then
+Toasts.on = {
+	---@param self beat.ToastsService
+	---@param message beat.ToastMessage
+	toast = function(self, message) self:show(message.text or "", message.tone) end,
+
+	---@param self beat.ToastsService
+	---@param message beat.DismissToastMessage
+	dismissToast = function(self, message)
 		for at = #self.list, 1, -1 do
 			if self.list[at].at == message.at then table.remove(self.list, at) end
 		end
 	end
-end
+}
 
 function Toasts:step(now)
 	local pointer = self.pointer()

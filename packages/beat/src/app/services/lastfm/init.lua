@@ -16,7 +16,6 @@ local LastfmClient = require("beat.app.services.lastfm.client")
 local Lastfm = {}
 Lastfm.__index = Lastfm
 Lastfm.needs = { "settings", "toasts", "playback", "system" }
-Lastfm.handles = { "lastfmConnect", "lastfmCancel", "lastfmOpenAuth", "lastfmDisconnect", "lastfmEnabled" }
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -50,22 +49,36 @@ function Lastfm.new(deps)
 	return self
 end
 
-function Lastfm:update(message)
-	if message.type == "lastfmConnect" then
-		self.client:connect()
-	elseif message.type == "lastfmCancel" then
-		self.client:cancelAuth()
-	elseif message.type == "lastfmOpenAuth" then
+--- The Last.fm card's controls. Every one of them moves the client rather than this service, so
+--- what the card shows is the state the client reports on the next tick.
+Lastfm.on = {
+	---@param self beat.LastfmService
+	---@param message beat.LastfmConnectMessage
+	lastfmConnect = function(self, message) self.client:connect() end,
+
+	---@param self beat.LastfmService
+	---@param message beat.LastfmCancelMessage
+	lastfmCancel = function(self, message) self.client:cancelAuth() end,
+
+	---@param self beat.LastfmService
+	---@param message beat.LastfmOpenAuthMessage
+	lastfmOpenAuth = function(self, message)
 		if not self.client:openAuthPage() then
 			self.toasts:show("Could not open a browser for Last.fm", "error")
 		end
-	elseif message.type == "lastfmDisconnect" then
-		self.client:disconnect()
-	elseif message.type == "lastfmEnabled" then
+	end,
+
+	---@param self beat.LastfmService
+	---@param message beat.LastfmDisconnectMessage
+	lastfmDisconnect = function(self, message) self.client:disconnect() end,
+
+	---@param self beat.LastfmService
+	---@param message beat.LastfmEnabledMessage
+	lastfmEnabled = function(self, message)
 		self.settings.values.lastfmEnabled = message.value == true
 		self.settings:changed()
 	end
-end
+}
 
 --- What playback has been doing since the last tick: a listen that reached the scrobbler's
 --- threshold is sent, and what is playing is reported. Last.fm is busy while a request it started

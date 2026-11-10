@@ -551,6 +551,7 @@ test.it("carries on after a restart from the track and the place it was left at"
 
 	-- The next launch: its playback service is made once the library cache has been loaded.
 	local Playback = require("beat.app.services.playback")
+	local on = assert(Playback.on)
 	local again = Playback.new({ settings = App.services.settings, library = App.services.library, collections = App.services.collections, toasts = App.services.toasts, emit = function() end })
 	test.equal(assert(again:current()).path, tracks[2].path, "the same track is current")
 	test.falsy(again.player:isPlaying(), "it comes back paused")
@@ -559,7 +560,7 @@ test.it("carries on after a restart from the track and the place it was left at"
 
 	local audioState = { seeks = {} }
 	again.player.player = fakeAudio(audioState)
-	again:update({ type = "togglePlay" })
+	on.togglePlay(again, { type = "togglePlay" })
 	test.truthy(again.player:isPlaying())
 	test.equal(audioState.seeks[1], 42, "play goes on from there")
 	again:close()

@@ -14,7 +14,7 @@ local ScanJob = require("beat.app.services.scan.job")
 ---@class beat.ScanService: beat.Service
 ---@field job beat.ScanJob? # The worker reading the folder, while there is one
 ---@field addJob beat.ScanJob? # The worker reading one folder into the existing library, while there is one
----@field addFolder string? # The folder that worker is reading
+---@field addFolderPath string? # The folder that worker is reading
 ---@field pick beat.FolderPick? # The system folder dialog, while it is open
 ---@field pickRequest { reply: string? }? # Who the open dialog's answer goes to; nil reply is a library root
 ---@field pickQueue { reply: string? }[] # Dialogs asked for while one was open
@@ -33,17 +33,6 @@ local ScanJob = require("beat.app.services.scan.job")
 local Scan = {}
 Scan.__index = Scan
 Scan.needs = { "settings", "library", "covers", "playback", "toasts", "emit", "window", "options" }
-Scan.handles = {
-	"startScan",
-	"rescan",
-	"chooseFolder",
-	"pickFolder",
-	"libraryAddFolder",
-	"cancelScan",
-	"hideScanIsland",
-	"showScanIsland",
-	"dismissScanSummary"
-}
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -61,7 +50,7 @@ function Scan.new(deps)
 		{
 			job = nil,
 			addJob = nil,
-			addFolder = nil,
+			addFolderPath = nil,
 			pick = nil,
 			pickRequest = nil,
 			pickQueue = {},
@@ -158,7 +147,7 @@ function Scan:addFolder(folder)
 	end
 
 	library:forgetFolder(folder)
-	self.addFolder = folder
+	self.addFolderPath = folder
 	self.addJob = ScanJob.start(folder)
 end
 
@@ -206,41 +195,68 @@ function Scan:addTrack(event, errors)
 	end
 end
 
-function Scan:update(message)
-	if message.type == "startScan" then
-		self:start(message.root)
-	elseif message.type == "rescan" then
+Scan.on = {
+	--- A root chosen for the first time, or one a page asked for: the library it reads replaces
+	--- whatever was showing.
+	---@param self beat.ScanService
+	---@param message beat.StartScanMessage
+	startScan = function(self, message) self:start(message.root) end,
+
+	--- A manual rescan of the root already chosen. A launch with no root has nothing to rescan.
+	---@param self beat.ScanService
+	---@param message beat.RescanMessage
+	rescan = function(self, message)
 		local root = self.settings.values.root
 		if root ~= nil then self:start(root) end
-	elseif message.type == "chooseFolder" then
-		self:startPick({})
-	elseif message.type == "pickFolder" then
+	end,
+
+	---@param self beat.ScanService
+	---@param message beat.ChooseFolderMessage
+	chooseFolder = function(self, message) self:startPick({}) end,
+
+	---@param self beat.ScanService
+	---@param message beat.PickFolderMessage
+	pickFolder = function(self, message)
 		if type(message.reply) ~= "string" or message.reply == "" then
 			self.toasts:show("A folder pick needs a reply message type", "error")
 		else
 			self:startPick({ reply = message.reply })
 		end
-	elseif message.type == "libraryAddFolder" then
+	end,
+
+	---@param self beat.ScanService
+	---@param message beat.LibraryAddFolderMessage
+	libraryAddFolder = function(self, message)
 		if type(message.path) ~= "string" or message.path == "" then
 			self.toasts:show("Adding a folder needs a path", "error")
 		else
 			self:addFolder(message.path)
 		end
-	elseif message.type == "cancelScan" then
+	end,
+
+	---@param self beat.ScanService
+	---@param message beat.CancelScanMessage
+	cancelScan = function(self, message)
 		if self.job ~= nil then
 			self.job:cancel()
 			self.job = nil
 			self.islandOpen = false
 			self.toasts:show("Scan cancelled")
 		end
-	elseif message.type == "hideScanIsland" then
-		self.islandOpen = false
-	elseif message.type == "showScanIsland" then
-		self.islandOpen = true
-	elseif message.type == "dismissScanSummary" then
-		self.summary = nil
-	end
-end
+	end,
+
+	---@param self beat.ScanService
+	---@param message beat.HideScanIslandMessage
+	hideScanIsland = function(self, message) self.islandOpen = false end,
+
+	---@param self beat.ScanService
+	---@param message beat.ShowScanIslandMessage
+	showScanIsland = function(self, message) self.islandOpen = true end,
+
+	---@param self beat.ScanService
+	---@param message beat.DismissScanSummaryMessage
+	dismissScanSummary = function(self, message) self.summary = nil end
+}
 
 --- The dialog is modal, so its answer is read back from a file; the tracks arrive the same way,
 --- a chunk a tick, so a fast local scan cannot make one frame add thousands of rows.
@@ -347,7 +363,7 @@ function Scan:step(now)
 			end
 			addJob:close()
 			self.addJob = nil
-			self.addFolder = nil
+			self.addFolderPath = nil
 			changed = true
 		end
 	end

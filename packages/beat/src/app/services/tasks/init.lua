@@ -93,7 +93,6 @@ end
 local Tasks = {}
 Tasks.__index = Tasks
 Tasks.needs = { "emit" }
-Tasks.handles = { "taskCancel", "taskDismiss" }
 
 ---@param deps { emit: fun(message: beat.Message) }
 ---@return beat.TasksService
@@ -154,9 +153,10 @@ function Tasks:start(definition)
 	return task
 end
 
----@param message beat.Message
-function Tasks:update(message)
-	if message.type == "taskCancel" then
+Tasks.on = {
+	---@param self beat.TasksService
+	---@param message beat.TaskCancelMessage
+	taskCancel = function(self, message)
 		local task = self:find(message.id)
 		-- A task without a cancel message cannot be asked to stop: the panel shows no button and
 		-- a stray message must not leave it "cancelling" for ever.
@@ -165,7 +165,11 @@ function Tasks:update(message)
 			self:changed()
 			self.emit(task.cancel)
 		end
-	elseif message.type == "taskDismiss" then
+	end,
+
+	---@param self beat.TasksService
+	---@param message beat.TaskDismissMessage
+	taskDismiss = function(self, message)
 		local task = self:find(message.id)
 		if task ~= nil and task.state == "failed" then
 			for at, candidate in ipairs(self.list) do
@@ -177,7 +181,7 @@ function Tasks:update(message)
 			self:changed()
 		end
 	end
-end
+}
 
 --- Done and cancelled tasks leave after `LINGER`; failed ones wait for a dismiss. A running task
 --- keeps the app awake so an indeterminate bar moves and `task:update` from the owner's own step

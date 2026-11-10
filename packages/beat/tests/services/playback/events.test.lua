@@ -327,24 +327,26 @@ end)
 
 test.it("says the queue changed when it is shuffled, without a track transition", function()
 	local service, messages = start()
+	local on = assert(Playback.on)
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "shuffle" })
+	on.shuffle(service, { type = "shuffle" })
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
 
-	service:update({ type = "shuffle" })
+	on.shuffle(service, { type = "shuffle" })
 	test.equal(#messages, 2)
 	test.equal(messages[2].type, "queueChanged")
 end)
 
 test.it("puts an album next and plays it when the current track ends", function()
 	local service, messages, toasts = start()
+	local on = assert(Playback.on)
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "queueAlbum", id = albumB.id, next = true })
+	on.queueAlbum(service, { type = "queueAlbum", id = albumB.id, next = true })
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")
@@ -364,10 +366,11 @@ end)
 
 test.it("adds an album to the end of the queue", function()
 	local service, messages, toasts = start()
+	local on = assert(Playback.on)
 	service:playAlbum(albumA.id, false)
 	clear(messages)
 
-	service:update({ type = "queueAlbum", id = albumB.id })
+	on.queueAlbum(service, { type = "queueAlbum", id = albumB.id })
 
 	test.equal(#messages, 1)
 	test.equal(messages[1].type, "queueChanged")

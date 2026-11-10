@@ -13,7 +13,6 @@ local Signal = require("beat.app.signal")
 local Collections = {}
 Collections.__index = Collections
 Collections.needs = { "library", "toasts" }
-Collections.handles = { "deletePlaylist", "rateTrack" }
 
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
@@ -58,13 +57,16 @@ function Collections:deletePlaylist(playlistId)
 	self.toasts:show("Playlist deleted · " .. playlist.name)
 end
 
---- The playlist menu's one entry arrives as a message rather than a call, because the menu is a
---- list of actions now. The overlay that sent it is light and closes as the message passes.
----@param message table
-function Collections:update(message)
-	if message.type == "deletePlaylist" then
-		self:deletePlaylist(message.id)
-	elseif message.type == "rateTrack" then
+Collections.on = {
+	--- The playlist menu's one entry arrives as a message rather than a call, because the menu is
+	--- a list of actions now. The overlay that sent it is light and closes as the message passes.
+	---@param self beat.CollectionsService
+	---@param message beat.DeletePlaylistMessage
+	deletePlaylist = function(self, message) self:deletePlaylist(message.id) end,
+
+	---@param self beat.CollectionsService
+	---@param message beat.RateTrackMessage
+	rateTrack = function(self, message)
 		local library = self.library.current
 		local track = library ~= nil and library:track(message.id) or nil
 		if track then
@@ -72,7 +74,7 @@ function Collections:update(message)
 			self:save()
 		end
 	end
-end
+}
 
 --- The tracks a playlist holds, in library order. Built from the library showing: a path that is
 --- not in it cannot be played, so it is not here either.

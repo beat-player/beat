@@ -12,7 +12,6 @@ local links = require("beat.app.services.system.links")
 local System = {}
 System.__index = System
 System.needs = { "toasts" }
-System.handles = { "openURL", "openPluginsFolder" }
 
 ---@param deps { toasts: beat.ToastsService }
 ---@return beat.SystemService
@@ -30,15 +29,20 @@ function System:open(url)
 	return ok and opened ~= false
 end
 
---- A link button. The settings screen and the Last.fm card both send this, so the one handler
---- says what a link failing looks like.
----@param message table
-function System:update(message)
-	if message.type == "openURL" then
+System.on = {
+	--- A link button. The settings screen and the Last.fm card both send this, so the one handler
+	--- says what a link failing looks like.
+	---@param self beat.SystemService
+	---@param message beat.OpenURLMessage
+	openURL = function(self, message)
 		if not self:open(message.url) then
 			self.toasts:show("Could not open the link", "error")
 		end
-	elseif message.type == "openPluginsFolder" then
+	end,
+
+	---@param self beat.SystemService
+	---@param _message beat.OpenPluginsFolderMessage
+	openPluginsFolder = function(self, _message)
 		-- The folder is made first: the page's control is also how a person finds out where
 		-- plugins go, and an empty folder is the useful answer when there are none yet.
 		local folder = paths.file("plugins")
@@ -47,7 +51,7 @@ function System:update(message)
 			self.toasts:show("Could not open the plugins folder", "error")
 		end
 	end
-end
+}
 
 --- Open a folder and say whether it worked, the same way `open` does for a URL.
 ---@param dir string

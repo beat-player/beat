@@ -5,7 +5,6 @@
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local Scroll = require("beat.app.services.scroll")
-local messages = require("beat.message")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
 
@@ -36,11 +35,11 @@ function tasksPanel.update(app, overlay, message)
 		app:close(overlay)
 		return true
 	elseif message.type == "taskCancel" or message.type == "taskDismiss" then
-		app.services.tasks:update(message)
+		app:toService(message)
 		app:refresh()
 		return true
 	elseif message.type == "scroll" and message.key == "tasks" then
-		app.services.scroll:update(message)
+		app:toService(message)
 		app:refresh()
 		return true
 	end
@@ -63,12 +62,12 @@ local function taskRow(app, ctx, task, width, height)
 	if task.state == "running" and task.cancel ~= nil then
 		action = ui.button(
 			ctx,
-			{ label = "Cancel", onClick = messages.taskCancel(task.id), height = actionHeight, width = actionWidth }
+			{ label = "Cancel", onClick = { type = "taskCancel", id = task.id }, height = actionHeight, width = actionWidth }
 		)
 	elseif task.state == "failed" then
 		action = ui.button(
 			ctx,
-			{ label = "Dismiss", onClick = messages.taskDismiss(task.id), height = actionHeight, width = actionWidth }
+			{ label = "Dismiss", onClick = { type = "taskDismiss", id = task.id }, height = actionHeight, width = actionWidth }
 		)
 	end
 

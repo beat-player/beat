@@ -29,5 +29,5 @@ return beat.plugin({ name = "collections", version = "1.0.0", requires = { core 
 	handle.overlay("tag_dialog", tagDialog)
 	handle.overlay("tag_delete", tagDelete)
 
-	handle.action({ menu = "playlist", title = "Delete playlist", order = 10, tone = "danger", message = |ctx| -> ctx.message.deletePlaylist(assert(ctx.playlist).id) })
+	handle.action({ menu = "playlist", title = "Delete playlist", order = 10, tone = "danger", message = |ctx| -> { type = "deletePlaylist", id = assert(ctx.playlist).id } })
 end })

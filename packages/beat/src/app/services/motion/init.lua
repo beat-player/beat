@@ -21,7 +21,6 @@ local SLIDE_TIME = 0.28
 local Motion = {}
 Motion.__index = Motion
 Motion.needs = { "settings" }
-Motion.handles = { "reduceMotion" }
 
 ---@param deps { settings: beat.SettingsService }
 ---@return beat.MotionService
@@ -57,14 +56,17 @@ function Motion:slideProgress(now)
 	return clock.progress(self.pageSlide.start, SLIDE_TIME, now, clock.ease.outCubic)
 end
 
--- Reducing motion takes effect at once: the clock drops to its end values for every animation
--- that was under way, so nothing is left halfway.
-function Motion:update(message)
-	if message.type ~= "reduceMotion" then return end
-	self.settings.values.reduceMotion = message.value == true
-	self.clock.reduce = self.settings.values.reduceMotion
-	self.settings:changed()
-end
+Motion.on = {
+	--- Reducing motion takes effect at once: the clock drops to its end values for every animation
+	--- that was under way, so nothing is left halfway.
+	---@param self beat.MotionService
+	---@param message beat.ReduceMotionMessage
+	reduceMotion = function(self, message)
+		self.settings.values.reduceMotion = message.value == true
+		self.clock.reduce = self.settings.values.reduceMotion
+		self.settings:changed()
+	end
+}
 
 function Motion:step(now)
 	local changed = self.clock:update(now)

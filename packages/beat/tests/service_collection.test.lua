@@ -9,10 +9,10 @@ local Signal = require("beat.app.signal")
 
 --- A service that records when it was made and keeps what it was given.
 ---@param needs string[]?
----@param handles string[]?
+---@param types string[]? # The message types it answers; the bodies do nothing, the test only asks who owns what
 ---@param made TestServiceInstance[]?
 ---@return beat.Service
-local function service(needs, handles, made)
+local function service(needs, types, made)
 	---@param deps table<string, any>
 	---@return TestServiceInstance
 	local function new(deps)
@@ -20,7 +20,13 @@ local function service(needs, handles, made)
 		if made ~= nil then made[#made + 1] = instance end
 		return instance
 	end
-	return { needs = needs, handles = handles, new = new }
+	---@type table<string, beat.Handler>?
+	local on = nil
+	if types ~= nil then
+		on = {}
+		for _, kind in ipairs(types) do on[kind] = function() end end
+	end
+	return { needs = needs, on = on, new = new }
 end
 
 test.it("makes every service after what it needs, whatever order they were added in", function()
@@ -94,8 +100,8 @@ test.it("gives each message type one owner", function()
 	collection:add("search", service({}, { "search", "clearSearch" }))
 	collection:add("playback", service({}, { "togglePlay" }))
 	local services = collection:build()
-	test.equal(services.owners.clearSearch, services.byName.search)
-	test.equal(services.owners.togglePlay, services.byName.playback)
+	test.equal(services.owners.clearSearch.service, services.byName.search)
+	test.equal(services.owners.togglePlay.service, services.byName.playback)
 
 	local clash = ServiceCollection.new()
 	clash:add("search", service({}, { "clearSearch" }))

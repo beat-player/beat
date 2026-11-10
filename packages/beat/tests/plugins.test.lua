@@ -81,7 +81,7 @@ end
 ---@return beat.Message
 local function openInRateYourMusic(ctx)
 	local album = assert(ctx.album)
-	return ctx.message.openURL("https://rateyourmusic.com/album/" .. album.id)
+	return { type = "openURL", url = "https://rateyourmusic.com/album/" .. album.id }
 end
 
 ---@param name string
@@ -324,7 +324,7 @@ test.it("builds a service a plugin added and lets it answer its own messages", f
 	---@param message beat.Message
 	local function onPing(_, message) answered = answered + message.by end
 	---@type beat.Service
-	local service = { needs = {}, handles = { "counter:ping" }, new = function() return {} end, update = onPing }
+	local service = { needs = {}, on = { ["counter:ping"] = onPing }, new = function() return {} end }
 
 	local plugin = beat.plugin({ name = "counter", version = "1.0.0", setup = function(handle) handle.service("counter:service", service) end })
 	App:init({ scan = false, plugins = { plugin } })
@@ -333,7 +333,7 @@ test.it("builds a service a plugin added and lets it answer its own messages", f
 	test.equal(answered, 2, "the service was built and owns the message it handles")
 end)
 
-test.it("switches off a service whose update raises", function()
+test.it("switches off a service whose handler raises", function()
 	local calls = 0
 	---@param _ beat.ServiceInstance
 	---@param _message beat.Message
@@ -342,7 +342,7 @@ test.it("switches off a service whose update raises", function()
 		error("the service exploded")
 	end
 	---@type beat.Service
-	local service = { needs = {}, handles = { "bad:ping" }, new = function() return {} end, update = explode }
+	local service = { needs = {}, on = { ["bad:ping"] = explode }, new = function() return {} end }
 
 	local plugin = beat.plugin({ name = "bad", version = "1.0.0", setup = function(handle) handle.service("bad:service", service) end })
 	App:init({ scan = false, plugins = { plugin } })
@@ -352,7 +352,7 @@ test.it("switches off a service whose update raises", function()
 	test.truthy(reported("Plugin bad was switched off"), "the failure was reported")
 
 	App:act({ type = "bad:ping" })
-	test.equal(calls, 1, "the switched-off service is not updated again")
+	test.equal(calls, 1, "the switched-off service does not answer again")
 	App:act({ type = "toast", text = "after the failure" })
 	test.truthy(reported("after the failure"), "the rest of the app still delivers messages")
 end)

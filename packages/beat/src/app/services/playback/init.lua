@@ -28,26 +28,6 @@ local SESSION_STRIDE = 10
 local Playback = {}
 Playback.__index = Playback
 Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
-Playback.handles = {
-	"togglePlay",
-	"next",
-	"previous",
-	"seek",
-	"volume",
-	"mute",
-	"shuffle",
-	"repeat",
-	"playAlbum",
-	"playTrack",
-	"playArtist",
-	"playPlaylist",
-	"playPlaylistTrack",
-	"jumpTrack",
-	"play",
-	"pause",
-	"stop",
-	"queueAlbum"
-}
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -236,7 +216,7 @@ end
 
 --- A track row. Which album or artist it was clicked on decides what the queue holds after it.
 --- The current track's row is its pause button, unless the message asks for a restart.
----@param message table
+---@param message beat.PlayTrackMessage
 function Playback:playTrack(message)
 	local library = self.library.current
 	local track = library ~= nil ? (library:track(message.trackId)) : nil
@@ -311,50 +291,102 @@ function Playback:toggleMute()
 	self.settings:changed()
 end
 
-function Playback:update(message)
-	if message.type == "togglePlay" then
-		self:toggle()
-	elseif message.type == "next" then
-		self.player:next()
-	elseif message.type == "previous" then
-		self.player:previous()
-	elseif message.type == "seek" then
+--- `repeat` is a keyword, so its handler cannot be a named field; it lives outside the table to
+--- keep the same annotations as the rest.
+---@param self beat.PlaybackService
+---@param message beat.RepeatMessage
+local function cycleRepeat(self, message)
+	self.player:cycleRepeat()
+end
+
+Playback.on = {
+	--- The bar's button, and a page's "play" that has nothing better to start.
+	---@param self beat.PlaybackService
+	---@param message beat.TogglePlayMessage
+	togglePlay = function(self, message) self:toggle() end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.NextMessage
+	next = function(self, message) self.player:next() end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PreviousMessage
+	previous = function(self, message) self.player:previous() end,
+
+	--- The progress bar asks for an absolute place; the keys step by `by`.
+	---@param self beat.PlaybackService
+	---@param message beat.SeekMessage
+	seek = function(self, message)
 		local seconds = message.seconds
 		if message.by ~= nil then seconds = self.player:position() + message.by end
 		self.player:seek(math.max(0, seconds or 0))
-	elseif message.type == "volume" then
-		self:setVolume(message.value)
-	elseif message.type == "mute" then
-		self:toggleMute()
-	elseif message.type == "shuffle" then
+	end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.VolumeMessage
+	volume = function(self, message) self:setVolume(message.value) end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.MuteMessage
+	mute = function(self, message) self:toggleMute() end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.ShuffleMessage
+	shuffle = function(self, message)
 		local queue = self.player.queue
 		if queue ~= nil then self.player:setShuffle(not queue.shuffle) end
-	elseif message.type == "repeat" then
-		self.player:cycleRepeat()
-	elseif message.type == "playAlbum" then
-		self:playAlbum(message.id --[[@as number]],  message.shuffle == true,  message.restart == true )
-	elseif message.type == "queueAlbum" then
-		self:queueAlbum(message.id --[[@as number]],  message.next == true )
-	elseif message.type == "playTrack" then
-		self:playTrack(message)
-	elseif message.type == "playArtist" then
+	end,
+
+	["repeat"] = cycleRepeat,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayAlbumMessage
+	playAlbum = function(self, message)
+		self:playAlbum(message.id, message.shuffle == true, message.restart == true)
+	end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.QueueAlbumMessage
+	queueAlbum = function(self, message) self:queueAlbum(message.id, message.next == true) end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayTrackMessage
+	playTrack = function(self, message) self:playTrack(message) end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayArtistMessage
+	playArtist = function(self, message)
 		local library = self.library.current
-		local artist = library ~= nil ? (library:artist(message.id --[[@as number]] )) : nil
+		local artist = library ~= nil ? (library:artist(message.id)) : nil
 		if artist ~= nil then self.player:playArtist(artist, message.trackId) end
-	elseif message.type == "playPlaylist" then
-		self:playPlaylist(message.id --[[@as number]],  message.shuffle == true )
-	elseif message.type == "playPlaylistTrack" then
-		self:playPlaylistTrack(message.playlistId --[[@as number]],  message.trackId --[[@as number]] )
-	elseif message.type == "jumpTrack" then
-		self.player:jump(message.trackId)
-	elseif message.type == "play" then
-		self:play()
-	elseif message.type == "pause" then
-		self:pause()
-	elseif message.type == "stop" then
-		self:stop()
-	end
-end
+	end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayPlaylistMessage
+	playPlaylist = function(self, message) self:playPlaylist(message.id, message.shuffle == true) end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayPlaylistTrackMessage
+	playPlaylistTrack = function(self, message)
+		self:playPlaylistTrack(message.playlistId, message.trackId)
+	end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.JumpTrackMessage
+	jumpTrack = function(self, message) self.player:jump(message.trackId) end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PlayMessage
+	play = function(self, message) self:play() end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.PauseMessage
+	pause = function(self, message) self:pause() end,
+
+	---@param self beat.PlaybackService
+	---@param message beat.StopMessage
+	stop = function(self, message) self:stop() end
+}
 
 --- A listen is counted once per track, when playback has actually started it: that is what the
 --- playlist it came from, its album and its tags remember. Whether the same track is scrobbled is

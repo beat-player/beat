@@ -21,7 +21,6 @@ local FADE_TIME = 0.22
 local Appearance = {}
 Appearance.__index = Appearance
 Appearance.needs = { "settings", "motion" }
-Appearance.handles = { "theme", "accent", "uiScale" }
 
 ---@param deps { settings: beat.SettingsService, motion: beat.MotionService }
 ---@return beat.AppearanceService
@@ -82,20 +81,30 @@ function Appearance:change(animate)
 	self.settings:changed()
 end
 
--- The settings screen's appearance controls.
-function Appearance:update(message)
-	local values = self.settings.values
-	if message.type == "theme" then
-		values.theme = message.name
-	elseif message.type == "accent" then
-		values.accent = message.name
-	elseif message.type == "uiScale" then
-		values.uiScale = message.value
-	else
-		return
+--- The settings screen's appearance controls. Each writes its key and then remakes the theme, so
+--- the screen turns as the control is used.
+Appearance.on = {
+	---@param self beat.AppearanceService
+	---@param message beat.ThemeMessage
+	theme = function(self, message)
+		self.settings.values.theme = message.name
+		self:change()
+	end,
+
+	---@param self beat.AppearanceService
+	---@param message beat.AccentMessage
+	accent = function(self, message)
+		self.settings.values.accent = message.name
+		self:change()
+	end,
+
+	---@param self beat.AppearanceService
+	---@param message beat.UiScaleMessage
+	uiScale = function(self, message)
+		self.settings.values.uiScale = message.value
+		self:change()
 	end
-	self:change()
-end
+}
 
 function Appearance:step(now)
 	if self.fade == nil then return false, false end

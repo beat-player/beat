@@ -20,7 +20,6 @@
 local Search = {}
 Search.__index = Search
 Search.needs = { "library", "collections", "emit" }
-Search.handles = { "search", "clearSearch", "openSearch", "toggleTagFilter", "tagFilterMatch", "clearTagFilter" }
 
 ---@param deps { library: beat.LibraryService, collections: beat.CollectionsService, emit: fun(message: table) }
 ---@return beat.SearchService
@@ -129,29 +128,46 @@ function Search:clear()
 	self.query = ""
 end
 
-function Search:update(message)
-	if message.type == "search" then
+--- The bar and the tag chips on the search screen.
+Search.on = {
+	--- The field started this navigation. It keeps the keyboard and its caret, so the next
+	--- character is typed after the first rather than put in front of it; navigating to the page
+	--- already showing does nothing.
+	---@param self beat.SearchService
+	---@param message beat.SearchMessage
+	search = function(self, message)
 		self.query = message.value or ""
-		-- The field started this navigation. It keeps the keyboard and its caret, so the next
-		-- character is typed after the first rather than put in front of it; navigating to the
-		-- page already showing does nothing.
 		self.emit({ type = "navigate", page = { kind = "search" }, keepFocus = true })
-	elseif message.type == "clearSearch" then
-		self:clear()
-	elseif message.type == "openSearch" then
+	end,
+
+	---@param self beat.SearchService
+	---@param message beat.ClearSearchMessage
+	clearSearch = function(self, message) self:clear() end,
+
+	---@param self beat.SearchService
+	---@param message beat.OpenSearchMessage
+	openSearch = function(self, message)
 		self.emit({ type = "navigate", page = { kind = "search" } })
 		self.emit({ type = "focus", field = "search", at = #self.query })
-	elseif message.type == "toggleTagFilter" then
+	end,
+
+	---@param self beat.SearchService
+	---@param message beat.ToggleTagFilterMessage
+	toggleTagFilter = function(self, message)
 		if self.tagFilter[message.id] then
 			self.tagFilter[message.id] = nil
 		else
 			self.tagFilter[message.id] = true
 		end
-	elseif message.type == "tagFilterMatch" then
-		self.match = message.value == "any" ? "any" : "all"
-	elseif message.type == "clearTagFilter" then
-		self.tagFilter = {}
-	end
-end
+	end,
+
+	---@param self beat.SearchService
+	---@param message beat.TagFilterMatchMessage
+	tagFilterMatch = function(self, message) self.match = message.value == "any" ? "any" : "all" end,
+
+	---@param self beat.SearchService
+	---@param message beat.ClearTagFilterMessage
+	clearTagFilter = function(self, message) self.tagFilter = {} end
+}
 
 return Search

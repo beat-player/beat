@@ -2,10 +2,17 @@
 -- what a failure waits for. The panel and the top bar read the same list this exercises.
 local test = require("lde-test")
 local wonderland = require("wonderland")
-local messages = require("beat.message")
 local Tasks = require("beat.app.services.tasks")
 
 local time = wonderland.time
+
+--- The app hands a message to the handler its owner names; the test calls that handler directly.
+---@param tasks beat.TasksService
+---@param message beat.Message
+local function deliver(tasks, message)
+	local on = assert(Tasks.on)
+	on[message.type](tasks, message)
+end
 
 ---@return beat.TasksService
 ---@return beat.Message[]
@@ -54,17 +61,17 @@ end)
 
 test.it("marks a task cancelling, delivers its message, and accepts its own answer", function()
 	local tasks, emitted = service()
-	local stop = messages.custom("download:cancel", { id = 3 })
+	local stop = { type = "download:cancel", custom = true, id = 3 }
 	local task = tasks:start({ title = "Downloading", cancel = stop })
 
-	tasks:update(messages.taskCancel(task.id))
+	deliver(tasks, { type = "taskCancel", id = task.id })
 	test.equal(task.state, "cancelling")
 	test.equal(#emitted, 1, "the owner heard once")
 	test.equal(emitted[1], stop, "the owner heard the message the task named")
 
 	task:cancelled()
 	test.equal(task.state, "cancelled")
-	tasks:update(messages.taskCancel(task.id))
+	deliver(tasks, { type = "taskCancel", id = task.id })
 	test.equal(#emitted, 1, "a task already cancelling is not asked twice")
 
 	local endedAt = assert(task.endedAt)
@@ -76,7 +83,7 @@ test.it("leaves a task without a cancel message alone", function()
 	local tasks, emitted = service()
 	local task = tasks:start({ title = "Cannot stop" })
 
-	tasks:update(messages.taskCancel(task.id))
+	deliver(tasks, { type = "taskCancel", id = task.id })
 	test.equal(task.state, "running", "there is nothing to deliver, so nothing is marked")
 	test.equal(#emitted, 0)
 end)
@@ -91,11 +98,11 @@ test.it("keeps a failed task until it is dismissed", function()
 	tasks:step(time.now() + 1000)
 	test.equal(#tasks:tasks(), 1, "a failure waits for the person")
 
-	tasks:update(messages.taskDismiss(task.id))
+	deliver(tasks, { type = "taskDismiss", id = task.id })
 	test.equal(#tasks:tasks(), 0, "dismissing takes it away")
 
 	local running = tasks:start({ title = "Still running" })
-	tasks:update(messages.taskDismiss(running.id))
+	deliver(tasks, { type = "taskDismiss", id = running.id })
 	test.equal(#tasks:tasks(), 1, "a running task is not dismissed by a stray message")
 end)
 

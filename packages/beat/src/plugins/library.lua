@@ -32,11 +32,11 @@ return beat.plugin({ name = "library", version = "1.0.0", requires = { core = "^
 
 	handle.overlay("sort_menu", sortMenu)
 
-	handle.action({ menu = "album", title = "Play album", order = 10, message = |ctx| -> ctx.message.playAlbum(assert(ctx.album).id, true) })
-	handle.action({ menu = "album", title = "Add to playlist", order = 20, message = |ctx| -> ctx.message.openPlaylistPicker("album", assert(ctx.album).id) })
-	handle.action({ menu = "album", title = "Play next", order = 30, message = |ctx| -> ctx.message.queueAlbum(assert(ctx.album).id, true) })
-	handle.action({ menu = "album", title = "Add to queue", order = 40, message = |ctx| -> ctx.message.queueAlbum(assert(ctx.album).id) })
+	handle.action({ menu = "album", title = "Play album", order = 10, message = |ctx| -> { type = "playAlbum", id = assert(ctx.album).id, restart = true } })
+	handle.action({ menu = "album", title = "Add to playlist", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "album", id = assert(ctx.album).id } })
+	handle.action({ menu = "album", title = "Play next", order = 30, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id, next = true } })
+	handle.action({ menu = "album", title = "Add to queue", order = 40, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id } })
 
-	handle.action({ menu = "track", title = "Play now", order = 10, message = |ctx| -> ctx.message.playTrack(assert(ctx.track).id, nil, nil, true) })
-	handle.action({ menu = "track", title = "Add to playlist", order = 20, message = |ctx| -> ctx.message.openPlaylistPicker("track", assert(ctx.track).id) })
+	handle.action({ menu = "track", title = "Play now", order = 10, message = |ctx| -> { type = "playTrack", trackId = assert(ctx.track).id, restart = true } })
+	handle.action({ menu = "track", title = "Add to playlist", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "track", id = assert(ctx.track).id } })
 end })

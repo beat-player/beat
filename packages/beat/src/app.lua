@@ -117,7 +117,7 @@ local TRAY_MESSAGES = {
 ---@field pluginStates beat.PluginStatus[] # Every plugin the page lists: loaded, off, failed, doesn't fit. Not `plugins`: that is wonderland's own list of its screen plugins, and the window's events are walked down it
 ---@field services beat.Services # The app's services by name: `app.services.search`
 ---@field serviceOrder beat.ServiceInstance[] # Every service, each after everything it needs
----@field owners table<string, beat.ServiceInstance> # The service that answers each message type
+---@field owners table<string, beat.Owner> # Who answers each message type, and with what
 ---@field messages beat.Signal # Every message, as it is delivered
 ---@field queue table[] # Messages waiting their turn
 ---@field delivering boolean
@@ -593,6 +593,18 @@ function App:act(message)
 	self:updateTray()
 end
 
+--- Hands a message straight to the service that owns its type, past the overlays and the page.
+--- An overlay that takes a message for itself -- so that a light panel does not close on it --
+--- still has the service answer it, through here.
+---@param message beat.Message
+---@return boolean handled # False when no service owns the type
+function App:toService(message)
+	local owner = self.owners[message.type]
+	if owner == nil then return false end
+	owner.handle(owner.service, message)
+	return true
+end
+
 --- Hands a message to whatever it is for: the overlays from the top down, then the page, then the
 --- one service that answers its type, then the router. A light overlay a message passes over is
 --- closed by it -- a menu goes away when anything else is pressed -- and a dialog stays. `keep` is
@@ -622,9 +634,7 @@ local function deliverTo(app, message)
 	local surface = app.registry:page(page.kind)
 	if surface.update ~= nil and surface.update(app, page, message) then return end
 
-	local owner = app.owners[message.type]
-	if owner ~= nil then
-		owner:update(message)
+	if app:toService(message) then
 		app:refresh()
 		return
 	end
