@@ -7,6 +7,7 @@ local cover = require("beat.app.components.cover")
 local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -123,7 +124,7 @@ function searchPage.view(app, page, window)
 			for _, album in ipairs(recent) do
 				local keep = false
 				for _, track in ipairs(album.tracks) do
-					if taxonomy:matches(track.path, filterIds, search.match) then
+					if taxonomy:matches(names.trackKey(track), filterIds, search.match) then
 						keep = true
 						break
 					end

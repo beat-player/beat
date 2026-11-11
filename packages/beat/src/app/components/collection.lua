@@ -4,6 +4,7 @@ local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -172,7 +173,7 @@ function collection.view(app, props)
 					width = content,
 					showAlbum = false,
 					titleOnly = props.titleOnly,
-					rating = props.ratings and app.services.collections.taxonomy:rating(track.path) or nil,
+					rating = props.ratings and app.services.collections.taxonomy:rating(names.trackKey(track)) or nil,
 					ui = props.ratings and ctx or nil
 				}
 			)

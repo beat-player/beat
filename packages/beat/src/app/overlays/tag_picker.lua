@@ -3,6 +3,7 @@
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local tagPills = require("beat.app.components.tag_pills")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -31,7 +32,7 @@ function tagPicker.update(app, overlay, message)
 		local library = app.services.library.current
 		local track = library ~= nil and library:track(state.trackId) or app.services.playback:current()
 		if track ~= nil then
-			app.services.collections.taxonomy:toggleTag(track.path, message.id)
+			app.services.collections.taxonomy:toggleTag(names.trackKey(track), message.id)
 			app.services.collections:save()
 			app:refresh()
 		end
@@ -52,7 +53,7 @@ function tagPicker.view(app, overlay, window)
 	local ctx = app:ui(window)
 	local tags = app.services.collections.taxonomy:visibleTags()
 	local selected = {}
-	local assigned = app.services.collections.taxonomy.byPath[track.path]
+	local assigned = app.services.collections.taxonomy.byKey[names.trackKey(track)]
 	if assigned ~= nil then
 		for id in pairs(assigned) do selected[id] = true end
 	end

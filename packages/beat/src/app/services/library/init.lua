@@ -15,6 +15,7 @@ local Signal = require("beat.app.signal")
 ---@field emit fun(message: table) # Sends an event to whoever is listening
 ---@field replaced beat.Signal # Fired with the new library, after the old one is gone
 ---@field changed beat.Signal # Tracks were added or the scan finished
+---@field finished beat.Signal # Fired with the library once a scan is over, after `changed`
 local LibraryService = {}
 LibraryService.__index = LibraryService
 LibraryService.needs = { "settings", "options", "emit" }
@@ -33,7 +34,8 @@ function LibraryService.new(deps)
 			settings = deps.settings,
 			emit = deps.emit,
 			replaced = Signal.new(),
-			changed = Signal.new()
+			changed = Signal.new(),
+			finished = Signal.new()
 		},
 		LibraryService
 	)
@@ -96,6 +98,7 @@ function LibraryService:finish()
 	self.current:finish()
 	dropSorted(self)
 	self.changed:fire()
+	self.finished:fire(self.current)
 end
 
 --- Writes the library to its cache. Called when a scan finishes, not on every track.

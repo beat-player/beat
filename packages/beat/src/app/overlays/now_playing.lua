@@ -7,6 +7,7 @@ local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
 local metrics = require("beat.app.components.helpers.metrics")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -267,7 +268,7 @@ function nowPlaying.view(app, _overlay, window)
 			toolChildren[#toolChildren + 1] = ui.rating(
 				ctx,
 				{
-					value = app.services.collections.taxonomy:rating(track.path),
+					value = app.services.collections.taxonomy:rating(names.trackKey(track)),
 					onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
 					size = starSize,
 					gap = starGap

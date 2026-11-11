@@ -1,7 +1,9 @@
 -- Tags and playlists: the listener's own organisation of a library that scanning may replace
--- under it. They are keyed by track path and saved beside settings rather than in the scan cache,
--- so a rescan keeps them; this is the one place that writes them, and everything that shows them
--- hears about a change here rather than being told to redraw.
+-- under it. They are keyed by a track key -- a fingerprint of the audio where the scan has one --
+-- and saved beside settings rather than in the scan cache, so a rescan keeps them; this is the one
+-- place that writes them, and everything that shows them hears about a change here rather than
+-- being told to redraw.
+local names = require("beat.music.names")
 local TagStore = require("beat.app.services.collections.store")
 local Signal = require("beat.app.signal")
 
@@ -17,10 +19,33 @@ Collections.needs = { "library", "toasts" }
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
 function Collections.new(deps)
-	return setmetatable(
-		{ taxonomy = TagStore.load(), library = deps.library, toasts = deps.toasts, changed = Signal.new() },
+	local self = setmetatable(
+		{
+			taxonomy = TagStore.load(),
+			library = deps.library,
+			toasts = deps.toasts,
+			changed = Signal.new()
+		},
 		Collections
 	)
+
+	-- The cache loaded at start is a library the tags from a version-1 file can be claimed against
+	-- before anything draws. A scan starts from an empty library and its tracks arrive one at a
+	-- time, so adoption waits for its end (`finished`) rather than writing tags.json per track; a
+	-- library replacing the old one is adopted at once in case it came with tracks already.
+	self:adopt(deps.library.current)
+	deps.library.replaced:connect(|library| -> self:adopt(library))
+	deps.library.finished:connect(|library| -> self:adopt(library))
+
+	return self
+end
+
+--- Files the version-1 entries whose path this library holds under their track's key, and writes
+--- the taxonomy when that moved anything: an adoption that was not saved would be done again on the
+--- next launch.
+---@param library beat.Library?
+function Collections:adopt(library)
+	if library ~= nil and self.taxonomy:adopt(library) then self:save() end
 end
 
 --- Writes the taxonomy. A read-only config directory must not take the screen, so the failure is
@@ -70,7 +95,7 @@ Collections.on = {
 		local library = self.library.current
 		local track = library ~= nil and library:track(message.id) or nil
 		if track then
-			self.taxonomy:setRating(track.path, message.stars)
+			self.taxonomy:setRating(names.trackKey(track), message.stars)
 			self:save()
 		end
 	end,
@@ -87,8 +112,8 @@ Collections.on = {
 	end
 }
 
---- The tracks a playlist holds, in library order. Built from the library showing: a path that is
---- not in it cannot be played, so it is not here either.
+--- The tracks a playlist holds, in library order. Built from the library showing: a track it does
+--- not hold cannot be played, so it is not here either.
 ---@param playlist beat.Playlist
 ---@return beat.Track[]
 function Collections:playlistTracks(playlist)

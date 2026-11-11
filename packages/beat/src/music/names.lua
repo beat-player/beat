@@ -52,6 +52,24 @@ local function hasText(value)
 	return value ~= nil and value ~= ""
 end
 
+--- The key a track is filed under while it has no fingerprint: its path, prefixed so it can never
+--- be mistaken for a fingerprint.
+---@param path string
+---@return string
+function names.pathKey(path)
+	return "path:" .. path
+end
+
+--- The key a track's own data is filed under. A fingerprint of the audio survives renaming, moving
+--- and retagging, so the listener's tags, rating and plays follow the file; a scan that cannot
+--- compute one keeps the path, which is all earlier versions had.
+---@param track beat.Track
+---@return string
+function names.trackKey(track)
+	if track.fingerprint ~= nil and track.fingerprint ~= "" then return track.fingerprint end
+	return names.pathKey(track.path)
+end
+
 --- The key a set of tags and a folder make for one album. The scanner's worker and the library
 --- both need it, and a cache keyed by one must be the same album the other groups.
 ---@param tags table<string, any>?

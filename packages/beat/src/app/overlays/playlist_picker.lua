@@ -1,6 +1,7 @@
 -- Where a track or a whole album goes: one row per playlist, with how many tracks it would hold.
 local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -34,7 +35,7 @@ function playlistPicker.update(app, overlay, message)
 			if album ~= nil then app.services.collections.taxonomy:setPlaylistAlbum(playlist, album) end
 		else
 			local track = library:track(state.id)
-			if track ~= nil then app.services.collections.taxonomy:setPlaylistTrack(playlist, track.path, true) end
+			if track ~= nil then app.services.collections.taxonomy:setPlaylistTrack(playlist, names.trackKey(track), true) end
 		end
 		app.services.collections:save()
 		app.services.toasts:show("Added to " .. playlist.name)

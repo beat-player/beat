@@ -1,6 +1,11 @@
 -- Tags and playlists. Tags belong to tracks and are what both smart playlists and the search
 -- filters are built from; a manual playlist is a hidden tag of its own, so membership has one
 -- representation whether the person tagged a song or dragged it into a playlist.
+--
+-- A track is filed under `names.trackKey`: the fingerprint of its audio where the scan has one,
+-- so a file that was moved or renamed keeps the listener's tags, rating and plays, and its path
+-- where it has none. A version-1 file keyed everything by path and is read into `legacy`, which
+-- `adopt` empties onto keys as soon as a library holds those paths.
 local names = require("beat.music.names")
 
 ---@class beat.Tag
@@ -25,18 +30,25 @@ local names = require("beat.music.names")
 ---@field count number
 ---@field last number
 
+--- What a version-1 file kept by path, waiting for a library to say which track path is.
+---@class beat.LegacyTaxonomy
+---@field byPath table<string, table<number, boolean>>
+---@field ratings table<string, number>
+---@field metrics table<string, beat.Metric>
+
 ---@class beat.Taxonomy
 ---@field tags beat.Tag[]
 ---@field tagById table<number, beat.Tag>
 ---@field tagByName table<string, beat.Tag>
----@field byPath table<string, table<number, boolean>>
+---@field byKey table<string, table<number, boolean>> # Tag ids per `names.trackKey`
 ---@field playlists beat.Playlist[]
 ---@field playlistById table<number, beat.Playlist>
 ---@field nextTagId number
 ---@field nextPlaylistId number
----@field albumRatings table<string, number>
----@field ratings table<string, number>
+---@field albumRatings table<string, number> # By album key
+---@field ratings table<string, number> # By track key
 ---@field metrics { tracks: table<string, beat.Metric>, albums: table<string, beat.Metric>, tags: table<number, beat.Metric>, playlists: table<number, beat.Metric> }
+---@field legacy beat.LegacyTaxonomy # Path-keyed entries no library has claimed yet
 local Taxonomy = {}
 Taxonomy.__index = Taxonomy
 
@@ -47,14 +59,15 @@ function Taxonomy.new()
 			tags = {},
 			tagById = {},
 			tagByName = {},
-			byPath = {},
+			byKey = {},
 			playlists = {},
 			playlistById = {},
 			nextTagId = 1,
 			nextPlaylistId = 1,
 			albumRatings = {},
 			ratings = {},
-			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
+			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} },
+			legacy = { byPath = {}, ratings = {}, metrics = {} }
 		},
 		Taxonomy
 	)
@@ -79,10 +92,14 @@ end
 ---@param self beat.Taxonomy
 local function useTags(self)
 	for _, tag in ipairs(self.tags) do recount(tag) end
-	for _, set in pairs(self.byPath) do
-		for id in pairs(set) do
-			local tag = self.tagById[id]
-			if tag ~= nil then tag.count += 1 end
+	-- A legacy set still belongs on a tag: the tag is real, only the track it names has not been
+	-- matched to its key yet.
+	for _, map in ipairs({ self.byKey, self.legacy.byPath }) do
+		for _, set in pairs(map) do
+			for id in pairs(set) do
+				local tag = self.tagById[id]
+				if tag ~= nil then tag.count += 1 end
+			end
 		end
 	end
 end
@@ -132,24 +149,24 @@ function Taxonomy:visibleTags()
 	return tags
 end
 
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param tagId number
 ---@return boolean
-function Taxonomy:isTagged(path, tagId)
-	local set = self.byPath[path]
+function Taxonomy:isTagged(key, tagId)
+	local set = self.byKey[key]
 	return set ~= nil and set[tagId] == true
 end
 
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param tagId number
 ---@param on boolean
-function Taxonomy:setTag(path, tagId, on)
+function Taxonomy:setTag(key, tagId, on)
 	if self.tagById[tagId] == nil then return end
-	local set = self.byPath[path]
+	local set = self.byKey[key]
 	if on then
 		if set == nil then
 			set = {}
-			self.byPath[path] = set
+			self.byKey[key] = set
 		end
 		if not set[tagId] then
 			set[tagId] = true
@@ -175,25 +192,25 @@ function Taxonomy:setTag(path, tagId, on)
 			empty = false
 			break
 		end
-		if empty then self.byPath[path] = nil end
+		if empty then self.byKey[key] = nil end
 	end
 end
 
 ---@param s number?
 local clampRating = |s| -> math.max(0, math.min(5, math.floor(s or 0)))
 
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@return number # 0 when unrated
-function Taxonomy:rating(path)
-	return self.ratings[path] or 0
+function Taxonomy:rating(key)
+	return self.ratings[key] or 0
 end
 
 --- 1-5 stars, 0 for unrated.
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param value number
-function Taxonomy:setRating(path, value)
+function Taxonomy:setRating(key, value)
 	value = clampRating(value)
-	self.ratings[path] = value > 0 ? value : nil
+	self.ratings[key] = value > 0 ? value : nil
 end
 
 ---@param key string
@@ -210,22 +227,22 @@ function Taxonomy:setAlbumRating(key, value)
 	self.albumRatings[key] = value > 0 ? value : nil
 end
 
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param tagId number
 ---@return boolean state
-function Taxonomy:toggleTag(path, tagId)
-	local on = not self:isTagged(path, tagId)
-	self:setTag(path, tagId, on)
+function Taxonomy:toggleTag(key, tagId)
+	local on = not self:isTagged(key, tagId)
+	self:setTag(key, tagId, on)
 	return on
 end
 
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param tagIds number[]
 ---@param match "all"|"any"
 ---@return boolean
-function Taxonomy:matches(path, tagIds, match)
+function Taxonomy:matches(key, tagIds, match)
 	if #tagIds == 0 then return false end
-	local set = self.byPath[path]
+	local set = self.byKey[key]
 	if set == nil then return false end
 	if match == "any" then
 		for _, id in ipairs(tagIds) do
@@ -293,9 +310,10 @@ end
 function Taxonomy:playlistTracks(playlist, library)
 	local tracks = {}
 	for _, track in ipairs(library.tracks) do
-		local smartMatch = playlist.smart and self:matches(track.path, playlist.tagIds, playlist.match)
+		local key = names.trackKey(track)
+		local smartMatch = playlist.smart and self:matches(key, playlist.tagIds, playlist.match)
 		local manualMatch = playlist.manual and playlist.hiddenTagId ~= nil and self:isTagged(
-			track.path,
+			key,
 			playlist.hiddenTagId
 		)
 		if smartMatch or manualMatch then tracks[#tracks + 1] = track end
@@ -304,16 +322,16 @@ function Taxonomy:playlistTracks(playlist, library)
 end
 
 ---@param playlist beat.Playlist
----@param path string
+---@param key string # `names.trackKey(track)`
 ---@param on boolean
-function Taxonomy:setPlaylistTrack(playlist, path, on)
+function Taxonomy:setPlaylistTrack(playlist, key, on)
 	local hidden = playlist.hiddenTagId
 	if hidden == nil then return end
-	local was = self:isTagged(path, hidden)
+	local was = self:isTagged(key, hidden)
 	if was ~= on then
 		playlist.updatedAt = os.time()
 		if on then playlist.manual = true end
-		self:setTag(path, hidden, on)
+		self:setTag(key, hidden, on)
 	end
 end
 
@@ -322,9 +340,9 @@ end
 ---@param on boolean?
 function Taxonomy:setPlaylistAlbum(playlist, album, on)
 	if on == false then
-		for _, track in ipairs(album.tracks) do self:setPlaylistTrack(playlist, track.path, false) end
+		for _, track in ipairs(album.tracks) do self:setPlaylistTrack(playlist, names.trackKey(track), false) end
 	else
-		for _, track in ipairs(album.tracks) do self:setPlaylistTrack(playlist, track.path, true) end
+		for _, track in ipairs(album.tracks) do self:setPlaylistTrack(playlist, names.trackKey(track), true) end
 	end
 end
 
@@ -337,15 +355,18 @@ function Taxonomy:removeTag(tagId)
 	for at = #self.tags, 1, -1 do
 		if self.tags[at].id == tagId then table.remove(self.tags, at) end
 	end
-	for path, set in pairs(self.byPath) do
-		if set[tagId] then
-			set[tagId] = nil
-			local empty = true
-			for _ in pairs(set) do
-				empty = false
-				break
+	-- The legacy entries too: a tag removed before its path was adopted must not come back with it.
+	for _, map in ipairs({ self.byKey, self.legacy.byPath }) do
+		for key, set in pairs(map) do
+			if set[tagId] then
+				set[tagId] = nil
+				local empty = true
+				for _ in pairs(set) do
+					empty = false
+					break
+				end
+				if empty then map[key] = nil end
 			end
-			if empty then self.byPath[path] = nil end
 		end
 	end
 	local removing = {}
@@ -441,10 +462,11 @@ end
 ---@param now number?
 function Taxonomy:recordListen(track, library, playlistId, now)
 	now = now or os.time()
-	bump(self.metrics.tracks, track.path, now)
+	local key = names.trackKey(track)
+	bump(self.metrics.tracks, key, now)
 	local album = library:album(track.albumId)
 	if album ~= nil then bump(self.metrics.albums, album.key, now) end
-	local set = self.byPath[track.path]
+	local set = self.byKey[key]
 	if set ~= nil then
 		for id in pairs(set) do
 			local tag = self.tagById[id]
@@ -457,7 +479,7 @@ end
 ---@param track beat.Track
 ---@return beat.Metric?
 function Taxonomy:trackMetric(track)
-	return self.metrics.tracks[track.path]
+	return self.metrics.tracks[names.trackKey(track)]
 end
 
 ---@param album beat.Album
@@ -488,8 +510,106 @@ function Taxonomy:recentAlbums(library, limit)
 	return albums
 end
 
---- What is written to disk. Paths identify tracks across scans; numeric tag ids keep the
---- definitions stable even if a file is renamed later.
+---@param map table<string, any>
+---@return string[]
+local function sortedKeys(map)
+	local keys = {}
+	for key in pairs(map) do keys[#keys + 1] = key end
+	table.sort(keys)
+	return keys
+end
+
+--- One track's data filed under `key`, merged with what is already there: tags are a union, a
+--- rating is taken only when the key has none, and play counts add while the last play is the
+--- later one. Both kinds of adoption below merge this way.
+---@param self beat.Taxonomy
+---@param key string
+---@param tags table<number, boolean>?
+---@param rating number?
+---@param metric beat.Metric?
+local function claim(self, key, tags, rating, metric)
+	if tags ~= nil then
+		local set = self.byKey[key] or {}
+		for id in pairs(tags) do
+			if self.tagById[id] ~= nil then set[id] = true end
+		end
+		self.byKey[key] = next(set) ~= nil and set or nil
+	end
+	if rating ~= nil and self.ratings[key] == nil then self.ratings[key] = rating end
+	if metric ~= nil then
+		local current = self.metrics.tracks[key]
+		if current == nil then
+			self.metrics.tracks[key] = { count = metric.count, last = metric.last }
+		else
+			current.count += metric.count
+			current.last = math.max(current.last, metric.last)
+		end
+	end
+end
+
+--- Claims what this library's tracks are owed. A version-1 entry is claimed by the track now at
+--- its path. An entry filed under a track's path because it had no fingerprint then -- a scan
+--- that could not read one, or a version of the app that did not compute them -- is claimed by
+--- the track at that path once it has one; left alone, it would never be found again. Version-1
+--- entries whose path is in no library stay in `legacy`: a folder that is not scanned yet may
+--- come back, and a file dragged out of it has not said where it went.
+---@param library beat.Library
+---@return boolean moved # Whether anything was claimed, so the caller knows to save
+function Taxonomy:adopt(library)
+	local legacy = self.legacy
+	local moved = false
+
+	---@type table<string, beat.Track>
+	local byPath = {}
+	for _, track in ipairs(library.tracks) do byPath[track.path] = track end
+
+	-- Every version-1 path, sorted, so that two found to be the same track resolve the same way
+	-- every launch: the first path's rating wins where two disagree.
+	local paths = {}
+	for _, map in ipairs({ legacy.byPath, legacy.ratings, legacy.metrics }) do
+		for path in pairs(map) do paths[path] = true end
+	end
+	for _, path in ipairs(sortedKeys(paths)) do
+		local track = byPath[path]
+		if track ~= nil then
+			claim(self, names.trackKey(track), legacy.byPath[path], legacy.ratings[path], legacy.metrics[path])
+			legacy.byPath[path], legacy.ratings[path], legacy.metrics[path] = nil, nil, nil
+			moved = true
+		end
+	end
+
+	for _, track in ipairs(library.tracks) do
+		local key = names.trackKey(track)
+		local old = names.pathKey(track.path)
+		if key ~= old and (self.byKey[old] ~= nil or self.ratings[old] ~= nil or self.metrics.tracks[old] ~= nil) then
+			claim(self, key, self.byKey[old], self.ratings[old], self.metrics.tracks[old])
+			self.byKey[old], self.ratings[old], self.metrics.tracks[old] = nil, nil, nil
+			moved = true
+		end
+	end
+
+	if moved then useTags(self) end
+	return moved
+end
+
+--- The tag ids a set holds, sorted, with ids whose tag is gone left out: a hand-edited file can
+--- name one, and it would be written back on every save only to be dropped on every load.
+---@param set table<number, boolean>
+---@param self beat.Taxonomy
+---@return number[]
+local function setIds(self, set)
+	local ids = {}
+	for id in pairs(set) do
+		if self.tagById[id] ~= nil then ids[#ids + 1] = id end
+	end
+	table.sort(ids)
+	return ids
+end
+
+--- What is written to disk. A track is identified by its key -- the audio's fingerprint where the
+--- scan has one -- so a file that moved keeps what the listener put on it; numeric tag ids keep
+--- the definitions stable even if a file is renamed later. `legacy` holds what a version-1 file
+--- kept by path and no library has claimed yet.
 ---@return table
 function Taxonomy:pack()
 	local tags = {}
@@ -498,11 +618,9 @@ function Taxonomy:pack()
 	end
 
 	local assignments = {}
-	for path, set in pairs(self.byPath) do
-		local ids = {}
-		for id in pairs(set) do ids[#ids + 1] = id end
-		table.sort(ids)
-		assignments[#assignments + 1] = { path = path, tags = ids }
+	for key, set in pairs(self.byKey) do
+		local ids = setIds(self, set)
+		if #ids > 0 then assignments[#assignments + 1] = { key = key, tags = ids } end
 	end
 
 	local playlists = {}
@@ -521,13 +639,13 @@ function Taxonomy:pack()
 	end
 
 	local albumRatings = {}
-	for path, value in pairs(self.albumRatings) do
-		albumRatings[#albumRatings + 1] = { path = path, value = value }
+	for key, value in pairs(self.albumRatings) do
+		albumRatings[#albumRatings + 1] = { key = key, value = value }
 	end
 
 	local ratings = {}
-	for path, value in pairs(self.ratings) do
-		ratings[#ratings + 1] = { path = path, value = value }
+	for key, value in pairs(self.ratings) do
+		ratings[#ratings + 1] = { key = key, value = value }
 	end
 
 	local metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} }
@@ -544,7 +662,28 @@ function Taxonomy:pack()
 		metrics.playlists[#metrics.playlists + 1] = { id = id, count = metric.count, last = metric.last }
 	end
 
-	return { version = 1, tags = tags, assignments = assignments, playlists = playlists, metrics = metrics, ratings = ratings, albumRatings = albumRatings }
+	local legacy = { assignments = {}, ratings = {}, tracks = {} }
+	for path, set in pairs(self.legacy.byPath) do
+		local ids = setIds(self, set)
+		if #ids > 0 then legacy.assignments[#legacy.assignments + 1] = { path = path, tags = ids } end
+	end
+	for path, value in pairs(self.legacy.ratings) do
+		legacy.ratings[#legacy.ratings + 1] = { path = path, value = value }
+	end
+	for path, metric in pairs(self.legacy.metrics) do
+		legacy.tracks[#legacy.tracks + 1] = { path = path, count = metric.count, last = metric.last }
+	end
+
+	return {
+		version = 2,
+		tags = tags,
+		assignments = assignments,
+		playlists = playlists,
+		metrics = metrics,
+		ratings = ratings,
+		albumRatings = albumRatings,
+		legacy = legacy
+	}
 end
 
 ---@param data table
@@ -591,25 +730,50 @@ function Taxonomy.unpack(data)
 			if playlist.id >= self.nextPlaylistId then self.nextPlaylistId = playlist.id + 1 end
 		end
 	end
-	for _, raw in ipairs(data.assignments or {}) do
-		if type(raw) == "table" and type(raw.path) == "string" then
-			local set = {}
-			for _, id in ipairs(raw.tags or {}) do
-				if self.tagById[id] ~= nil then set[id] = true end
-			end
-			if next(set) ~= nil then self.byPath[raw.path] = set end
-		end
-	end
+	local version = data.version == 1 and 1 or 2
 
-	for _, raw in ipairs(data.ratings or {}) do
-		if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
-			self.ratings[raw.path] = clampRating(raw.value)
+	if version == 1 then
+		-- A version-1 file names tracks by path. Those entries wait in `legacy` until a library
+		-- holds the path and `adopt` can file them under the track's key.
+		for _, raw in ipairs(data.assignments or {}) do
+			if type(raw) == "table" and type(raw.path) == "string" then
+				local set = {}
+				for _, id in ipairs(raw.tags or {}) do
+					if self.tagById[id] ~= nil then set[id] = true end
+				end
+				if next(set) ~= nil then self.legacy.byPath[raw.path] = set end
+			end
+		end
+		for _, raw in ipairs(data.ratings or {}) do
+			if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
+				local value = clampRating(raw.value)
+				if value > 0 then self.legacy.ratings[raw.path] = value end
+			end
+		end
+	else
+		for _, raw in ipairs(data.assignments or {}) do
+			if type(raw) == "table" and type(raw.key) == "string" then
+				local set = {}
+				for _, id in ipairs(raw.tags or {}) do
+					if self.tagById[id] ~= nil then set[id] = true end
+				end
+				if next(set) ~= nil then self.byKey[raw.key] = set end
+			end
+		end
+		for _, raw in ipairs(data.ratings or {}) do
+			if type(raw) == "table" and type(raw.key) == "string" and type(raw.value) == "number" then
+				local value = clampRating(raw.value)
+				if value > 0 then self.ratings[raw.key] = value end
+			end
 		end
 	end
 
 	for _, raw in ipairs(data.albumRatings or {}) do
-		if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
-			self.albumRatings[raw.path] = clampRating(raw.value)
+		if type(raw) == "table" then
+			local key = version == 1 and raw.path or raw.key
+			if type(key) == "string" and type(raw.value) == "number" then
+				self.albumRatings[key] = clampRating(raw.value)
+			end
 		end
 	end
 
@@ -618,7 +782,11 @@ function Taxonomy.unpack(data)
 	for _, raw in ipairs(metrics.tracks or {}) do
 		---@cast raw { key: string?, id: number?, count: number?, last: number? }
 		if type(raw.key) == "string" then
-			self.metrics.tracks[raw.key] = { count = raw.count or 0, last = raw.last or 0 }
+			if version == 1 then
+				self.legacy.metrics[raw.key] = { count = raw.count or 0, last = raw.last or 0 }
+			else
+				self.metrics.tracks[raw.key] = { count = raw.count or 0, last = raw.last or 0 }
+			end
 		end
 	end
 	for _, raw in ipairs(metrics.albums or {}) do
@@ -639,6 +807,33 @@ function Taxonomy.unpack(data)
 			self.metrics.playlists[raw.id] = { count = raw.count or 0, last = raw.last or 0 }
 		end
 	end
+
+	if version == 2 then
+		---@type table
+		local legacy = type(data.legacy) == "table" and data.legacy or {}
+		for _, raw in ipairs(legacy.assignments or {}) do
+			if type(raw) == "table" and type(raw.path) == "string" then
+				local set = {}
+				for _, id in ipairs(raw.tags or {}) do
+					if self.tagById[id] ~= nil then set[id] = true end
+				end
+				if next(set) ~= nil then self.legacy.byPath[raw.path] = set end
+			end
+		end
+		for _, raw in ipairs(legacy.ratings or {}) do
+			if type(raw) == "table" and type(raw.path) == "string" and type(raw.value) == "number" then
+				local value = clampRating(raw.value)
+				if value > 0 then self.legacy.ratings[raw.path] = value end
+			end
+		end
+		for _, raw in ipairs(legacy.tracks or {}) do
+			---@cast raw { path: string?, count: number?, last: number? }
+			if type(raw.path) == "string" then
+				self.legacy.metrics[raw.path] = { count = raw.count or 0, last = raw.last or 0 }
+			end
+		end
+	end
+
 	useTags(self)
 	self:ensureTagPlaylists()
 	return self

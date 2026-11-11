@@ -92,3 +92,15 @@ test.it("ignores a cache written for another version of the cache", function()
 	test.equal(LibraryCache.load(ROOT), nil, "an older cache is dropped rather than guessed at")
 	fs.delete(path)
 end)
+
+test.it("keeps each track's fingerprint, so tags stay attached across a launch", function()
+	local library = Library.new(ROOT)
+	local info, entry = file("01 - Heard Em Say", "Kanye West")
+	info.fingerprint = "0123456789abcdef"
+	library:add(info, entry)
+	library:finish()
+	test.equal(LibraryCache.save(library), true)
+
+	local loaded = assert(LibraryCache.load(ROOT))
+	test.equal(loaded.tracks[1].fingerprint, "0123456789abcdef")
+end)

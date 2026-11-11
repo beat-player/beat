@@ -2,6 +2,7 @@
 -- over every page, so typing anywhere goes to search rather than to the page underneath; and the
 -- results are computed over the library, so a new library makes what was typed and picked for the
 -- old one meaningless and clears both here.
+local names = require("beat.music.names")
 ---
 ---@class beat.SearchCache
 ---@field query string
@@ -80,7 +81,7 @@ function Search:results()
 	local taxonomy = self.collections.taxonomy
 	local matchedTracks = {}
 	for _, track in ipairs(tracks) do
-		if taxonomy:matches(track.path, ids, self.match) then
+		if taxonomy:matches(names.trackKey(track), ids, self.match) then
 			matchedTracks[#matchedTracks + 1] = track
 		end
 	end
@@ -89,7 +90,7 @@ function Search:results()
 	for _, album in ipairs(albums) do
 		local keep = false
 		for _, track in ipairs(album.tracks) do
-			if taxonomy:matches(track.path, ids, self.match) then
+			if taxonomy:matches(names.trackKey(track), ids, self.match) then
 				keep = true
 				break
 			end
@@ -101,7 +102,7 @@ function Search:results()
 	for _, artist in ipairs(artists) do
 		local keep = false
 		for _, track in ipairs(artist.tracks) do
-			if taxonomy:matches(track.path, ids, self.match) then
+			if taxonomy:matches(names.trackKey(track), ids, self.match) then
 				keep = true
 				break
 			end
