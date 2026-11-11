@@ -28,6 +28,7 @@ local names = require("beat.music.names")
 ---@field coverCache string? # The local downscaled copy the scan worker made
 ---@field modified number # The file's last modification time, in seconds
 ---@field hash string
+---@field fingerprint string? # A fingerprint of the audio itself, when the scan can compute one
 
 ---@class beat.Album
 ---@field id number
@@ -167,7 +168,8 @@ function Library:add(info, entry, cover, coverCache)
 		coverPath = intern(self, cover),
 		coverCache = intern(self, coverCache),
 		modified = entry.modifyTime or 0,
-		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle)
+		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
+		fingerprint = info.fingerprint
 	}
 
 	-- The album key is the album artist when the files agree on one, and the album's directory

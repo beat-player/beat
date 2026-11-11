@@ -4,6 +4,7 @@ local test = require("lde-test")
 local wonderland = require("wonderland")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
+local names = require("beat.music.names")
 local Queue = require("beat.app.services.playback.queue")
 local PlayerService = require("beat.app.services.playback.player")
 local ScanJob = require("beat.app.services.scan.job")
@@ -454,7 +455,7 @@ test.it("records a listen when playback starts a track", function()
 
 	App:tick(10, { width = 1200, height = 720, shouldRedraw = false })
 	local track = library.albums[1].tracks[1]
-	test.equal(App.services.collections.taxonomy.metrics.tracks[track.path].count, 1)
+	test.equal(App.services.collections.taxonomy.metrics.tracks[names.trackKey(track)].count, 1)
 	test.equal(App.services.collections.taxonomy.metrics.albums[library.albums[1].key].count, 1)
 	test.equal(App.services.collections.taxonomy.metrics.playlists[9].count, 1)
 	App.services.playback.player:close()
@@ -599,6 +600,8 @@ end)
 
 test.it("confirms deleting a tag only when it has been applied", function()
 	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
 	App.services.collections.taxonomy = Taxonomy.new()
 	App.services.collections.save = function() end
 
@@ -610,7 +613,7 @@ test.it("confirms deleting a tag only when it has been applied", function()
 
 	local used = assert(App.services.collections.taxonomy:addTag("Used"))
 	local auto = App.services.collections.taxonomy.playlists[#App.services.collections.taxonomy.playlists]
-	App.services.collections.taxonomy:setTag("/music/a.flac", used.id, true)
+	App.services.collections.taxonomy:setTag(names.trackKey(library.albums[1].tracks[1]), used.id, true)
 	test.equal(used.count, 1)
 	App:act({ type = "deleteTag", id = used.id })
 	test.truthy(App.services.collections.taxonomy.tagById[used.id] ~= nil, "a used tag waits for confirmation")
@@ -633,7 +636,7 @@ test.it("filters search results with selected tags", function()
 	App.services.library.current = library
 	App.services.collections.taxonomy = Taxonomy.new()
 	local high = assert(App.services.collections.taxonomy:addTag("High Energy"))
-	App.services.collections.taxonomy:setTag(library.albums[1].tracks[1].path, high.id, true)
+	App.services.collections.taxonomy:setTag(names.trackKey(library.albums[1].tracks[1]), high.id, true)
 	local search = App.services.search
 	search.query = "Artist"
 
@@ -646,7 +649,7 @@ test.it("filters search results with selected tags", function()
 	test.equal(#artists, 1, "an artist survives when one of its tracks matches")
 
 	local late = assert(App.services.collections.taxonomy:addTag("Late Night"))
-	App.services.collections.taxonomy:setTag(library.albums[1].tracks[2].path, late.id, true)
+	App.services.collections.taxonomy:setTag(names.trackKey(library.albums[1].tracks[2]), late.id, true)
 	search.tagFilter = { [high.id] = true, [late.id] = true }
 	search.match = "all"
 	local _, _, allTags = search:results()
@@ -707,22 +710,24 @@ end)
 test.it("persists tags and playlists beside settings", function()
 	local dir = os.tmpname() .. "-beat-tags"
 	fs.mkdirAll(dir)
+	local library = Library.new("/music")
+	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "A", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 } }, { path = "/music/a.flac", dir = "/music", name = "a.flac", ext = "flac" }, nil)
+	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "B", artist = "Artist", album = "Album", albumArtist = "Artist", track = 2 } }, { path = "/music/b.flac", dir = "/music", name = "b.flac", ext = "flac" }, nil)
+	library:finish()
+	local a, b = names.trackKey(library.tracks[1]), names.trackKey(library.tracks[2])
+
 	local taxonomy = Taxonomy.new()
 	local high = assert(taxonomy:addTag("High Energy"))
 	local smart = assert(taxonomy:addPlaylist("High", true, { high.id }, "all"))
 	local manual = assert(taxonomy:addPlaylist("Manual", false))
-	taxonomy:setTag("/music/a.flac", high.id, true)
-	taxonomy:setPlaylistTrack(manual, "/music/b.flac", true)
+	taxonomy:setTag(a, high.id, true)
+	taxonomy:setPlaylistTrack(manual, b, true)
 
 	local saved = TagStore.save(taxonomy, dir)
 	test.truthy(saved)
 	local loaded = TagStore.load(dir)
 	test.equal(#loaded:visibleTags(), 1)
-	test.truthy(loaded:isTagged("/music/a.flac", loaded:visibleTags()[1].id))
-	local library = Library.new("/music")
-	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "A", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 } }, { path = "/music/a.flac", dir = "/music", name = "a.flac", ext = "flac" }, nil)
-	library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "B", artist = "Artist", album = "Album", albumArtist = "Artist", track = 2 } }, { path = "/music/b.flac", dir = "/music", name = "b.flac", ext = "flac" }, nil)
-	library:finish()
+	test.truthy(loaded:isTagged(a, loaded:visibleTags()[1].id))
 	test.equal(#loaded:playlistTracks(assert(loaded:playlist(smart.id)), library), 1)
 	test.equal(#loaded:playlistTracks(assert(loaded:playlist(manual.id)), library), 1)
 	fs.rmdir(dir)
@@ -756,7 +761,7 @@ test.it("creates tags and playlists from the app actions", function()
 	test.truthy(smart.smart)
 	test.equal(#smart.tagIds, 1)
 
-	App.services.collections.taxonomy:setTag(library.albums[1].tracks[1].path, tag.id, true)
+	App.services.collections.taxonomy:setTag(names.trackKey(library.albums[1].tracks[1]), tag.id, true)
 	test.equal(#App.services.collections.taxonomy:playlistTracks(smart, library), 1, "the smart playlist follows the tag")
 
 	App:act({ type = "open", overlay = "playlist_dialog", smart = false })

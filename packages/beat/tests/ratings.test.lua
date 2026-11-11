@@ -5,6 +5,7 @@ local fs = require("fs")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local TagStore = require("beat.app.services.collections.store")
+local names = require("beat.music.names")
 local App = require("beat.app")
 
 -- The rating is written to tags.json, which must be a test's own and not the user's.
@@ -43,13 +44,14 @@ test.it("a rateTrack message rates the track and writes it to tags.json", functi
 	local lib = library()
 	App.services.library.current = lib
 	local track = lib.tracks[1]
+	local key = names.trackKey(track)
 
 	App:act({ type = "rateTrack", id = track.id, stars = 4 })
-	test.equal(App.services.collections.taxonomy:rating(track.path), 4)
-	test.equal(TagStore.load():rating(track.path), 4, "tags.json holds it")
+	test.equal(App.services.collections.taxonomy:rating(key), 4)
+	test.equal(TagStore.load():rating(key), 4, "tags.json holds it")
 
 	App:act({ type = "rateTrack", id = track.id, stars = 0 })
-	test.equal(TagStore.load():rating(track.path), 0, "and none takes it back on disk too")
+	test.equal(TagStore.load():rating(key), 0, "and none takes it back on disk too")
 
 	App.services.playback.player:close()
 end)

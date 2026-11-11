@@ -12,8 +12,10 @@ local Log = require("beat.log")
 local LibraryCache = {}
 
 -- Raised when what a scan reads changes, so a cache written by an older scan is read again rather
--- than trusted: 5 is treble's exact length for an MP3 with no length header, where 4 had a guess.
-local VERSION = 5
+-- than trusted: 6 adds each track's audio fingerprint, which the listener's tags are now keyed by,
+-- and a cache written before it has none, so every track must be read once to get one. 5 was
+-- treble's exact length for an MP3 with no length header, where 4 had a guess.
+local VERSION = 6
 
 local function cacheFile()
 	return paths.file("library.json")
@@ -41,7 +43,8 @@ local function packed(track, key)
 		hasPicture = track.hasPicture,
 		coverPath = track.coverPath,
 		coverCache = track.coverCache,
-		modified = track.modified
+		modified = track.modified,
+		fingerprint = track.fingerprint
 	}
 end
 
@@ -102,6 +105,7 @@ function LibraryCache.load(root)
 			channels = item.channels or 0,
 			duration = item.duration or 0,
 			hasPicture = item.hasPicture == true,
+			fingerprint = type(item.fingerprint) == "string" and item.fingerprint or nil,
 			tags = {
 				title = item.title,
 				artist = item.artist,

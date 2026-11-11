@@ -3,6 +3,7 @@
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local nowPlaying = require("beat.app.overlays.now_playing")
+local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -102,7 +103,7 @@ function more.view(app, overlay, window)
 					ui.rating(
 						ctx,
 						{
-							value = app.services.collections.taxonomy:rating(track.path),
+							value = app.services.collections.taxonomy:rating(names.trackKey(track)),
 							onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
 							size = theme:px(18)
 						}
