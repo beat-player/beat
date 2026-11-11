@@ -64,7 +64,7 @@ local USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 ---@field index number? # The transfer's slot in the current batch
 ---@field cancelled boolean
 ---@field httpStatus { code: number }? # The last status line libcurl saw for a download
----@field headerCallback any # Kept alive while libcurl may call it
+---@field headerCallback ffi.cb? # Freed once libcurl can no longer call it; see `releaseCallback`
 ---@field tls12 boolean? # Retried as TLS 1.2 after TLS 1.3 could not connect
 
 ---@class beat.HttpService
@@ -145,6 +145,8 @@ local function attachStatus(transfer, state)
 				transfer.headerCallback = callback
 				transfer.httpStatus = captured
 				watched = true
+			else
+				callback:free()
 			end
 		end
 	end
@@ -155,6 +157,17 @@ local function attachStatus(transfer, state)
 	end
 
 	return watched
+end
+
+--- Frees a download's header callback once libcurl can no longer call it: its easy handle has
+--- finished or its batch is closed. LuaJIT has room for only so many C callbacks and never takes
+--- one back on its own, so keeping them made a long run of downloads fail with "too many
+--- callbacks". A transfer that starts again gets a new one from `attachStatus`.
+---@param transfer beat.HttpTransfer
+local function releaseCallback(transfer)
+	if transfer.headerCallback == nil then return end
+	transfer.headerCallback:free()
+	transfer.headerCallback = nil
 end
 
 --- Pins the TLS version of a transfer's easy handle; see `CURLOPT_SSLVERSION` above. A batch from a
@@ -243,6 +256,7 @@ function Http:restartBatch()
 	for at = #waiting, 1, -1 do
 		local transfer = waiting[at]
 		transfer.index = nil
+		releaseCallback(transfer)
 		table.insert(self.queue, 1, transfer)
 	end
 end
@@ -258,6 +272,8 @@ function Http:cancel(transfer)
 	else
 		self:removeQueued(transfer)
 	end
+	-- The batch it was on is closed by now, or it never reached one.
+	releaseCallback(transfer)
 
 	if isDownload(transfer) and transfer.part ~= nil then fs.delete(transfer.part) end
 end
@@ -369,6 +385,7 @@ function Http:add(transfer)
 		if not watched and transfer.url:match("^https?://") ~= nil then
 			transfer.cancelled = true
 			self:restartBatch()
+			releaseCallback(transfer)
 			fs.delete(transfer.part --[[@as string]] )
 			call(transfer.onDone, false, "could not check the download's HTTP status")
 			return false
@@ -389,6 +406,7 @@ function Http:close()
 		transfer.cancelled = true
 		if isDownload(transfer) and transfer.part ~= nil then parts[#parts + 1] = transfer.part end
 	end
+	local closing = self.active
 	self.queue = {}
 	self.active = {}
 
@@ -396,6 +414,7 @@ function Http:close()
 		self.batch:close()
 		self.batch = nil
 	end
+	for _, transfer in ipairs(closing) do releaseCallback(transfer) end
 	for _, part in ipairs(parts) do fs.delete(part) end
 end
 
@@ -500,6 +519,7 @@ function Http:step(_now)
 			local transfers = self.active
 			self.active = {}
 			for _, transfer in ipairs(transfers) do
+				releaseCallback(transfer)
 				self:finish(transfer, { ok = false, err = tostring(err) })
 			end
 			changed = true
@@ -513,7 +533,11 @@ function Http:step(_now)
 				local result = state and state.result
 				if result ~= nil then done[#done + 1] = { transfer = transfer, result = result } end
 			end
-			for _, entry in ipairs(done) do self:forgetActive(entry.transfer) end
+			-- The batch has cleaned up a finished transfer's handle, so its callback is done with.
+			for _, entry in ipairs(done) do
+				self:forgetActive(entry.transfer)
+				releaseCallback(entry.transfer)
+			end
 			for _, entry in ipairs(done) do self:finish(entry.transfer, entry.result) end
 			if #done > 0 then changed = true end
 		end

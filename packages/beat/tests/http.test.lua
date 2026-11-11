@@ -1,10 +1,12 @@
 -- The shared network service, against a stand-in for libcurl's multi handle: what it queues, how
--- many transfers it runs at once, and what a download leaves behind when it fails. Nothing here
+-- many transfers it runs at once, and what a download leaves behind when it fails. One test runs
+-- libcurl itself, on a local file, because what it checks is what C callbacks cost. Nothing here
 -- touches the network.
 local test = require("lde-test")
 local fs = require("fs")
 local path = require("path")
 local Http = require("beat.app.services.http")
+local ffi = require("ffi")
 
 ---@class TestBatch
 ---@field order table[]
@@ -291,4 +293,38 @@ test.it("reports a transport that raises and still cleans up a download", functi
 
 	removeTree(dir)
 	service:close()
+end)
+
+test.it("gives back the C callback each download watches its status with", function()
+	-- LuaJIT has room for only some hundreds of C callbacks and never takes one back on its own.
+	-- A run of downloads that kept each one used them all up: an HTTP download then fails because
+	-- its status cannot be watched, and nothing else in the process can make a callback. A local
+	-- file keeps this off the network; it still goes through libcurl, callbacks and all.
+	local dir = tempDir()
+	local source = path.join(dir, "source.bin")
+	fs.write(source, string.rep("x", 64))
+	local forward = source:gsub("\\", "/")
+	local url = forward:sub(1, 1) == "/" and ("file://" .. forward) or ("file:///" .. forward)
+
+	local service = Http.new({})
+	local count, done = 2000, 0
+	local failures = {} ---@type string[]
+	for at = 1, count do
+		service:download({
+			url = url,
+			path = path.join(dir, at .. ".bin"),
+			onDone = function(ok, err)
+				done = done + 1
+				if not ok then failures[#failures + 1] = err or "failed" end
+			end
+		})
+	end
+	while done < count do service:step(0) end
+	service:close()
+
+	test.equal(#failures, 0, failures[1])
+	local made, callback = pcall(ffi.cast, "int (*)(int)", function(value) return value end)
+	test.truthy(made, "a callback can still be made after the downloads")
+	if made then callback:free() end
+	removeTree(dir)
 end)
