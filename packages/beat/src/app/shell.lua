@@ -193,6 +193,7 @@ function shell.view(app, window)
 		-- messages reach it.
 		if page.kind ~= "folders" then
 			app.page = app:pageFor({ kind = "folders" })
+			app:persistPage()
 			page = app.page
 		end
 		return div():style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text")):font(theme.fontFamily)):children({

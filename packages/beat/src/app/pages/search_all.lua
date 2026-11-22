@@ -87,6 +87,7 @@ function searchAll.view(app, page, window)
 	local category = page.category
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
+	local mobile = ctx.mobile
 	local search = app.services.search
 	local library = app.services.library.current
 	if library == nil then
@@ -122,7 +123,9 @@ function searchAll.view(app, page, window)
 		rowHeight = theme:px(64)
 		perRow = 1
 	else
-		rowHeight = theme:px(54)
+		-- A phone's track rows are the collection table's taller ones, and each one is its own
+		-- slice of the list, so the slice step is the row's height.
+		rowHeight = mobile and theme:px(64) or theme:px(54)
 		perRow = 1
 	end
 
@@ -213,7 +216,9 @@ function searchAll.view(app, page, window)
 									playing = app.services.playback.player:isPlaying(),
 									onClick = { type = "playTrack", trackId = track.id },
 									width = width,
-									showAlbum = true
+									showAlbum = true,
+									mobile = mobile,
+									ui = ctx
 								}
 							)
 						}

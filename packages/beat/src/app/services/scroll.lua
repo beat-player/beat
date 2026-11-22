@@ -8,12 +8,18 @@ local wonderland = require("wonderland")
 
 local time = wonderland.time
 
+-- How long after the last scroll message a list still counts as moving. A fling sends a message
+-- every frame it coasts, so this keeps a finger's throw moving through its whole glide; a wheel
+-- turns in steps, and the ease that follows is what `animating` covers.
+local MOVING_AFTER = 0.12
+
 ---@class beat.ScrollService: beat.Service
 ---@field appearance beat.AppearanceService
 ---@field offsets table<string, number>
 ---@field targets table<string, number>
 ---@field limits table<string, number>
 ---@field animating boolean
+---@field movingAt number # When a scroll message last arrived
 ---@field lastAt number # The easing clock's last tick
 local Scroll = {}
 Scroll.__index = Scroll
@@ -23,7 +29,15 @@ Scroll.needs = { "appearance" }
 ---@return beat.ScrollService
 function Scroll.new(deps)
 	return setmetatable(
-		{ appearance = deps.appearance, offsets = {}, targets = {}, limits = {}, animating = false, lastAt = time.now() },
+		{
+			appearance = deps.appearance,
+			offsets = {},
+			targets = {},
+			limits = {},
+			animating = false,
+			movingAt = -math.huge,
+			lastAt = time.now()
+		},
 		Scroll
 	)
 end
@@ -65,6 +79,8 @@ local function applyScroll(self, message)
 	local key = message.key
 	if type(key) ~= "string" then error("a scroll message must name its key", 2) end
 
+	self.movingAt = time.now()
+
 	local offset = self.offsets[key] or 0
 	local limit = tonumber(message.max) or self.limits[key]
 	---@param value number
@@ -98,6 +114,16 @@ Scroll.on = {
 	---@param message beat.ScrollMessage
 	scroll = function(self, message) applyScroll(self, message) end
 }
+
+--- Whether a list is moving, so a page can leave expensive work out of the frames a finger or a
+--- fling is asking for: a scroll message arrived a moment ago, or the ease after one is still
+--- running. One answer for the whole app, because a page showing two lists is still a screen that
+--- must keep up with the same gesture.
+---@param now number
+---@return boolean
+function Scroll:isMoving(now)
+	return self.animating or now - self.movingAt < MOVING_AFTER
+end
 
 function Scroll:step(now)
 	local dt = math.max(0, math.min(0.1, now - self.lastAt))

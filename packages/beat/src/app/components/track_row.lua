@@ -164,7 +164,9 @@ function trackRow.view(app, props)
 		-- A phone's row spends its last column on the menu's button, and gives the two lines the
 		-- height a finger needs rather than the desk row's one line of forty-eight.
 		local moreWidth = mobile and theme:px(44) or 0
-		local rowHeight = mobile and theme:px(64) or 48
+		-- Every width and height here is a length in the theme's units: a row is the same shape
+		-- at the listener's scale, and its columns add up to the width it is given.
+		local rowHeight = mobile and theme:px(64) or theme:px(48)
 		local fixedWidth = albumColumn and theme:px(324) or theme:px(122)
 		if mobile then fixedWidth += moreWidth + theme:px(12) end
 		local infoWidth = math.max(
@@ -178,14 +180,14 @@ function trackRow.view(app, props)
 		end
 		s = {
 			index = theme:s():text(theme:type("sm")):fg(theme:color("faint")),
-			markerBox = sty():w(24):align("center"),
-			info = sty():w(infoWidth):h(rowHeight):column():justify("center"):gap(mobile and theme:px(2) or 1),
+			markerBox = sty():w(theme:px(24)):align("center"),
+			info = sty():w(infoWidth):h(rowHeight):column():justify("center"):gap(mobile and theme:px(2) or theme:px(1)),
 			title = theme:s():w(infoWidth):text(theme:type("base")):weight(mobile and "semibold" or "medium")
 				:fg(titleColour):ellipsis(),
 			artist = theme:s():w(infoWidth):text(theme:type("sm")):fg(muted):ellipsis(),
-			albumBox = sty():w(190):h(rowHeight):column():justify("center"),
-			album = theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis(),
-			timeBox = sty():w(54):h(rowHeight):column():align("start"):justify("center"),
+			albumBox = sty():w(theme:px(190)):h(rowHeight):column():justify("center"),
+			album = theme:s():w(theme:px(190)):text(theme:type("sm")):fg(muted):ellipsis(),
+			timeBox = sty():w(theme:px(54)):h(rowHeight):column():align("start"):justify("center"),
 			time = theme:s():text(theme:type("sm")):fg(muted),
 			row = row():bg(current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))),
 			rowHover = row():bg(theme:color("hover")),

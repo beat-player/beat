@@ -537,10 +537,26 @@ function Library:album(id)
 	return self.albumById[id]
 end
 
+--- An album by the key the scan files it under. A route written down by a previous launch names
+--- an album this way: its id is only the order that launch's scan found it in.
+---@param key string
+---@return beat.Album?
+function Library:findAlbum(key)
+	return self.albumByKey[key]
+end
+
 ---@param id number
 ---@return beat.Artist?
 function Library:artist(id)
 	return self.artistById[id]
+end
+
+--- An artist by the album artist's name, which is what the library indexes them by and what a
+--- saved page keeps instead of the id a scan happened to give them.
+---@param name string
+---@return beat.Artist?
+function Library:findArtist(name)
+	return self.artistByName[name]
 end
 
 ---@param id number

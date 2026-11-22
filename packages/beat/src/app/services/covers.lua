@@ -1,9 +1,11 @@
 -- The pictures the current screen is drawing.
 --
 -- This is not a cache of everything: it holds the covers that screens have asked for lately, keeps
--- a bounded number of them, decodes the ones a page asked for on threads of their own (so the
--- frame that asks for a cover draws a placeholder and a later one draws the art), and releases
--- every texture when the assets go away. Staying on a page does not decode anything twice.
+-- a bounded number of them, decodes the ones a page asked for on a small pool of worker threads
+-- (so the frame that asks for a cover draws a placeholder and a later one draws the art), and
+-- releases every texture when the assets go away. Staying on a page does not decode anything
+-- twice. While the list is moving, nothing is uploaded or started: the frames a finger is waiting
+-- for carry only the cheap placeholder, and the queue of visible covers is decoded once it settles.
 local ffi = require("ffi")
 local threading = require("threading")
 
@@ -33,6 +35,7 @@ local olderFirst = |a, b| -> a.seen < b.seen
 ---@field seen number
 
 ---@class beat.CoversService: beat.Service
+---@field scroll beat.ScrollService
 ---@field assets wonderland.Assets?
 ---@field entries table<number, table<number, beat.CoverEntry>> # album id, then size
 ---@field count number # entries, kept as they are added and evicted
@@ -41,16 +44,38 @@ local olderFirst = |a, b| -> a.seen < b.seen
 ---@field pending table<number, table<number, beat.CoverJob>> # album id, then size
 ---@field epoch number
 ---@field frame number # The view being built, which is what says a cover is still on screen
----@field decoding { job: beat.CoverJob, handle: threading.Handle }[] # Covers on a thread, in the order they started
+---@field pool threading.Pool? # The threads covers decode on, made when the first one is needed
+---@field decoding { job: beat.CoverJob, handle: threading.PoolHandle }[] # Covers on a worker, in the order they started
 local Covers = {}
 Covers.__index = Covers
-Covers.needs = {}
+Covers.needs = { "scroll" }
 
--- Nothing is needed: the window's assets arrive through `use` once the shell has a window to draw
--- in, not when the services are made.
+--- What a worker decodes: the cached cover of one album, fitted for one size, handed back as the
+--- pixels the window uploads and the colour its page tints with. The function takes its job as
+--- arguments rather than closing over them, because one worker runs many covers: its Lua state,
+--- the modules it requires and the traces JIT compiled for the image work all stay warm.
+---@param coverCache string
+---@param size number
+---@return number? width
+---@return number? height
+---@return string? pixels
+---@return { r: number, g: number, b: number }? colour
+local function decodeCover(coverCache, size)
+	local ffi = require("ffi")
+	local artwork = require("beat.music.artwork")
+	local fitted, colour = artwork.forAlbum({ coverCache = coverCache }, size)
+	if fitted == nil then return nil end
+	local width, height = fitted.width, fitted.height
+	local pixels = ffi.string(fitted.pixels, width * height * 4)
+	fitted:close()
+	return width, height, pixels, colour
+end
+
+---@param deps { scroll: beat.ScrollService }
 ---@return beat.CoversService
-function Covers.new(_deps)
+function Covers.new(deps)
 	return setmetatable({
+		scroll = deps.scroll,
 		assets = nil,
 		entries = {},
 		count = 0,
@@ -59,8 +84,21 @@ function Covers.new(_deps)
 		pending = {},
 		epoch = 0,
 		frame = 0,
+		pool = nil,
 		decoding = {}
 	}, Covers)
+end
+
+--- The workers, made when a cover first needs one: an app that opens on a text page should not
+--- have two threads waiting for it, and a test that never decodes a cover starts none.
+---@return threading.Pool
+function Covers:workers()
+	local pool = self.pool
+	if pool == nil then
+		pool = threading.pool(WORKERS, decodeCover)
+		self.pool = pool
+	end
+	return pool
 end
 
 ---@param assets wonderland.Assets
@@ -182,46 +220,44 @@ function Covers:colourOf(album)
 	return nil
 end
 
---- What a thread decodes: the cached cover of one album, fitted for one size, handed back as the
---- pixels the window uploads and the colour its page tints with.
----@param coverCache string
----@param size number
----@return threading.Handle
-local function decodeOnThread(coverCache, size)
-	return threading.spawn(function()
-		local ffi = require("ffi")
-		local artwork = require("beat.music.artwork")
-		local fitted, colour = artwork.forAlbum({ coverCache = coverCache }, size)
-		if fitted == nil then return nil end
-		local width, height = fitted.width, fitted.height
-		local pixels = ffi.string(fitted.pixels, width * height * 4)
-		fitted:close()
-		return width, height, pixels, colour
-	end)
-end
-
---- Starts what the view asked for, as threads come free, and uploads what they decoded. The job
+--- Starts what the view asked for, as workers come free, and uploads what they decoded. The job
 --- list holds only covers the last view asked for, so what is on screen starts first. Busy while
 --- covers are waiting or decoding, so the ticker comes back for them rather than at the idle
 --- interval.
+---
+--- While the page is scrolling, nothing is taken in and nothing is started: a texture upload and
+--- the view rebuild that shows it are exactly the work a moving list cannot afford. Finished
+--- decodes wait on their workers. Once the page settles the next tick joins them -- dropping the
+--- ones the view has scrolled past -- and the visible covers decode on the workers that are left.
+---@param now number
 ---@return boolean changed
 ---@return boolean busy
-function Covers:step()
+function Covers:step(now)
 	local assets = self.assets
 	if assets == nil then return false, #self.jobs > 0 end
+	if self.scroll:isMoving(now) then return false, #self.jobs > 0 or #self.decoding > 0 end
 
 	-- One cover is taken in a tick: what it costs the window is a texture upload and a rebuild of
 	-- the view that shows it, and two of those in one frame are a frame that comes late. Another
-	-- that has finished waits for the next tick, a frame away.
+	-- that has finished waits for the next tick, a frame away. A decode the view no longer wants
+	-- is not stored, so it costs only the join and does not count against that budget.
 	local changed = false
+	local stored = false
 	local decoding = self.decoding
 	local kept = 0
 	for at = 1, #decoding do
 		local item = decoding[at]
-		if not changed and item.handle:done() then
-			self:finish(item.job, assets, pcall(item.handle.join, item.handle))
-			changed = true
-		else
+		local keep = true
+		if item.handle:done() then
+			if not stored then
+				if self:finish(item.job, assets, pcall(item.handle.join, item.handle)) then
+					changed = true
+					stored = true
+				end
+				keep = false
+			end
+		end
+		if keep then
 			kept += 1
 			decoding[kept] = item
 		end
@@ -230,16 +266,24 @@ function Covers:step()
 
 	local jobs = self.jobs
 	local started = 0
+	---@type threading.Pool?
+	local pool = nil
 	while #decoding < WORKERS and started < #jobs do
-		started += 1
-		local job = jobs[started]
+		local job = jobs[started + 1]
 		local cache = job.album.coverCache
 		if cache == nil then
-			-- Not cached yet: a placeholder until the next scan, not a thread to find that out.
-			self:finish(job, assets, true, nil)
-			changed = true
+			-- Not cached yet: a placeholder until the next scan, not a worker to find that out.
+			-- It is still a store and a rebuild, so it waits its turn like a decoded cover.
+			if stored then break end
+			started += 1
+			if self:finish(job, assets, true, nil) then changed = true end
+			stored = true
 		else
-			decoding[#decoding + 1] = { job = job, handle = decodeOnThread(cache, job.size) }
+			pool = pool or self:workers()
+			local handle = pool:run(cache, job.size)
+			if handle == nil then break end
+			started += 1
+			decoding[#decoding + 1] = { job = job, handle = handle }
 		end
 	end
 
@@ -253,9 +297,10 @@ function Covers:step()
 	return changed, #jobs > 0 or #decoding > 0
 end
 
---- What a thread came back with, into the cache: a texture, or a failure that is not tried again.
---- A cover for a library that has since been replaced, or an album that has since been forgotten,
---- is dropped.
+--- What a worker came back with, into the cache: a texture, or a failure that is not tried again.
+--- A cover for a library that has since been replaced, an album that has since been forgotten, or
+--- one the view scrolled past before it finished is dropped: the decode is already spent, and
+--- uploading a texture nothing draws is the part that would cost the next frame.
 ---@param job beat.CoverJob
 ---@param assets wonderland.Assets
 ---@param ok boolean
@@ -263,6 +308,7 @@ end
 ---@param height number?
 ---@param pixels string?
 ---@param colour { r: number, g: number, b: number }?
+---@return boolean stored # False when the cover was dropped without becoming an entry
 function Covers:finish(job, assets, ok, width, height, pixels, colour)
 	local albumId, size = job.album.id, job.size
 	local pending = self.pending[albumId]
@@ -270,7 +316,7 @@ function Covers:finish(job, assets, ok, width, height, pixels, colour)
 		pending[size] = nil
 		if next(pending) == nil then self.pending[albumId] = nil end
 	end
-	if job.epoch ~= self.epoch then return end
+	if job.epoch ~= self.epoch or job.seen ~= self.frame then return false end
 
 	if ok and pixels ~= nil then
 		-- The texture reads the bytes through a pointer; `pixels` holds them until it has.
@@ -281,6 +327,7 @@ function Covers:finish(job, assets, ok, width, height, pixels, colour)
 		-- A missing picture is normal; a broken one is only worth a single attempt.
 		self:store(albumId, size, { failed = true, seen = job.seen })
 	end
+	return true
 end
 
 ---@param albumId number
@@ -340,6 +387,18 @@ function Covers:releaseAll()
 	self.pending = {}
 	self.epoch += 1
 	self.frame = 0
+end
+
+--- The app is going or being set up again: a warm worker state is no longer worth keeping. A
+--- cover still decoding is dropped with the pool rather than uploaded into assets that are gone.
+function Covers:close()
+	local pool = self.pool
+	if pool ~= nil then
+		self.pool = nil
+		self.decoding = {}
+		pool:close()
+	end
+	self:releaseAll()
 end
 
 return Covers

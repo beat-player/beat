@@ -29,6 +29,7 @@ local settings = {}
 ---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
 ---@field disabledPlugins string[] # Plugin files switched off by name; applied at the next start
 ---@field plugins table<string, table<string, any>> # A plugin's own values, by plugin name
+---@field lastPage beat.SavedPage? # The page the last launch was on, as the app writes it down
 
 ---@type beat.Settings
 local DEFAULTS = {
@@ -54,7 +55,8 @@ local DEFAULTS = {
 	-- of the player. A settings file that already names its switches keeps whatever it says, so
 	-- someone who turned ratings on is not turned off by an update.
 	disabledPlugins = { "ratings" },
-	plugins = {}
+	plugins = {},
+	lastPage = nil
 }
 
 ---@param value any
@@ -199,7 +201,10 @@ function settings.load(dir)
 		-- A file that names its switches keeps them exactly; only one written before this key
 		-- existed gets the fresh-install list, so turning ratings on is a switch that stays on.
 		disabledPlugins = data.disabledPlugins == nil and defaultPluginNames() or pluginNames(data.disabledPlugins),
-		plugins = plugins
+		plugins = plugins,
+		-- The app validates what a route names when it opens it; a file written by another
+		-- version, or by hand, is not trusted to name a page here.
+		lastPage = type(data.lastPage) == "table" and data.lastPage or nil
 	}
 
 	return loaded, file

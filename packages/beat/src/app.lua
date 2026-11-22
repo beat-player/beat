@@ -71,6 +71,16 @@ local TRAY_MESSAGES = {
 --- | { kind: "playlists" }
 --- | { kind: "playlist", id: number }
 
+--- A page written down for the next launch. It is not a route: an album or artist is named by
+--- what the library files it under -- a key or a name that survives a rescan -- rather than the
+--- id the page was built with, which is only the order that scan found things in.
+---@class beat.SavedPage
+---@field kind string
+---@field category "albums"|"artists"|"tracks"?
+---@field albumKey string?
+---@field artistName string?
+---@field playlistId number?
+
 --- The app's services by name, each one made before everything that needs it.
 ---@class beat.Services
 ---@field appearance beat.AppearanceService
@@ -140,6 +150,7 @@ local TRAY_MESSAGES = {
 ---@field messages beat.Signal # Every message, as it is delivered
 ---@field queue table[] # Messages waiting their turn
 ---@field delivering boolean
+---@field persistedPageKey string? # The page key the settings file already names
 ---@field uiContext { window: wonderland.RenderWindow, theme: beat.Theme, assets: wonderland.Assets?, width: number, height: number, contentWidth: number, contentHeight: number, mobile: boolean, focusedId: string?, context: beat.ui.Context }?
 local App = wonderland.app("Beat")
 
@@ -150,6 +161,89 @@ local App = wonderland.app("Beat")
 function App:keyOf(page)
 	local surface = self.registry:page(page.kind)
 	return surface.key ~= nil ? surface.key(page) : page.kind
+end
+
+--- The page a saved route names, or nothing when it no longer resolves. It is read from the
+--- library and collections the page itself would read: an album or artist id is only the order a
+--- scan found it in, so the saved page names the album key and artist name instead, while a
+--- playlist id is written down with its list and stays the same across launches.
+---@param saved any
+---@return beat.Route?
+function App:savedRoute(saved)
+	if type(saved) ~= "table" or type(saved.kind) ~= "string" then return nil end
+	local kind = saved.kind
+
+	if
+		kind == "home"
+		or kind == "folders"
+		or kind == "library"
+		or kind == "settings"
+		or kind == "plugins"
+		or kind == "playlists"
+	then
+		return { kind = kind }
+	elseif kind == "search" then
+		return { kind = "search" }
+	elseif kind == "searchAll" then
+		if saved.category ~= "albums" and saved.category ~= "artists" and saved.category ~= "tracks" then return nil end
+		return { kind = "searchAll", category = saved.category }
+	elseif kind == "album" then
+		local library = self.services.library.current
+		if library == nil or type(saved.albumKey) ~= "string" then return nil end
+		local album = library:findAlbum(saved.albumKey)
+		if album == nil then return nil end
+		return { kind = "album", id = album.id }
+	elseif kind == "artist" then
+		local library = self.services.library.current
+		if library == nil or type(saved.artistName) ~= "string" then return nil end
+		local artist = library:findArtist(saved.artistName)
+		if artist == nil then return nil end
+		return { kind = "artist", id = artist.id }
+	elseif kind == "playlist" then
+		local taxonomy = self.services.collections.taxonomy
+		if taxonomy == nil or type(saved.playlistId) ~= "number" then return nil end
+		local playlist = taxonomy:playlist(saved.playlistId)
+		if playlist == nil then return nil end
+		return { kind = "playlist", id = playlist.id }
+	end
+	return nil
+end
+
+--- The route a page is opened again from: its kind and what picks the one page of that kind, and
+--- never its state, which the page module builds when it opens. An album page whose album a later
+--- scan dropped has nothing to reopen, and is written down as home.
+---@param page beat.PageInstance
+---@return beat.SavedPage
+function App:routeOf(page)
+	if page.kind == "album" then
+		local library = self.services.library.current
+		local album = library ~= nil ? (library:album(page.id --[[@as number]] )) : nil
+		if album == nil then return { kind = "home" } end
+		return { kind = "album", albumKey = album.key }
+	elseif page.kind == "artist" then
+		local library = self.services.library.current
+		local artist = library ~= nil ? (library:artist(page.id --[[@as number]] )) : nil
+		if artist == nil then return { kind = "home" } end
+		return { kind = "artist", artistName = artist.name }
+	elseif page.kind == "playlist" and type(page.id) == "number" then
+		return { kind = "playlist", playlistId = page.id }
+	elseif page.kind == "searchAll" then
+		return { kind = "searchAll", category = page.category }
+	end
+	return { kind = page.kind }
+end
+
+--- Writes down the page showing, so the next launch opens it again. A phone can end the process at
+--- any moment, so this is written on every navigation rather than on the way out. Going to the
+--- page already showing is not a change, and costs no write.
+function App:persistPage()
+	local key = self:keyOf(self.page)
+	if key == self.persistedPageKey then return end
+	self.persistedPageKey = key
+	self.services.settings.values.lastPage = self:routeOf(self.page)
+	-- Not through `changed`: that waits for the hand to be still, and the process may not be
+	-- alive by then.
+	self.services.settings:save()
 end
 
 --- A page for a route, with the state its module starts it with.
@@ -457,8 +551,19 @@ function App:init(opts)
 	self.overlays = {}
 
 	-- After the library, so a page that reads it on opening sees it, and before the scan, whose
-	-- reset message is delivered through the page that is showing.
-	self.page = (self:pageFor({ kind = values.root == nil ? "folders" : "home" }))
+	-- reset message is delivered through the page that is showing. A launch opens the page it was
+	-- last on, but only once a root is chosen and only when the album, artist or playlist it named
+	-- is still there: a page for something a rescan dropped would only say it is gone.
+	local fallback = { kind = values.root == nil ? "folders" : "home" }
+	local restored = values.root ~= nil and self:savedRoute(values.lastPage) or nil
+	self.page = self:pageFor(restored or fallback)
+	-- A restored page is where the launch already was, not a navigation, so nothing is written
+	-- back. Home goes under it: the phone's back gesture leaves the restored page for home rather
+	-- than asking whether to close the app.
+	self.persistedPageKey = self:keyOf(self.page)
+	if restored ~= nil and restored.kind ~= "home" then
+		self.history[1] = self:pageFor({ kind = "home" })
+	end
 	self.services.scan:resume()
 
 	self.ticker = self:onTick(|now, window| -> self:tick(now, window))
@@ -593,6 +698,7 @@ function App:go(route, keepFocus)
 	self.future = {}
 
 	self.page = self:pageFor(route)
+	self:persistPage()
 	self.services.motion:slide(1)
 	self:wake()
 	self:refresh()
@@ -608,6 +714,7 @@ function App:travel(from, to, direction)
 	self:closeTransient()
 	self:focusField(nil)
 	self.page = assert(table.remove(from))
+	self:persistPage()
 	self.services.motion:slide(direction)
 	self:wake()
 	self:refresh()
@@ -745,6 +852,7 @@ function App:route(message)
 		self:focusField(nil)
 		self.history, self.future = {}, {}
 		self.page = self:pageFor(message.page)
+		self:persistPage()
 		self:refresh()
 	elseif message.type == "open" then
 		self:open(message.overlay, message)

@@ -239,6 +239,15 @@ end
 --- The cached cover for an album, fitted for this screen. The window never reads the music folder
 --- here: the scan worker has already produced the local file, and a missing one is a placeholder
 --- until the next scan rather than a blocking read of a remote file.
+---
+--- The scan worker writes one square for every screen, at 512 pixels. A grid card can ask for a
+--- little less than that -- a phone's 477-pixel card is 7% smaller -- and turning 512 into 477 is
+--- a resample of the whole picture for a difference the sampler makes when it draws it. A cached
+--- square up to a tenth larger is handed over as it is; one much larger, such as a poster-sized
+--- picture asked for a list row's thumb, is still fitted, so the cache never keeps a texture that
+--- is orders of magnitude bigger than the box.
+local SHRINK_TOLERANCE = 1.1
+
 ---@param album beat.Album
 ---@param maxSide number
 ---@return image.Image? fitted
@@ -255,7 +264,7 @@ function artwork.forAlbum(album, maxSide)
 	-- cached side the decode is already the picture: fitting it would only copy it into a buffer
 	-- of its own. Handing the decode back is the same pixels for one allocation less, and the
 	-- caller owns the result either way.
-	if decoded.width == decoded.height and decoded.width <= maxSide then
+	if decoded.width == decoded.height and decoded.width <= maxSide * SHRINK_TOLERANCE then
 		local r, g, b = artwork.dominant(decoded)
 		return decoded, { r = r, g = g, b = b }
 	end

@@ -245,6 +245,10 @@
 ---@field overlay "playlist_picker"
 ---@field kind "album"|"track"
 ---@field id number
+---@class beat.OpenCoverMessage: beat.MessageFields
+---@field type "open"
+---@field overlay "cover_view"
+---@field id number
 ---@class beat.CreatePlaylistMessage: beat.MessageFields
 ---@field type "createPlaylist"
 ---@class beat.CreateTagMessage: beat.MessageFields
@@ -467,6 +471,7 @@
 --- | beat.CancelFoldersMessage
 --- | beat.OpenMenuMessage
 --- | beat.OpenPlaylistPickerMessage
+--- | beat.OpenCoverMessage
 --- | beat.CreatePlaylistMessage
 --- | beat.CreateTagMessage
 --- | beat.DeletePlaylistMessage

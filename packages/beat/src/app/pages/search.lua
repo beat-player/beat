@@ -212,6 +212,9 @@ function searchPage.view(app, page, window)
 	local albumLimit = math.min(#albums, columns * 2)
 	local artistLimit = math.min(#artists, 10)
 	local trackLimit = math.min(#tracks, 100)
+	-- The phone's rows are the collection table's taller two-line rows, so the page's own content
+	-- is that much taller too.
+	local trackRowHeight = theme:px(ctx.mobile and 64 or 48)
 	local albumRows = math.ceil(albumLimit / columns)
 	local rowGap = theme:space(16)
 	local sectionGap = theme:space(16)
@@ -224,7 +227,7 @@ function searchPage.view(app, page, window)
 		height = height + sectionGap + sectionHeight + sectionGap + artistLimit * theme:px(56)
 	end
 	if trackLimit > 0 then
-		height = height + sectionGap + sectionHeight + sectionGap + trackLimit * theme:px(48)
+		height = height + sectionGap + sectionHeight + sectionGap + trackLimit * trackRowHeight
 	end
 
 	local children = {}
@@ -307,7 +310,9 @@ function searchPage.view(app, page, window)
 					playing = app.services.playback.player:isPlaying(),
 					onClick = { type = "playTrack", trackId = track.id },
 					width = content,
-					showAlbum = true
+					showAlbum = true,
+					mobile = ctx.mobile,
+					ui = ctx
 				}
 			)
 		end

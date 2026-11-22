@@ -68,8 +68,8 @@ function albumPage.view(app, page, window)
 			label = "ALBUM",
 			cover = |size| -> cover.view(
 				app,
-				{ album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true }
-			),
+				{ album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true, sheen = true }
+			):onClick({ type = "open", overlay = "cover_view", id = album.id }),
 			coverMenu = |_, _, _, _, _, windowX, windowY| -> {
 				type = "open",
 				overlay = "menu",

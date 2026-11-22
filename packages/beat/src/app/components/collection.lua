@@ -196,7 +196,7 @@ function collection.view(app, props)
 	if hasTracks then
 		local moreColumn = mobile and theme:px(44) + theme:px(12) or 0
 		local header = {
-			text("#"):style(theme:s():w(24):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
+			text("#"):style(theme:s():w(theme:px(24)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
 			text("TITLE")
 				:style(
 					theme:s()
@@ -213,7 +213,8 @@ function collection.view(app, props)
 			header[#header + 1] = text("RATING")
 				:style(theme:s():w(ratingWidth):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
 		end
-		header[#header + 1] = text("TIME"):style(theme:s():w(54):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
+		header[#header + 1] = text("TIME")
+			:style(theme:s():w(theme:px(54)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
 		if mobile then header[#header + 1] = div():style(sty():w(theme:px(44))) end
 		rows[#rows + 1] = div()
 			:style(

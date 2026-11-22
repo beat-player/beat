@@ -1,6 +1,7 @@
 -- The spectrum as a quiet background for the playing bar. It is deliberately faint and wide:
 -- content sits over it, so this is texture rather than a second meter.
 local wonderland = require("wonderland")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -13,19 +14,35 @@ local spectrumBackground = {}
 local MAX_COUNT = 72
 local MIN_COUNT = 24
 
+-- A phone's strip is wider and fewer: a screen that small is read at a distance, where eight-pixel
+-- bars dissolve into the background, so they get about twice the width. The lower floor keeps a
+-- narrow screen from clamping them back to hairlines.
+local MOBILE_BAR_WIDTH = 14
+local MOBILE_GAP = 3
+local MOBILE_MIN_COUNT = 18
+
+-- The opacity of a bar at rest and the extra a full level adds. The phone uses the same curve
+-- lifted by about three quarters: close to twice the wash without turning texture into a meter.
+local ALPHA_FLOOR = 0.035
+local ALPHA_RANGE = 0.09
+local MOBILE_ALPHA_FLOOR = 0.06
+local MOBILE_ALPHA_RANGE = 0.16
+
 --- The bars of a strip `width` pixels wide: how many there are, the room between them, and the
 --- width of one.
 ---@param theme beat.Theme
 ---@param width number
+---@param mobile boolean
 ---@return number count
 ---@return number gap
 ---@return number barWidth
-local function barLayout(theme, width)
-	local gap = math.max(2, theme:px(2))
-	local least = math.max(16, theme:px(8))
+local function barLayout(theme, width, mobile)
+	local gap = mobile and math.max(MOBILE_GAP, theme:px(MOBILE_GAP)) or math.max(2, theme:px(2))
+	local least = mobile and math.max(24, theme:px(MOBILE_BAR_WIDTH)) or math.max(16, theme:px(8))
 	local count = math.floor((width + gap) / (least + gap))
+	local fewest = mobile and MOBILE_MIN_COUNT or MIN_COUNT
 
-	if count < MIN_COUNT then count = MIN_COUNT end
+	if count < fewest then count = fewest end
 	if count > MAX_COUNT then count = MAX_COUNT end
 
 	return count, gap, math.max(1, (width - gap * (count - 1)) / count)
@@ -55,12 +72,13 @@ end
 --- drawn, and not when the view was built: the service mutates the table it hands out, so a
 --- repaint of the screen already built draws the meter as it is now. A strip that is silent draws
 --- nothing, which is what the bar looked like before anything played.
+---@param app beat.App
 ---@param canvas wonderland.Canvas
 ---@param theme beat.Theme
 ---@param levels number[]
 ---@param intensity number
 ---@param reach number
-local function drawMeter(canvas, theme, levels, intensity, reach)
+local function drawMeter(app, canvas, theme, levels, intensity, reach)
 	local active = false
 	for at = 1, #levels do
 		if levels[at] > 0.01 then
@@ -70,12 +88,17 @@ local function drawMeter(canvas, theme, levels, intensity, reach)
 	end
 	if not active then return end
 
+	-- The phone breakpoint is the window's, read from the strip's own width so the same view is a
+	-- phone or a desktop depending on the window it lands in.
+	local mobile = metrics.mobile(app, canvas.width)
+	local baseAlpha = mobile and MOBILE_ALPHA_FLOOR or ALPHA_FLOOR
+	local levelAlpha = mobile and MOBILE_ALPHA_RANGE or ALPHA_RANGE
 	local accent = accentChannels(theme)
 	-- The two shapes of a bar, kept as tables across the loop: a canvas reads the colour when the
 	-- shape is added to the frame, so only the alpha has to be set for each bar.
 	local wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
 	local core = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-	local count, gap, barWidth = barLayout(theme, canvas.width)
+	local count, gap, barWidth = barLayout(theme, canvas.width, mobile)
 	local spread = math.max(1, count - 1)
 
 	for at = 1, count do
@@ -86,7 +109,7 @@ local function drawMeter(canvas, theme, levels, intensity, reach)
 		local level = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
 		local barHeight = math.max(2, level * canvas.height * reach)
 		local x = (at - 1) * (barWidth + gap)
-		local alpha = (0.035 + level * 0.09) * intensity
+		local alpha = (baseAlpha + level * levelAlpha) * intensity
 
 		-- A wider, nearly transparent pass and a narrower core: at this opacity it reads as a
 		-- blurred wash behind the bar rather than a row of hard rectangles.
@@ -105,12 +128,13 @@ end
 ---@field levels number[]
 ---@field draw fun(canvas: wonderland.Canvas)
 
+---@param app beat.App
 ---@param theme beat.Theme
 ---@param levels number[]
 ---@param intensity number
 ---@param reach number
 ---@return fun(canvas: wonderland.Canvas)
-local function meterOf(theme, levels, intensity, reach)
+local function meterOf(app, theme, levels, intensity, reach)
 	---@type table<string, any>
 	local cache = theme:cache()
 	local meters = cache.spectrumMeters --[[@as table<number, table<number, beat.components.SpectrumMeter>>?]]
@@ -128,7 +152,7 @@ local function meterOf(theme, levels, intensity, reach)
 	if meter == nil or meter.levels ~= levels then
 		---@param canvas wonderland.Canvas
 		local function draw(canvas)
-			drawMeter(canvas, theme, levels, intensity, reach)
+			drawMeter(app, canvas, theme, levels, intensity, reach)
 		end
 
 		meter = { levels = levels, draw = draw }
@@ -161,7 +185,7 @@ function spectrumBackground.view(app, props)
 		cache.spectrumBackground = style
 	end
 
-	return div():style(style):canvas(meterOf(theme, levels, intensity, reach))
+	return div():style(style):canvas(meterOf(app, theme, levels, intensity, reach))
 end
 
 return spectrumBackground

@@ -3,12 +3,14 @@
 	"version": "0.1.0",
 	"bin": "main.lua",
 	"dependencies": {
-		"utf8": { "git": "https://github.com/lde-org/utf8.git" },
+		"utf8": {
+			"git": "https://github.com/lde-org/utf8.git"
+		},
 		"beat-ui": {
 			"path": "../beat-ui"
 		},
 		"wonderland": {
-			"version": "^0.1.14"
+			"version": "^0.1.18"
 		},
 		"fs": {
 			"version": "^0.3.2"
@@ -35,10 +37,10 @@
 			"version": "^0.1.2"
 		},
 		"winit": {
-			"version": "^0.1.15"
+			"version": "^0.1.21"
 		},
 		"threading": {
-			"version": "^0.2.0"
+			"version": "^0.2.1"
 		}
 	},
 	"devDependencies": {

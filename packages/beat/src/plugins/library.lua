@@ -15,6 +15,7 @@ local artistPage = require("beat.app.pages.artist")
 local albumPage = require("beat.app.pages.album")
 
 local sortMenu = require("beat.app.overlays.sort_menu")
+local coverView = require("beat.app.overlays.cover_view")
 
 return beat.plugin({ name = "library", version = "1.0.0", author = "beat", description = "Browsing, covers, search and album pages", requires = { core = "^1.0.0" }, setup = function(handle)
 	handle.service("library", library)
@@ -31,6 +32,7 @@ return beat.plugin({ name = "library", version = "1.0.0", author = "beat", descr
 	handle.page("album", albumPage)
 
 	handle.overlay("sort_menu", sortMenu)
+	handle.overlay("cover_view", coverView)
 
 	handle.action({ menu = "album", title = "Play album", order = 10, message = |ctx| -> { type = "playAlbum", id = assert(ctx.album).id, restart = true } })
 	handle.action({ menu = "album", title = "Add to playlist", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "album", id = assert(ctx.album).id } })
