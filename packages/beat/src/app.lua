@@ -38,7 +38,7 @@ local iconCache
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
 -- overlays of one feature; outside plugins are loaded after them, from the config directory's
 -- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
-local BUILT_IN = { "beat_ui", "core", "tasks", "plugins", "library", "collections", "playback", "lastfm" }
+local BUILT_IN = { "beat_ui", "core", "tasks", "plugins", "library", "collections", "ratings", "playback", "lastfm" }
 
 local MEDIA_MESSAGES = {
 	playPause = "togglePlay",
@@ -113,6 +113,7 @@ local TRAY_MESSAGES = {
 ---@field captureMediaKeys (fun(self: wonderland.RenderWindow): string[])?
 ---@field hide (fun(self: wonderland.RenderWindow))? # Off the screen and the taskbar; the loop and its media keys keep working
 ---@field show (fun(self: wonderland.RenderWindow))? # Back on screen, restored and in front
+---@field setBackHandled (fun(self: wonderland.RenderWindow, handled: boolean))? # Android: the back gesture is the app's, as a keyPress of "back"
 ---@field setTray (fun(self: wonderland.RenderWindow, tray: winit.Tray))? # The notification-area icon and its menu
 ---@field removeTray (fun(self: wonderland.RenderWindow))? # Takes the icon away
 
@@ -127,6 +128,8 @@ local TRAY_MESSAGES = {
 ---@field ticker wonderland.plugin.UI.Ticker?
 ---@field iconSet boolean
 ---@field mediaKeysTaken boolean?
+---@field backTaken boolean? # The window's back gesture comes to the app rather than closing it
+---@field loopHandler winit.EventManager? # What the last event came with: what leaving ends the loop through
 ---@field trayShown boolean? # True while the minimize-to-tray icon is in the notification area
 ---@field instance beat.Instance? # The claim on the config directory this copy runs under; another launch asks through it for the window
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
@@ -278,6 +281,22 @@ function App:takeMediaKeys(window)
 			}
 		)
 	end
+end
+
+--- A phone's back gesture goes back a page rather than closing the app; see `App:route`'s
+--- systemBack, which asks before leaving from the first page.
+---@param window wonderland.RenderWindow & beat.WindowCalls
+function App:takeBack(window)
+	if self.backTaken or window.setBackHandled == nil then return end
+	self.backTaken = true
+	window:setBackHandled(true)
+end
+
+--- Ends the app: what its services would have written a moment from now is written first, and the
+--- loop stops, which on a phone finishes the activity.
+function App:leave()
+	self:flush()
+	if self.loopHandler ~= nil then self.loopHandler:exit() end
 end
 
 --- The icon, tooltip and menu the notification area shows, from what is loaded and playing. The
@@ -661,7 +680,7 @@ end
 ---@param message table
 local function deliverTo(app, message)
 	if message.type == "keep" then return end
-	if message.type == "dismiss" or (message.type == "escape" and #app.overlays > 0) then
+	if message.type == "dismiss" or ((message.type == "escape" or message.type == "systemBack") and #app.overlays > 0) then
 		local top = app.overlays[#app.overlays]
 		if top ~= nil then app:close(top) end
 		return
@@ -706,12 +725,19 @@ end
 ---   open      { overlay = name, ... }        open an overlay with the rest of the message
 ---   focus     { field = name, at? }         give a named field the keyboard
 ---   escape                                  nothing was open and the page did not want it: back
+---   systemBack                              the phone's back gesture: back, or ask to leave from the first page
 ---@param message table
 function App:route(message)
 	if message.type == "navigate" then
 		self:go(message.page, message.keepFocus == true)
 	elseif message.type == "back" or message.type == "escape" then
 		self:back()
+	elseif message.type == "systemBack" then
+		if #self.history > 0 then
+			self:back()
+		else
+			self:open("confirm_leave")
+		end
 	elseif message.type == "forward" then
 		self:forward()
 	elseif message.type == "reset" then
@@ -737,6 +763,9 @@ end
 ---@param event beat.AppEvent
 ---@param handler winit.EventManager
 function App:event(event, handler)
+	-- What leaving is asked of: the loop, which ends, and the activity with it.
+	self.loopHandler = handler
+
 	if event.name == "windowClose" then
 		-- The app goes with the window. What its services would have written a moment from now --
 		-- a setting still settling, where listening got to -- is written now.
@@ -815,6 +844,8 @@ function App:event(event, handler)
 		self:act({ type = "seek", by = 5 })
 	elseif key == "escape" then
 		self:act({ type = "escape" })
+	elseif key == "back" then
+		self:act({ type = "systemBack" })
 	elseif key == "/" or (modifiers.ctrl and key == "f") then
 		self:act({ type = "openSearch" })
 	elseif modifiers.ctrl and key == "o" then
@@ -873,6 +904,7 @@ function App:view(window, assets)
 	self.window = window
 	self:setIcon(window)
 	self:takeMediaKeys(window)
+	self:takeBack(window)
 	self.assets = assets
 	self.services.covers:use(assets)
 	return shell.view(self, window)

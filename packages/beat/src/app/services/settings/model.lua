@@ -50,7 +50,10 @@ local DEFAULTS = {
 	equalizerPreset = "flat",
 	equalizerGains = { 0, 0, 0, 0, 0 },
 	equalizerCustomPresets = {},
-	disabledPlugins = {},
+	-- A fresh install starts with ratings off: the stars are an extra some people want, not part
+	-- of the player. A settings file that already names its switches keeps whatever it says, so
+	-- someone who turned ratings on is not turned off by an update.
+	disabledPlugins = { "ratings" },
 	plugins = {}
 }
 
@@ -71,6 +74,15 @@ local function pluginNames(value)
 	for _, name in ipairs(value) do
 		if type(name) == "string" and name ~= "" then names[#names + 1] = name end
 	end
+	return names
+end
+
+--- The switches a settings file without a `disabledPlugins` key starts from: the fresh-install
+--- list, copied because the settings service changes the list it was given.
+---@return string[]
+local function defaultPluginNames()
+	local names = {}
+	for _, name in ipairs(DEFAULTS.disabledPlugins) do names[#names + 1] = name end
 	return names
 end
 
@@ -184,7 +196,9 @@ function settings.load(dir)
 		equalizerPreset = data.equalizerPreset,
 		equalizerGains = data.equalizerGains,
 		equalizerCustomPresets = data.equalizerCustomPresets,
-		disabledPlugins = pluginNames(data.disabledPlugins),
+		-- A file that names its switches keeps them exactly; only one written before this key
+		-- existed gets the fresh-install list, so turning ratings on is a switch that stays on.
+		disabledPlugins = data.disabledPlugins == nil and defaultPluginNames() or pluginNames(data.disabledPlugins),
 		plugins = plugins
 	}
 

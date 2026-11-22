@@ -1,11 +1,12 @@
--- The playlists page: the playlists to open and the tags that make the smart ones. A tag's
--- name is edited in place here, so the draft and the one being edited belong to this page.
+-- The playlists page: the lists the library makes by itself, the ones the listener made, and the
+-- tags that make the automatic ones. A tag's name is edited in place here, so the draft and the
+-- one being edited belong to this page.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
-local PlaylistArt = require("beat.app.components.playlist_art")
+local Smart = require("beat.app.services.collections.smart")
+local tile = require("beat.app.components.playlists.tile")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -112,6 +113,7 @@ function playlists.view(app, page, window)
 	local content = metrics.contentWidth(app, window.width)
 	local tags = taxonomy:visibleTags()
 
+	local buttonHeight = theme:px(mobile and 44 or 30)
 	local headerActions = {
 		ui.button(
 			ctx,
@@ -119,7 +121,7 @@ function playlists.view(app, page, window)
 				label = "New playlist",
 				onClick = { type = "open", overlay = "playlist_dialog", smart = false },
 				variant = "primary",
-				height = theme:px(30),
+				height = buttonHeight,
 				width = theme:px(128)
 			}
 		),
@@ -128,14 +130,15 @@ function playlists.view(app, page, window)
 			{
 				label = "New tag",
 				onClick = { type = "open", overlay = "tag_dialog" },
-				height = theme:px(30),
+				height = buttonHeight,
 				width = theme:px(92)
 			}
 		)
 	}
-	local headerHeight = (theme:px(mobile ? 92 : 44))
+	local titleHeight = math.floor(theme:type("xxl") * 1.25)
+	local headerHeight = mobile and (titleHeight + theme:px(10) + buttonHeight) or theme:px(44)
 	local actionRow = div()
-		:style(sty():row():wrel(1.0):h(theme:px(30)):gap(theme:px(8)):align("center"):justify(mobile ? "start" : "end"))
+		:style(sty():row():wrel(1.0):h(buttonHeight):gap(theme:px(8)):align("center"):justify(mobile ? "start" : "end"))
 		:children(headerActions)
 	local title = text("Playlists")
 		:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
@@ -149,38 +152,100 @@ function playlists.view(app, page, window)
 				{
 					title,
 					div()
-						:style(sty():row():w(theme:px(230)):h(theme:px(30)):gap(theme:px(8)):align("center"):justify("end"))
+						:style(sty():row():w(theme:px(230)):h(buttonHeight):gap(theme:px(8)):align("center"):justify("end"))
 						:children(headerActions)
 				}
 			)
 	end
 
-	local function playlistRow(playlist)
-		local tracks = PlaylistArt.tracks(app, playlist)
-		local infoWidth = math.max(theme:px(120), content - theme:px(128))
-		local nameStyle = theme:s():text(theme:type("base")):weight("semibold")
-		local measured = measure.width(app, playlist.name, nameStyle)
-		local fallback = measure.estimate(playlist.name, theme:type("base"), 0.48)
-		local nameWidth = math.min(
-			infoWidth - theme:px(50),
-			math.max(theme:px(36), math.ceil(math.max(measured or 0, fallback)) + 1)
-		)
-		local rowStyle = sty()
-			:row():wrel(1.0):h(theme:px(72)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
-			:radius(theme:radius("md")):bg(theme:color("surface"))
-		return div():style(rowStyle):hover(sty():row():wrel(1.0):h(theme:px(72)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center"):radius(theme:radius("md")):bg(theme:color("hover"))):onClick({ type = "navigate", page = { kind = "playlist", id = playlist.id } }):onContextMenu(|_, _, _, _, _, windowX, windowY| -> { type = "open", overlay = "menu", menu = "playlist", id = playlist.id, x = windowX, y = windowY }):children({ PlaylistArt.view(app, { tracks = tracks, size = theme:px(54), name = playlist.name, ui = ctx }), div():style(sty():column():w(infoWidth):hrel(1.0):justify("center"):gap(theme:px(4))):children({
-			-- The type marks sit against the end of the name rather than at the far edge of
-			-- the row. The estimate only caps an unusually long name; real names measure short.
-			div():style(sty():row():wrel(1.0):h(theme:px(18)):gap(theme:px(6)):align("center")):children({ text(playlist.name):style(theme:s():w(nameWidth):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()), PlaylistArt.icons(app, { playlist = playlist, ui = ctx }) }),
-			text(format.count(#tracks, "track") .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt)):style(theme:s():wrel(1.0):h(theme:px(16)):text(theme:type("xs")):fg(theme:color("muted")):ellipsis())
-		}), ui.iconButton(ctx, { name = "play", size = theme:px(30), onClick = { type = "playPlaylist", id = playlist.id } }) })
+	-- Two across on a phone and at least four on a desktop, which is the ladder the shelves use
+	-- widened to the promise this page makes: the smart lists read as a row, not a column.
+	local gap = theme:space(16)
+	local columns = metrics.gridColumns(app, content)
+	columns = mobile and math.min(2, columns) or math.max(4, columns)
+	local tileWidth = math.max(theme:px(120), math.floor((content - gap * (columns - 1)) / columns))
+	local tileHeight = tile.height(app, { width = tileWidth, mobile = mobile })
+	local rowStyle = sty():row():wrel(1.0):h(tileHeight):gap(gap)
+
+	---@param tiles wonderland.Element[]
+	---@return wonderland.Element[]
+	local function grid(tiles)
+		local rows = {}
+		local row = {}
+		for at, element in ipairs(tiles) do
+			row[#row + 1] = element
+			if #row == columns or at == #tiles then
+				rows[#rows + 1] = div():style(rowStyle):children(row)
+				row = {}
+			end
+		end
+		return rows
 	end
 
-	local rows = {}
-	for _, playlist in ipairs(taxonomy.playlists) do rows[#rows + 1] = playlistRow(playlist) end
-	if #rows == 0 then
-		rows[#rows + 1] = text("No playlists yet. Tags make smart playlists, or make one by hand.")
-			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")))
+	---@param count number
+	---@return number
+	local function gridHeight(count)
+		if count == 0 then return 0 end
+		local rows = math.ceil(count / columns)
+		return rows * tileHeight + (rows - 1) * gap
+	end
+
+	---@param playlist beat.Playlist
+	---@param list beat.Track[]
+	---@param builtin boolean
+	---@return wonderland.Element
+	local function playlistTile(playlist, list, builtin)
+		local menu
+		if not builtin then
+			menu = |_, _, _, _, _, windowX, windowY| -> {
+				type = "open",
+				overlay = "menu",
+				menu = "playlist",
+				id = playlist.id,
+				x = windowX,
+				y = windowY
+			}
+		end
+		return tile.view(
+			app,
+			{
+				width = tileWidth,
+				playlist = playlist,
+				tracks = list,
+				mobile = mobile,
+				ui = ctx,
+				onOpen = { type = "navigate", page = { kind = "playlist", id = playlist.id } },
+				onPlay = { type = "playPlaylist", id = playlist.id },
+				onShuffle = { type = "playPlaylist", id = playlist.id, shuffle = true },
+				onMenu = menu
+			}
+		)
+	end
+
+	local smartTiles = {}
+	for _, playlist in ipairs(Smart.all()) do
+		smartTiles[#smartTiles + 1] = playlistTile(playlist, app.services.collections:playlistTracks(playlist), true)
+	end
+
+	-- The automatic playlist a tag carries is shown as the tag itself below; this grid is the
+	-- lists the listener chose to make.
+	local own = {}
+	for _, playlist in ipairs(taxonomy.playlists) do
+		if playlist.autoTagId == nil then own[#own + 1] = playlist end
+	end
+	local ownTiles = {
+		tile.newPlaylist(
+			app,
+			{
+				width = tileWidth,
+				mobile = mobile,
+				ui = ctx,
+				onCreate = { type = "open", overlay = "playlist_dialog", smart = false }
+			}
+		)
+	}
+	for _, playlist in ipairs(own) do
+		ownTiles[#ownTiles + 1] = playlistTile(playlist, app.services.collections:playlistTracks(playlist), false)
 	end
 
 	-- Tags are pills whose width comes from what is in them, wrapped by hand because the layout
@@ -192,12 +257,16 @@ function playlists.view(app, page, window)
 	local pillPadLeft = theme:px(10)
 	local pillPadRight = theme:px(6)
 	local gaps = theme:px(12)
-	local closeWidth = (theme:px(mobile ? 28 : 22))
+	local pillHeight = theme:px(mobile and 44 or 34)
+	local closeWidth = theme:px(mobile and 44 or 22)
+	local editCheck = mobile and closeWidth or theme:px(24)
+	local editCancel = mobile and closeWidth or theme:px(22)
 	local nameSize = (theme:type(mobile ? "sm" : "base"))
+	local emptyTagHeight = theme:px(20)
 
 	local function flushTagLine()
 		if #tagLine == 0 then return end
-		tagRows[#tagRows + 1] = div():style(sty():row():wrel(1.0):h(theme:px(34)):gap(pillGap)):children(tagLine)
+		tagRows[#tagRows + 1] = div():style(sty():row():wrel(1.0):h(pillHeight):gap(pillGap)):children(tagLine)
 		tagLine = {}
 		lineWidth = 0
 	end
@@ -226,9 +295,12 @@ function playlists.view(app, page, window)
 		local pill
 		local usedWidth = estimatedWidth
 		if editing then
-			local editWidth = math.min(content, math.max(estimatedWidth, theme:px(190)))
+			local editWidth = math.min(content, math.max(estimatedWidth, theme:px(mobile ? 240 : 190)))
 			usedWidth = editWidth
-			local fieldWidth = math.max(theme:px(80), editWidth - theme:px(20) - theme:px(24) * 2 - theme:px(8))
+			local fieldWidth = math.max(
+				theme:px(80),
+				editWidth - theme:px(20) - editCheck - editCancel - theme:px(8)
+			)
 			local nameField = ui.field(
 				ctx,
 				{
@@ -243,26 +315,26 @@ function playlists.view(app, page, window)
 			pill = div()
 				:style(
 					sty()
-						:row():w(editWidth):h(theme:px(34)):gap(theme:px(4)):pad(0, theme:px(8), 0, theme:px(8)):align("center")
+						:row():w(editWidth):h(pillHeight):gap(theme:px(4)):pad(0, theme:px(8), 0, theme:px(8)):align("center")
 						:radius(theme:radius("full")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				)
 				:children(
 					{
 						nameField,
-						ui.iconButton(ctx, { name = "check", size = theme:px(24), onClick = { type = "renameTag" } }),
-						ui.iconButton(ctx, { name = "close", size = theme:px(22), onClick = { type = "cancelTagEdit" } })
+						ui.iconButton(ctx, { name = "check", size = editCheck, onClick = { type = "renameTag" } }),
+						ui.iconButton(ctx, { name = "close", size = editCancel, onClick = { type = "cancelTagEdit" } })
 					}
 				)
 		else
 			pill = div()
 				:style(
 					sty()
-						:row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6)):pad(0, pillPadRight, 0, pillPadLeft):align("center")
+						:row():w(estimatedWidth):h(pillHeight):gap(theme:px(6)):pad(0, pillPadRight, 0, pillPadLeft):align("center")
 						:radius(theme:radius("full")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				)
 				:hover(
 					sty()
-						:row():w(estimatedWidth):h(theme:px(34)):gap(theme:px(6)):pad(0, pillPadRight, 0, pillPadLeft):align("center")
+						:row():w(estimatedWidth):h(pillHeight):gap(theme:px(6)):pad(0, pillPadRight, 0, pillPadLeft):align("center")
 						:radius(theme:radius("full")):bg(theme:color("hover")):border(theme:px(1), theme:color("border"))
 				):onMouseMove(|| -> { type = "hoverTag", id = tag.id })
 				:children(
@@ -271,7 +343,7 @@ function playlists.view(app, page, window)
 						text(tag.name)
 							:style(nameStyle:w(nameWidth):fg(theme:color("text")):ellipsis()):onClick({ type = "editTag", id = tag.id }),
 						div()
-							:style(sty():size(closeWidth, ((theme:px(mobile ? 28 : 22)))):align("center"):justify("center"))
+							:style(sty():size(closeWidth, pillHeight):align("center"):justify("center"))
 							:onClick({ type = "deleteTag", id = tag.id })
 							:children(text("×"):style(theme:s():text(theme:type("lg")):weight("semibold"):fg(theme:color("muted"))))
 					}
@@ -288,22 +360,35 @@ function playlists.view(app, page, window)
 			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")))
 	end
 
-	local playlistHeight = #taxonomy.playlists * theme:px(72) + math.max(0, #taxonomy.playlists - 1) * theme:px(8)
-	local tagHeight = #tagRows * theme:px(34) + math.max(0, #tagRows - 1) * theme:px(8)
-	if #taxonomy.playlists == 0 then playlistHeight = theme:px(20) end
-	if #tags == 0 then tagHeight = theme:px(20) end
-	local height = headerHeight + playlistHeight + theme:px(24) + tagHeight + theme:space(18) * 3 + theme:px(24)
+	local tagHeight = #tags == 0 and emptyTagHeight or (#tagRows * pillHeight + math.max(0, #tagRows - 1) * pillGap)
+	local sectionHeight = theme:px(24)
+	local sectionGap = theme:space(18)
+	local smartHeight = gridHeight(#smartTiles)
+	local ownHeight = gridHeight(#ownTiles)
 
-	return div()
-		:style(sty():column():wrel(1.0):h(height):gap(theme:space(18)))
-		:children(
-			{
-				header,
-				div():style(sty():column():wrel(1.0):h(playlistHeight):gap(theme:px(8))):children(rows),
-				ui.section(ctx, { title = "Tags" }),
-				div():style(sty():column():wrel(1.0):h(tagHeight):gap(theme:px(8))):children(tagRows)
-			}
-		)
+	local children = {}
+	local height = 0
+	local function add(element, elementHeight)
+		if #children > 0 then height = height + sectionGap end
+		children[#children + 1] = element
+		height = height + elementHeight
+	end
+
+	add(header, headerHeight)
+	add(ui.section(ctx, { title = "Smart playlists" }), sectionHeight)
+	add(
+		div():style(sty():column():wrel(1.0):h(smartHeight):gap(gap)):children(grid(smartTiles)),
+		smartHeight
+	)
+	add(ui.section(ctx, { title = "Your playlists" }), sectionHeight)
+	add(div():style(sty():column():wrel(1.0):h(ownHeight):gap(gap)):children(grid(ownTiles)), ownHeight)
+	add(ui.section(ctx, { title = "Tags" }), sectionHeight)
+	add(div():style(sty():column():wrel(1.0):h(tagHeight):gap(pillGap)):children(tagRows), tagHeight)
+
+	local viewport = metrics.viewportHeight(app, window.width, window.height)
+	app.services.scroll:setLimit(app:pageKey(), math.max(0, height - viewport))
+
+	return div():style(sty():column():wrel(1.0):h(height):gap(sectionGap)):children(children)
 end
 
 return playlists

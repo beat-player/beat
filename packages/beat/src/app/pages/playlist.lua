@@ -1,10 +1,11 @@
--- The playlist screen: the collection view with its own cover, its kind, and the control
--- that adds more to it.
+-- The playlist screen: the collection view with its own cover, its kind, and -- for a list that
+-- can grow by hand -- the control that adds more to it. A built-in smart list is read-only.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local PlaylistArt = require("beat.app.components.playlist_art")
 local collection = require("beat.app.components.collection")
+local Smart = require("beat.app.services.collections.smart")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -37,6 +38,7 @@ function playlistPage.view(app, page, window)
 		)
 	end
 	local tracks = PlaylistArt.tracks(app, playlist)
+	local builtin = playlist.builtin == true
 	local tagNames = {}
 	for _, id in ipairs(playlist.tagIds) do
 		local tag = app.services.collections.taxonomy.tagById[id]
@@ -45,10 +47,10 @@ function playlistPage.view(app, page, window)
 	local duration = 0
 	for _, track in ipairs(tracks) do duration += track.duration end
 
-	local subtitle = "Playlist"
-	if playlist.autoTagId ~= nil then
+	local subtitle = builtin and (Smart.subtitle(playlist) or "Smart playlist") or "Playlist"
+	if not builtin and playlist.autoTagId ~= nil then
 		subtitle = "Auto playlist"
-	elseif playlist.smart and #tagNames > 0 then
+	elseif not builtin and playlist.smart and #tagNames > 0 then
 		subtitle = "Smart playlist · " .. table.concat(tagNames, playlist.match == "any" ? " or " : " · ")
 	end
 
@@ -58,6 +60,10 @@ function playlistPage.view(app, page, window)
 	local thisPlaylist = current ~= nil and source == "playlist:" .. tostring(playlist.id)
 	local playing = app.services.playback.player:isPlaying()
 
+	local emptyTitle = builtin and "Nothing in this list yet" or "This playlist is empty"
+	local emptyCopy = builtin
+		and "Play some music, or add files to your library, and this list fills itself."
+		or "Use + to add albums, or right-click a track and add it here."
 	local empty = div()
 		:style(sty():column():wrel(1.0):h(120):align("center"):justify("center"):gap(10))
 		:children(
@@ -70,12 +76,12 @@ function playlistPage.view(app, page, window)
 						colour = app.services.appearance.theme:color("faint")
 					}
 				),
-				text("This playlist is empty")
+				text(emptyTitle)
 					:style(
 						app.services.appearance.theme:s()
 							:text(app.services.appearance.theme:type("lg")):weight("bold"):fg(app.services.appearance.theme:color("text"))
 					),
-				text("Use + to add albums, or right-click a track and add it here.")
+				text(emptyCopy)
 					:style(
 						app.services.appearance.theme:s()
 							:text(app.services.appearance.theme:type("sm")):fg(app.services.appearance.theme:color("muted"))
@@ -83,12 +89,15 @@ function playlistPage.view(app, page, window)
 			}
 		)
 
+	local meta = format.count(#tracks, "track") .. (duration > 0 and (" · " .. format.duration(duration)) or "")
+	if not builtin then meta = meta .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt) end
+
 	return collection.view(
 		app,
 		{
 			window = window,
-			label = "PLAYLIST",
-			icons = PlaylistArt.icons(app, { playlist = playlist, ui = ctx }),
+			label = builtin ? "SMART PLAYLIST" : "PLAYLIST",
+			icons = builtin ? nil : PlaylistArt.icons(app, { playlist = playlist, ui = ctx }),
 			cover = |size| -> PlaylistArt.view(
 				app,
 				{
@@ -101,13 +110,11 @@ function playlistPage.view(app, page, window)
 			),
 			title = playlist.name,
 			subtitle = subtitle,
-			meta = format.count(#tracks, "track") .. (duration > 0 and (" · " .. format.duration(duration)) or "") .. " · " .. PlaylistArt.editedLabel(
-				playlist.updatedAt
-			),
+			meta = meta,
 			playAction = thisPlaylist ? { type = "togglePlay" } : { type = "playPlaylist", id = playlist.id },
 			playIcon = playing and thisPlaylist ? "pause" : "play",
 			shuffleAction = { type = "playPlaylist", id = playlist.id, shuffle = true },
-			addAction = { type = "open", overlay = "playlist_adder", playlistId = playlist.id },
+			addAction = builtin ? nil : { type = "open", overlay = "playlist_adder", playlistId = playlist.id },
 			tracks = tracks,
 			trackAction = |track| -> { type = "playPlaylistTrack", playlistId = playlist.id, trackId = track.id },
 			empty = empty

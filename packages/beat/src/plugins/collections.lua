@@ -15,7 +15,7 @@ local tagPicker = require("beat.app.overlays.tag_picker")
 local tagDialog = require("beat.app.overlays.tag_dialog")
 local tagDelete = require("beat.app.overlays.tag_delete")
 
-return beat.plugin({ name = "collections", version = "1.0.0", requires = { core = "^1.0.0", library = "^1.0.0" }, setup = function(handle)
+return beat.plugin({ name = "collections", version = "1.0.0", author = "beat", description = "Tags and playlists, with ratings' data", requires = { core = "^1.0.0", library = "^1.0.0" }, setup = function(handle)
 	handle.service("collections", collections)
 	handle.service("sidebar", sidebar)
 

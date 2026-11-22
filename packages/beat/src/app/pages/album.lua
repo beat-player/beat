@@ -58,6 +58,9 @@ function albumPage.view(app, page, window)
 	local current = app.services.playback:current()
 	local thisAlbum = current?.albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
+	local ratings = app.registry:hasPlugin("ratings")
+	local onRate = nil
+	if ratings then onRate = |stars| -> { type = "rateAlbum", id = album.id, stars = stars } end
 	return collection.view(
 		app,
 		{
@@ -84,10 +87,11 @@ function albumPage.view(app, page, window)
 			playAction = thisAlbum ? { type = "togglePlay" } : { type = "playAlbum", id = album.id },
 			playIcon = playing and thisAlbum ? "pause" : "play",
 			titleOnly = true,
-			ratings = true,
+			ratings = ratings,
+			phoneHero = true,
 			shuffleAction = { type = "playAlbum", id = album.id, shuffle = true },
-			rating = app.services.collections.taxonomy:albumRating(album.key),
-			onRate = |stars| -> { type = "rateAlbum", id = album.id, stars = stars },
+			rating = ratings and app.services.collections.taxonomy:albumRating(album.key) or nil,
+			onRate = onRate,
 			tracks = album.tracks,
 			trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id },
 			trackIndex = |track, at| -> track.number or at

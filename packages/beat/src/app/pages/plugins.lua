@@ -1,8 +1,7 @@
--- The plugins page: what the plugins folder holds, and a check box for each plugin in it. Beat's own
--- built-in plugins are not listed: they are how beat is made, not something a listener chooses.
--- Nothing here loads or unloads anything. A check box records what the next start should load --
--- plugins are part of the app from its first frame, so changing them means starting it again --
--- and the row says so until then.
+-- The plugins page: beat's own plugins and the ones in the plugins folder, in one list each, with a
+-- switch for the plugins that can be off. Nothing here loads or unloads anything. A switch records
+-- what the next start should load -- plugins are part of the app from its first frame, so changing
+-- them means starting it again -- and the row says so until then.
 local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
@@ -11,13 +10,19 @@ local metrics = require("beat.app.components.helpers.metrics")
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 -- The card's padding, and the gap between its rows, in unscaled pixels: the row widths and the
--- card's height are worked out from them, so that a check box sits inside the card's edge.
+-- card's height are worked out from them, so that a switch sits inside the card's edge.
 local PAD = 18
 local GAP = 8
-local ROW = 44
+-- A row has a name and version, who made it and what state it is in, and its one-line description.
+-- A phone gets the taller row so a finger has something to hit.
+local ROW = 56
+local ROW_PHONE = 64
+-- The line under the section title.
+local INTRO = 20
 -- The check box, and the larger square around it a click lands in.
 local CHECK = 20
 local CHECK_TARGET = 32
+local CHECK_TARGET_PHONE = 44
 -- A settings card's title, and the space between it and the plugin's own view.
 local SETTINGS_TITLE = 24
 
@@ -32,11 +37,13 @@ local STATE = {
 ---@type beat.PageSurface
 local plugins = {}
 
---- The file name a check box for this entry acts on. A plugin from the folder has one; a plugin a
---- caller supplied does not, and cannot be switched off here.
+--- The key a switch for this entry acts on. A built-in is named by its plugin name; a plugin from
+--- the folder by its file name, which is what the loader reads before the file runs. A plugin a
+--- caller supplied has neither and cannot be switched off here.
 ---@param entry beat.PluginStatus
 ---@return string?
 local function keyOf(entry)
+	if entry.builtin then return entry.name end
 	if entry.file == nil then return nil end
 	return path.basename(entry.file)
 end
@@ -53,7 +60,7 @@ local function isOff(values, entry)
 	return false
 end
 
---- What a check box changed that the running app has not taken yet, or nil when there is nothing
+--- What a switch changed that the running app has not taken yet, or nil when there is nothing
 --- waiting for the next start.
 ---@param entry beat.PluginStatus
 ---@param values beat.Settings
@@ -64,13 +71,17 @@ local function pending(entry, values)
 	return nil
 end
 
+--- The line under the name: who made it, what state it is in, and anything else worth knowing.
 ---@param entry beat.PluginStatus
 ---@param values beat.Settings
-local function detail(entry, values)
+---@return string
+local function meta(entry, values)
 	local state = STATE[entry.state] or STATE.failed
-	local parts = { state.label }
-	if entry.version ~= nil then parts[#parts + 1] = "v" .. entry.version end
-	parts[#parts + 1] = keyOf(entry) or entry.source
+	local parts = {}
+	if entry.author ~= nil then parts[#parts + 1] = "by " .. entry.author end
+	parts[#parts + 1] = state.label
+	local key = keyOf(entry)
+	if key ~= nil and not entry.builtin then parts[#parts + 1] = key end
 	if entry.reason ~= nil then parts[#parts + 1] = entry.reason end
 	local waiting = pending(entry, values)
 	if waiting ~= nil then parts[#parts + 1] = waiting end
@@ -80,40 +91,134 @@ end
 ---@param app beat.App
 ---@param ctx beat.ui.Context
 ---@param entry beat.PluginStatus
----@param width number # The card's inner width, which the name and the check box share
-local function row(app, ctx, entry, width)
+---@param width number # The card's inner width, which the name and the switch share
+---@param phone boolean
+local function row(app, ctx, entry, width, phone)
 	local theme = app.services.appearance.theme
 	local values = app.services.settings.values
 	local state = STATE[entry.state] or STATE.failed
-	local file = keyOf(entry)
-	local textWidth = width - (file ~= nil and (theme:px(CHECK_TARGET) + theme:px(10)) or 0)
+	local key = keyOf(entry)
+	-- A built-in the rest of the app asks for by name has no switch: there is no app to come back
+	-- to if it is off.
+	local switchable = key ~= nil and not entry.required
+	local target = theme:px(phone and CHECK_TARGET_PHONE or CHECK_TARGET)
+	local textWidth = math.max(theme:px(80), width - (switchable and target + theme:px(10) or 0))
+
+	local nameRow = {
+		text(entry.name):style(
+			theme:s():wrel(1.0):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()
+		)
+	}
+	if entry.version ~= nil then
+		nameRow[#nameRow + 1] = text("v" .. entry.version):style(
+			theme:s():text(theme:type("xs")):fg(theme:color("faint"))
+		)
+	end
+
+	local lines = {
+		div():style(sty():row():w(textWidth):h(theme:px(20)):gap(theme:px(6)):align("center")):children(nameRow),
+		text(meta(entry, values)):style(
+			theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color(state.tone)):ellipsis()
+		)
+	}
+	if entry.description ~= nil then
+		lines[#lines + 1] = text(entry.description):style(
+			theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color("muted")):ellipsis()
+		)
+	end
 
 	local children = {
-		div()
-			:style(sty():column():w(math.max(theme:px(80), textWidth)):h(theme:px(40)):gap(theme:px(2)):justify("center"))
-			:children(
-				{
-					text(entry.name)
-						:style(theme:s():wrel(1.0):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-					text(detail(entry, values))
-						:style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color(state.tone)):ellipsis())
-				}
-			)
+		div():style(sty():column():w(textWidth):hrel(1.0):justify("center"):gap(theme:px(2))):children(lines)
 	}
-	if file ~= nil then
+	if switchable then
 		local on = not isOff(values, entry)
 		children[#children + 1] = ui.checkbox(
 			ctx,
 			{
 				checked = on,
-				onClick = { type = "pluginEnabled", file = file, enabled = not on },
+				onClick = { type = "pluginEnabled", file = key, enabled = not on },
 				size = theme:px(CHECK),
-				target = theme:px(CHECK_TARGET)
+				target = target
 			}
 		)
 	end
 
-	return div():style(sty():row():wrel(1.0):h(theme:px(ROW)):gap(theme:px(10)):align("center")):children(children)
+	return div()
+		:style(sty():row():wrel(1.0):h(theme:px(phone and ROW_PHONE or ROW)):gap(theme:px(10)):align("center"))
+		:children(children)
+end
+
+--- One section: its title, the line under it, and a row for every plugin it holds -- or the
+--- caller's message when it holds none.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param title string
+---@param intro string
+---@param entries beat.PluginStatus[]
+---@param width number # The card's inner width
+---@param phone boolean
+---@param action wonderland.Element?
+---@param empty wonderland.Element? # Drawn instead of the rows when there are none
+---@return wonderland.Element
+---@return number height
+local function section(app, ctx, title, intro, entries, width, phone, action, empty)
+	local theme = app.services.appearance.theme
+	local rowHeight = theme:px(phone and ROW_PHONE or ROW)
+
+	local content = {
+		text(intro):style(
+			theme:s():wrel(1.0):h(theme:px(INTRO)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+		)
+	}
+	for _, entry in ipairs(entries) do
+		content[#content + 1] = row(app, ctx, entry, width, phone)
+	end
+	if #entries == 0 and empty ~= nil then content[#content + 1] = empty end
+	local rowCount = math.max(#entries, empty ~= nil and 1 or 0)
+	local height = theme:px(PAD * 2)
+		+ (action ~= nil and theme:px(32) or theme:px(24))
+		+ theme:px(GAP)
+		+ theme:px(INTRO)
+		+ theme:px(GAP)
+		+ rowCount * rowHeight
+		+ math.max(0, rowCount - 1) * theme:px(GAP)
+
+	local card = ui.card(
+		ctx,
+		{
+			title = title,
+			action = action,
+			children = content,
+			height = height,
+			padding = theme:px(PAD),
+			gap = theme:px(GAP)
+		}
+	)
+	return card, height
+end
+
+---@param app beat.App
+---@param phone boolean
+local function emptyRow(app, phone)
+	local theme = app.services.appearance.theme
+	return div()
+		:style(sty():row():wrel(1.0):h(theme:px(phone and ROW_PHONE or ROW)):align("center"))
+		:children(
+			{
+				text("No plugins yet. Put one in the plugins folder; the folder button opens it.")
+					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+			}
+		)
+end
+
+---@param app beat.App
+---@return beat.PluginStatus[]
+local function builtinPlugins(app)
+	local found = {}
+	for _, entry in ipairs(app.pluginStates) do
+		if entry.builtin then found[#found + 1] = entry end
+	end
+	return found
 end
 
 ---@param app beat.App
@@ -192,50 +297,39 @@ function plugins.view(app, page, window)
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
 	local narrow = window.width < 560
+	local phone = metrics.mobile(app, window.width)
 	local inner = metrics.contentWidth(app, window.width) - theme:px(PAD) * 2 - theme:px(2)
 
-	local rows = {}
-	for _, entry in ipairs(outsidePlugins(app)) do rows[#rows + 1] = row(app, ctx, entry, inner) end
-	if #rows == 0 then
-		rows[1] = div()
-			:style(sty():row():wrel(1.0):h(theme:px(ROW)):align("center"))
-			:children(
-				{
-					text("No plugins yet. Put one in the plugins folder; the folder button opens it.")
-						:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
-				}
-			)
-	end
-
-	-- The folder is where a plugin is installed, so it is opened from the list it fills. Every
-	-- child is followed by a gap but the last: the line under the title, and the rows.
-	local content = {
-		text("Plugins are files made with lde bundle. Changes apply after a restart.")
-			:style(theme:s():wrel(1.0):h(theme:px(20)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
-	}
-	for _, item in ipairs(rows) do content[#content + 1] = item end
-
-	local cardHeight = PAD * 2 + 2 + 32 + 20 + #rows * ROW + (#content) * GAP
-	local card = ui.card(
+	local builtCard, builtHeight = section(
+		app,
 		ctx,
-		{
-			title = "Installed",
-			action = ui.iconButton(
-				ctx,
-				{ name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder" } }
-			),
-			children = content,
-			height = theme:px(cardHeight),
-			padding = theme:px(PAD),
-			gap = theme:px(GAP)
-		}
+		"Built-in",
+		"Beat's own plugins. They are how the app is made; the optional ones can be switched off.",
+		builtinPlugins(app),
+		inner,
+		phone,
+		nil,
+		nil
 	)
 
-	-- Below the installed list, one card for each loaded plugin that asked for settings. The card
-	-- is drawn at the height the plugin's own `height` said, and its view gets the same inner width
-	-- as the installed rows.
-	local cards = { card }
-	local cardsHeight = theme:px(cardHeight)
+	local installed = outsidePlugins(app)
+	local installedCard, installedHeight = section(
+		app,
+		ctx,
+		"Installed",
+		"Plugins in the plugins folder. A change applies after a restart.",
+		installed,
+		inner,
+		phone,
+		ui.iconButton(ctx, { name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder" } }),
+		emptyRow(app, phone)
+	)
+
+	-- Below the two lists, one card for each loaded plugin that asked for settings. The card is
+	-- drawn at the height the plugin's own `height` said, and its view gets the same inner width
+	-- as the plugin rows.
+	local cards = { builtCard, installedCard }
+	local cardsHeight = builtHeight + theme:space(16) + installedHeight
 	for _, entry in ipairs(app.registry:settings()) do
 		local element, height = settingsCard(app, ctx, entry, inner)
 		if element ~= nil then

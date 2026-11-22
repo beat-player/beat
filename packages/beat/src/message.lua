@@ -38,6 +38,12 @@
 ---@field type "forward"
 ---@class beat.EscapeMessage: beat.MessageFields
 ---@field type "escape"
+---@class beat.SystemBackMessage: beat.MessageFields
+---@field type "systemBack"
+---@class beat.ConfirmLeaveMessage: beat.MessageFields
+---@field type "confirmLeave"
+---@class beat.CancelLeaveMessage: beat.MessageFields
+---@field type "cancelLeave"
 ---@class beat.ResetMessage: beat.MessageFields
 ---@field type "reset"
 ---@field page beat.Route
@@ -389,6 +395,9 @@
 --- | beat.BackMessage
 --- | beat.ForwardMessage
 --- | beat.EscapeMessage
+--- | beat.SystemBackMessage
+--- | beat.ConfirmLeaveMessage
+--- | beat.CancelLeaveMessage
 --- | beat.ResetMessage
 --- | beat.FocusMessage
 --- | beat.PlayAlbumMessage

@@ -98,7 +98,7 @@ end
 ---@param playlistId number
 function Collections:deletePlaylist(playlistId)
 	local playlist = self.taxonomy:playlist(playlistId)
-	if playlist == nil then return end
+	if playlist == nil or playlist.builtin then return end
 	self.taxonomy:removePlaylist(playlistId)
 	self:save()
 	self.toasts:show("Playlist deleted · " .. playlist.name)

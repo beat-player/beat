@@ -1,4 +1,4 @@
--- A scan in a process of its own.
+-- A scan in a process of its own, or on a thread where there is no second process to start.
 --
 -- The worker walks the folder and writes one JSON line per inspected track; this side reads what
 -- has arrived since the last tick and hands the app the tracks. The window keeps drawing, playing
@@ -6,10 +6,8 @@
 -- files live in the temporary directory and are removed when the job ends.
 local fs = require("fs")
 local json = require("json")
+local threading = require("threading")
 local Log = require("beat.log")
-local Scanner = require("beat.music.scan")
-local artwork = require("beat.music.artwork")
-local names = require("beat.music.names")
 local platform = require("beat.platform")
 local workerProcess = require("beat.workers.process")
 
@@ -19,9 +17,6 @@ local workerProcess = require("beat.workers.process")
 -- chunk is small enough that one poll stays a few milliseconds on a fast local scan.
 local READ_CHUNK = 64 * 1024
 local QUEUE_LIMIT = 256
-
--- How long one tick may spend scanning when the scan runs in the app's own process.
-local INLINE_BUDGET = 0.008
 
 local ScanJob = {}
 ScanJob.__index = ScanJob
@@ -41,7 +36,7 @@ ScanJob.__index = ScanJob
 ---@field child process.Child? # The coordinator process, until it exits
 ---@field exitCode number? # How the coordinator exited, once it has
 ---@field decodeErrors number # Lines the worker wrote that were not JSON this could read
----@field scanner beat.Scanner? # The scan itself, where it runs in this process: an Android app cannot start a copy of itself
+---@field thread threading.Handle? # The scan's thread, where it runs on one: an Android app cannot start a copy of itself
 
 --- A job over an already-known output path, which is also what the tests write by hand.
 ---@param root string
@@ -92,54 +87,88 @@ local function startWorker(root)
 	return job
 end
 
---- A scan in this process, a slice a tick: Android starts an app from the zygote, and an APK has
---- no executable a second process could be started from.
+--- What a scan thread runs: the folder walked and every track inspected, written as the lines a
+--- coordinator process writes -- progress, a track, done, cancelled -- so the job reads both alike.
+---@param root string
+---@param output string
+---@param cancelFile string
+local function scanOnThread(root, output, cancelFile)
+	return threading.spawn(function()
+		local fs = require("fs")
+		local json = require("json")
+		local Scanner = require("beat.music.scan")
+		local artwork = require("beat.music.artwork")
+		local names = require("beat.music.names")
+
+		local file = assert(io.open(output, "wb"))
+		local function emit(value)
+			local ok, line = pcall(json.encode, value)
+			if ok then
+				file:write(line, "\n")
+				file:flush()
+			end
+		end
+
+		local scanner = Scanner.new(root, { library = false })
+		local covers = {}
+		scanner.onTrack = function(info, entry, cover)
+			local key = names.albumKey(info.tags, entry.dir)
+			local coverCache = covers[key]
+			if coverCache == nil then
+				coverCache = false
+				if info.hasPicture or cover ~= nil then
+					coverCache = artwork.cacheCover(
+						{ path = entry.path, hasPicture = info.hasPicture, coverPath = cover, modified = entry.modifyTime },
+						512,
+						root
+					) or false
+				end
+				covers[key] = coverCache
+			end
+			emit({ type = "track", info = info, entry = entry, cover = cover, coverCache = coverCache or nil })
+		end
+
+		local clock = os.clock
+		local lastProgress = 0
+		while not scanner:isDone() do
+			if fs.isfile(cancelFile) then
+				emit({ type = "cancelled" })
+				file:close()
+				return
+			end
+			scanner:step(0.05, clock)
+			if clock() - lastProgress >= 0.1 then
+				local progress = scanner:progress()
+				progress.type = "progress"
+				emit(progress)
+				lastProgress = clock()
+			end
+		end
+
+		emit({ type = "done", skipped = scanner.skipped, errors = scanner.errors })
+		file:close()
+	end)
+end
+
+--- A scan on a thread of this process: Android starts an app from the zygote, and an APK has no
+--- executable a second process could be started from.
 ---@param root string
 ---@return beat.ScanJob
-local function startInline(root)
-	local job = ScanJob.new(root, "", "")
-	local scanner = Scanner.new(root, { library = false })
-	---@type table<string, string|false>
-	local covers = {}
-	---@param info treble.audio.Inspect
-	---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number? }
-	---@param cover string?
-	scanner.onTrack = function(info, entry, cover)
-		local key = names.albumKey(info.tags, entry.dir)
-		local coverCache = covers[key]
-		if coverCache == nil then
-			if info.hasPicture or cover ~= nil then
-				coverCache = artwork.cacheCover(
-					{
-						path = entry.path,
-						hasPicture = info.hasPicture,
-						coverPath = cover,
-						modified = entry.modifyTime
-					},
-					512,
-					root
-				) or false
-			else
-				coverCache = false
-			end
-			covers[key] = coverCache
-		end
-		job.queued[#job.queued + 1] = {
-			type = "track",
-			info = info,
-			entry = entry,
-			cover = cover,
-			coverCache = coverCache or nil
-		}
-	end
-	job.scanner = scanner
+local function startThread(root)
+	local output = os.tmpname() .. "-beat-scan.jsonl"
+	local cancelFile = os.tmpname() .. "-beat-scan.cancel"
+	fs.delete(output)
+	fs.delete(cancelFile)
+
+	local job = ScanJob.new(root, output, cancelFile)
+	job.thread = scanOnThread(root, output, cancelFile)
 	return job
 end
 
 ---@param root string
 ---@return beat.ScanJob
 function ScanJob.start(root)
-	if platform.android then return startInline(root) end
+	if platform.android then return startThread(root) end
 	return startWorker(root)
 end
 
@@ -156,7 +185,6 @@ end
 ---@return boolean more # Whether there may be output left: something was read, or the queue is full
 function ScanJob:read()
 	if #self.queued >= QUEUE_LIMIT then return true end
-	if self.scanner ~= nil then return false end
 
 	-- Binary, so the offset counts bytes: text mode on Windows reads "\r\n" as one character, and
 	-- an offset that falls behind the file re-reads the end of what was already taken.
@@ -230,17 +258,6 @@ end
 function ScanJob:poll(limit)
 	limit = limit or 32
 
-	local scanner = self.scanner
-	if scanner ~= nil and not self.done and #self.queued < QUEUE_LIMIT then
-		scanner:step(INLINE_BUDGET, os.clock)
-		self.latest = scanner:progress()
-		self.changed = true
-		if scanner:isDone() then
-			self.done = true
-			self.cancelled = scanner.phase == "cancelled"
-		end
-	end
-
 	if self.child ~= nil then
 		local code = self.child:poll()
 		if code ~= nil then
@@ -251,6 +268,18 @@ function ScanJob:poll(limit)
 			self.child = nil
 			self.exitCode = code
 		end
+	end
+
+	-- A thread that has ended is joined once; one that raised says why, and its output is still
+	-- read to the end below.
+	local thread = self.thread
+	if thread ~= nil and thread:done() then
+		self.thread = nil
+		local ok, err = pcall(thread.join, thread)
+		if not ok then
+			Log.write("error", "scan thread failed: " .. tostring(err))
+		end
+		self.exitCode = ok and 0 or 1
 	end
 
 	-- A worker that exits without saying it finished -- it crashed, or never started its scan --
@@ -303,12 +332,6 @@ end
 ---@param self beat.ScanJob
 ---@return boolean
 function ScanJob:cancel()
-	if self.scanner ~= nil then
-		self.scanner:cancel()
-		self.changed = true
-		return true
-	end
-
 	fs.write(self.cancelFile, "1")
 
 	if self.child ~= nil then
@@ -323,7 +346,6 @@ end
 
 ---@param self beat.ScanJob
 function ScanJob:close()
-	if self.scanner ~= nil then return end
 	fs.delete(self.output)
 	fs.delete(self.cancelFile)
 end

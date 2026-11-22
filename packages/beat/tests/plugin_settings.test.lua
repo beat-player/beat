@@ -181,6 +181,10 @@ test.skipIf(not canRender)("draws a plugin's settings card and its set message c
 	rendered:draw()
 
 	test.truthy(hasText(rendered, "Tester settings"), "the card's title is on the page")
+	test.truthy(hasText(rendered, "Built-in"), "the built-in section is on the page")
+	test.truthy(hasText(rendered, "Installed"), "the installed section is on the page")
+	test.truthy(hasText(rendered, "ratings"), "the built-in ratings plugin is listed")
+	test.truthy(hasText(rendered, "Stars on tracks and albums"), "with its one-line description")
 	test.truthy(hasText(rendered, "Volume 1"), "the plugin's view is on the card")
 	local ctx = seen --[[@as beat.PluginSettingsContext]]
 	if ctx == nil then error("the card was not drawn") end

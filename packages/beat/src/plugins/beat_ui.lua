@@ -7,6 +7,8 @@ local beatUi = require("beat-ui")
 return {
 	name = "beat-ui",
 	version = beatUi.version,
+	author = "beat",
+	description = "The UI components plugins build on",
 	---@param _handle beat.PluginHandle
 	setup = function(_handle) end
 }

@@ -82,7 +82,9 @@ function menu.view(app, overlay, window)
 
 	local entries = app.registry:actions(state.menu, ctx)
 	local rateWith = RATING[state.menu]
-	local rating = rateWith ~= nil and rateWith(app, ctx) or nil
+	-- The stars are the ratings plugin's. Without it, the menu is only the actions other plugins
+	-- registered, and the data Collections keeps is left alone for when the plugin comes back.
+	local rating = rateWith ~= nil and app.registry:hasPlugin("ratings") and rateWith(app, ctx) or nil
 	local theme = app.services.appearance.theme
 	local uiCtx = app:ui(window)
 	local width = theme:px(WIDTH[state.menu] or 218)

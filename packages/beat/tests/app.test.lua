@@ -442,6 +442,94 @@ test.it("starts a playlist from its page with shuffle", function()
 	real:close()
 end)
 
+test.it("starts a built-in smart playlist through the playlist messages", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	App.services.collections.taxonomy = Taxonomy.new()
+	App.services.collections.save = function() end
+	local heard = library.albums[1].tracks[1]
+	App.services.collections.taxonomy:recordListen(heard, library, nil, 500)
+	App.page = { kind = "playlist", id = -1 }
+
+	local capturedTracks, capturedIndex, capturedShuffle, capturedSource
+	local real = App.services.playback.player
+	local capture = PlayerService.new()
+	capture.playTracks = function(...)
+		local _, tracks, index, opts = ...
+		capturedTracks, capturedIndex = tracks, index
+		capturedShuffle = opts and opts.shuffle
+		capturedSource = opts and opts.source
+	end
+	App.services.playback.player = capture
+	App:act({ type = "playPlaylist", id = -1, shuffle = true })
+	App.services.playback.player = real
+
+	test.truthy(capturedTracks ~= nil, "a built-in list reaches the queue like a saved one")
+	test.equal(#assert(capturedTracks), 1, "it holds the one song that has been heard")
+	test.equal(capturedIndex, 1)
+	test.equal(capturedShuffle, true)
+	test.equal(capturedSource, "playlist:-1", "the queue remembers which built-in list it is")
+	real:close()
+end)
+
+test.skipIf(not canRender)("draws smart and own playlist tiles at phone width", function()
+	App:init({ scan = false })
+	App.services.settings.values.root = "/beat-fixtures"
+	local library = fixture()
+	App.services.library.current = library
+	App.services.scan.job = nil
+	App.services.collections.taxonomy = Taxonomy.new()
+	App.services.collections.save = function() end
+	local own = assert(App.services.collections.taxonomy:addPlaylist("Road trip", false))
+	App.page = { kind = "playlists" }
+	App.services.search.query = ""
+
+	local screen = wonderland.headless.new(function(window, assets)
+		App.window = window
+		App.assets = assets
+		App.services.covers:use(assets)
+		return require("beat.app.shell").view(App, window)
+	end, { width = 390, height = 844 })
+	screen:draw()
+
+	-- A tile is a page-destination and its controls are the playback messages, so the scan looks
+	-- for each message it expects rather than trusting one guessed pixel.
+	local function find(matches)
+		for y = 180, 830, 6 do
+			for x = 8, 382, 6 do
+				local candidate = screen:event({ name = "mousePress", window = screen.window, x = x, y = y, button = 1 })
+				if candidate ~= nil and matches(candidate) then return candidate end
+			end
+		end
+		return nil
+	end
+
+	local opened = find(|message| -> message.type == "navigate" and message.page ~= nil and message.page.kind == "playlist" and message.page.id == -1)
+	test.truthy(opened ~= nil, "a smart playlist tile opens its page on a phone")
+
+	test.falsy(
+		find(|message| -> message.type == "playPlaylist" and message.id == -1),
+		"an empty smart list hides its playback controls"
+	)
+
+	local shuffled = find(|message| -> message.type == "playPlaylist" and message.id == -4 and message.shuffle == true)
+	test.truthy(shuffled ~= nil, "a filled list's shuffle control sends the playlist playback message")
+
+	local played = find(|message| -> message.type == "playPlaylist" and message.id == -4 and message.shuffle ~= true)
+	test.truthy(played ~= nil, "its play control sends the same message unshuffled")
+
+	-- The own lists sit below the five smart tiles, so the page is taken to its end the way a
+	-- wheel does before the tile is looked for.
+	App:act({ type = "scroll", key = App:pageKey(), to = 100000 })
+	screen:draw()
+	local ownOpened = find(|message| -> message.type == "navigate" and message.page ~= nil and message.page.kind == "playlist" and message.page.id == own.id)
+	test.truthy(ownOpened ~= nil, "an own playlist tile opens its page too")
+
+	screen:close()
+	App.services.playback.player:close()
+end)
+
 test.it("records a listen when playback starts a track", function()
 	App:init({ scan = false })
 	local library = fixture()
@@ -1128,6 +1216,98 @@ test.skipIf(not canRender)("aligns track times with the TIME header", function()
 	test.truthy(headerX ~= nil, "the table has a TIME header")
 	test.truthy(timeX ~= nil, "the first track shows its duration")
 	test.equal(timeX, headerX, "durations share the header's left edge")
+
+	screen:close()
+	App.services.playback.player:close()
+end)
+
+test.skipIf(not canRender)("draws every row of a phone album", function()
+	App:init({ scan = false })
+	App.services.settings.values.root = "/beat-fixtures"
+	local library = Library.new("/beat-fixtures")
+	for trackAt = 1, 4 do
+		library:add(
+			{
+				format = "WAV",
+				sampleRate = 44100,
+				channels = 2,
+				duration = 180,
+				hasPicture = false,
+				tags = {
+					title = "Phone Song " .. trackAt,
+					artist = "Phone Artist",
+					album = "Phone Album",
+					albumArtist = "Phone Artist",
+					track = trackAt
+				}
+			},
+			{
+				path = "/beat-fixtures/Phone/" .. trackAt .. ".wav",
+				dir = "/beat-fixtures/Phone",
+				name = trackAt .. ".wav",
+				ext = "wav"
+			},
+			nil
+		)
+	end
+	library:finish()
+	App.services.library.current = library
+	App.services.scan.job = nil
+	App.page = { kind = "album", id = library.albums[1].id }
+
+	local screen = wonderland.headless.new(function(window, assets)
+		App.window = window
+		App.assets = assets
+		App.services.covers:use(assets)
+		return require("beat.app.shell").view(App, window)
+	end, { width = 390, height = 844 })
+	screen:draw()
+
+	local elements = require("wonderland.element")
+	local layout = screen:getPlugin("layout")
+	local ctx
+	for _, context in pairs(layout.contexts) do ctx = context end
+	local tree = ctx.screen
+	local numbers = {}
+
+	local function walk(index, parentX, parentY)
+		local node = tree:node(index)
+		local x, y = parentX + node.x, parentY + node.y
+		local element = elements.pointers[node.element]
+		local value = element ~= nil and elements.textOf(element) or nil
+		if value ~= nil and value:match("^%d+$") and x < 120 then
+			numbers[#numbers + 1] = { value = value, y = y }
+		end
+		for child = 0, node.childCount - 1 do
+			local nextIndex = tree.childIndices[node.firstChild + child - 1]
+			if nextIndex ~= nil then walk(nextIndex, x, y) end
+		end
+	end
+	walk(ctx.root, 0, 0)
+
+	test.equal(#numbers, 4, "a four-track album draws four numbered rows")
+	for at = 1, 4 do
+		test.equal(numbers[at].value, tostring(at), "the rows are numbered in order")
+		if at > 1 then
+			test.truthy(numbers[at].y > numbers[at - 1].y, "each row is laid out below the one before it")
+		end
+	end
+
+	-- The three dots are a button of their own on each row: a press on it sends the track menu
+	-- rather than playing the row. The dots sit at the row's right end, past the duration.
+	local theme = App.services.appearance.theme
+	local menu
+	for y = numbers[1].y - theme:px(20), numbers[#numbers].y + theme:px(40), theme:px(4) do
+		for x = theme:px(300), screen.window.width - theme:px(8), theme:px(4) do
+			local candidate = screen:event({ name = "mousePress", window = screen.window, x = x, y = y, button = 1 })
+			if candidate ~= nil and candidate.type == "open" and candidate.overlay == "menu" and candidate.menu == "track" then
+				menu = candidate
+				break
+			end
+		end
+		if menu ~= nil then break end
+	end
+	test.truthy(menu ~= nil, "a row's menu button opens the track menu")
 
 	screen:close()
 	App.services.playback.player:close()

@@ -11,6 +11,7 @@ local Library = require("beat.music.library")
 local App = require("beat.app")
 local beat = require("beat")
 local Picker = require("beat.app.services.scan.picker")
+local settingsModel = require("beat.app.services.settings.model")
 
 local realPickStart, realPickPoll = Picker.start, Picker.poll
 
@@ -513,4 +514,66 @@ return package.preload["toggle"](...)
 	test.equal(toggleOff.state, "off", "the next start reads the switch")
 	test.equal(entry("toggle"), nil, "the disabled file is listed by its file name, not its plugin name")
 	test.equal(action(App.registry:actions("album", { album = { id = 1 } }), "Toggle action"), nil, "and the plugin is out of the app")
+end)
+
+test.it("starts with the ratings plugin off and the app's own plugins on", function()
+	App:init({ scan = false })
+
+	local ratings = assert(entry("ratings"))
+	test.equal(ratings.builtin, true)
+	test.equal(ratings.author, "beat")
+	test.equal(ratings.description, "Stars on tracks and albums")
+	test.equal(ratings.state, "off", "a fresh install has ratings off")
+	test.equal(ratings.required, false, "ratings is the optional one")
+	test.equal(App.registry:hasPlugin("ratings"), false, "and nothing can draw its stars")
+
+	local core = assert(entry("core"))
+	test.equal(core.state, "loaded")
+	test.equal(core.required, true, "the app cannot run without core")
+	test.equal(App.registry:hasPlugin("core"), true)
+	test.equal(entry("library").required, true)
+	test.equal(entry("beat-ui").required, true)
+end)
+
+test.it("lists an outside plugin's author and description", function()
+	writePlugin("meta.lua", [[
+return {
+	name = "meta",
+	version = "2.0.0",
+	author = "Riley",
+	description = "Makes a nice sound",
+	setup = function() end,
+}
+]])
+	App:init({ scan = false })
+
+	local meta = assert(entry("meta"))
+	test.equal(meta.state, "loaded")
+	test.equal(meta.author, "Riley")
+	test.equal(meta.description, "Makes a nice sound")
+	test.equal(meta.version, "2.0.0")
+end)
+
+test.it("turns ratings back on and keeps that switch in a settings file", function()
+	App:init({ scan = false })
+	App:act({ type = "pluginEnabled", file = "ratings", enabled = true })
+	App.services.settings:flush()
+
+	local saved = json.decode(assert(fs.read(paths.file("settings.json")))):unpack()
+	test.equal(#saved.disabledPlugins, 0, "the file names its switches, and ratings is not one of them")
+
+	App:init({ scan = false })
+	test.equal(assert(entry("ratings")).state, "loaded", "the next start honours the empty list")
+	test.equal(App.registry:hasPlugin("ratings"), true, "and the stars come back")
+end)
+
+test.it("only fills in the fresh-install switches when the file has no disabledPlugins key", function()
+	fs.write(paths.file("settings.json"), "{}")
+	local fresh = settingsModel.load()
+	test.equal(#fresh.disabledPlugins, 1)
+	test.equal(fresh.disabledPlugins[1], "ratings")
+
+	fs.write(paths.file("settings.json"), '{"disabledPlugins":[]}')
+	local chosen = settingsModel.load()
+	test.equal(#chosen.disabledPlugins, 0, "a file that names the switches keeps them, even an empty list")
 end)

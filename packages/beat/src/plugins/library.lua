@@ -16,7 +16,7 @@ local albumPage = require("beat.app.pages.album")
 
 local sortMenu = require("beat.app.overlays.sort_menu")
 
-return beat.plugin({ name = "library", version = "1.0.0", requires = { core = "^1.0.0" }, setup = function(handle)
+return beat.plugin({ name = "library", version = "1.0.0", author = "beat", description = "Browsing, covers, search and album pages", requires = { core = "^1.0.0" }, setup = function(handle)
 	handle.service("library", library)
 	handle.service("covers", covers)
 	handle.service("scan", scan)

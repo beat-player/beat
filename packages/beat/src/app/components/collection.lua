@@ -4,6 +4,7 @@ local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
+local measure = require("beat.app.components.helpers.measure")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -32,6 +33,7 @@ local collection = {}
 ---@field empty wonderland.Element? # What the table shows when there are no tracks
 ---@field titleOnly boolean? # Rows show titles only; the header names the artist
 ---@field ratings boolean? # Rows show each track's stars, and set them
+---@field phoneHero boolean? # On a phone, a large centred cover above a centred title block
 
 ---@param app beat.App
 ---@param props beat.components.CollectionProps
@@ -41,10 +43,18 @@ function collection.view(app, props)
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
 	local mobile = metrics.mobile(app, window.width)
-	local stacked = mobile and window.height >= theme:px(560)
+	-- The stars belong to the ratings plugin. Without it the collection keeps its data but draws
+	-- no control for it, so the album and playlist pages do not have to know about the plugin.
+	local ratings = app.registry:hasPlugin("ratings")
+	-- A phone's album header is the cover, large, with the title block beneath it -- there is no
+	-- rail beside it to sit against, and the cover is the page's one picture.
+	local phoneHero = mobile and props.phoneHero == true
+	local stacked = mobile and (phoneHero or window.height >= theme:px(560))
 	local content = metrics.contentWidth(app, window.width)
 	local coverSize
-	if stacked then
+	if phoneHero then
+		coverSize = math.min(theme:px(320), content)
+	elseif stacked then
 		coverSize = math.min(theme:px(150), content)
 	elseif mobile then
 		coverSize = math.min(theme:px(120), math.floor(content * 0.25))
@@ -58,12 +68,26 @@ function collection.view(app, props)
 	local metaHeight = math.floor(theme:type("sm") * 1.3)
 	local actionsHeight = theme:px(52)
 	local infoHeight = labelHeight + titleHeight + subtitleHeight + metaHeight + actionsHeight + theme:px(8) * 4
-	local heroHeight = stacked and (coverSize + theme:space(16) + infoHeight) or (coverSize + (theme:space(
-		mobile ? 70 : 90
-	)))
+	local heroHeight
+	if phoneHero then
+		-- The cover clears the top bar's shadow and the page's own padding before it begins.
+		heroHeight = theme:space(24) + coverSize + theme:space(16) + infoHeight
+	elseif stacked then
+		heroHeight = coverSize + theme:space(16) + infoHeight
+	else
+		heroHeight = coverSize + (theme:space(mobile ? 70 : 90))
+	end
 	local hasTracks = #props.tracks > 0
-	local rowsHeight = hasTracks and #props.tracks * theme:px(48) or (props.empty ~= nil and theme:px(120) or 0)
-	local trackListHeight = theme:space(20) + (hasTracks and theme:px(34) or 0) + rowsHeight + theme:space(24)
+	local rowHeight = mobile and theme:px(64) or theme:px(48)
+	local rowsHeight = hasTracks and #props.tracks * rowHeight or (props.empty ~= nil and theme:px(120) or 0)
+	-- The table's own parts, in the order the page stacks them: the gap above the table, its
+	-- header, its rows and the gap below. The slice's start offset and the page's height both use
+	-- these, so the phone's taller rows are counted once in each place and nowhere else.
+	local listPadTop = theme:space(20)
+	local listPadBottom = theme:space(24)
+	local tableHeaderHeight = hasTracks and theme:px(34) or 0
+	local trackListHeight = listPadTop + tableHeaderHeight + rowsHeight + listPadBottom
+	local contentHeight = heroHeight + trackListHeight
 	local current = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
 
@@ -75,8 +99,23 @@ function collection.view(app, props)
 		text(props.label):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted")))
 	}
 	if props.icons ~= nil then labelChildren[#labelChildren + 1] = props.icons end
-	local subtitle = text(props.subtitle)
-		:style(theme:s():wrel(1.0):text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis())
+
+	-- A centred line is as wide as its own ink rather than the whole box: a text box of the
+	-- content's width draws from its left edge, which is not centred, and a small drop of room
+	-- keeps the ellipsis from cutting a line that only just fits.
+	local function fitted(value, style, size)
+		local known = measure.width(app, value, style)
+		if known == nil then known = measure.estimate(value, size, 0.52) end
+		return math.min(content, math.max(1, math.ceil(known) + theme:px(2)))
+	end
+
+	local subtitleStyle = theme:s():text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis()
+	if phoneHero then
+		subtitleStyle:w(fitted(props.subtitle, subtitleStyle, theme:type("md")))
+	else
+		subtitleStyle:wrel(1.0)
+	end
+	local subtitle = text(props.subtitle):style(subtitleStyle)
 	if props.subtitleAction ~= nil then subtitle:onClick(props.subtitleAction) end
 
 	local actions = {
@@ -92,26 +131,57 @@ function collection.view(app, props)
 	if props.addAction ~= nil then
 		actions[#actions + 1] = ui.iconButton(ctx, { name = "add", size = theme:px(30), onClick = props.addAction })
 	end
-	if props.onRate ~= nil then
+	if props.onRate ~= nil and ratings then
 		-- Set a little apart from the buttons, and larger than a row's stars, so it reads as the
 		-- collection's own rating rather than one more control or one of its tracks'.
 		actions[#actions + 1] = div():style(sty():w(theme:px(6)))
 		actions[#actions + 1] = ui.rating(ctx, { value = props.rating or 0, onRate = props.onRate, size = theme:px(20) })
 	end
 
-	local info = div()
-		:style(sty():column():h(stacked and infoHeight or heroHeight):justify("center"):gap(theme:px(8)):wrel(1.0))
-		:children(
-			{
-				div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center")):children(labelChildren),
-				text(props.title):style(theme:s():text(titleSize):weight("bold"):fg(theme:color("text")):ellipsis()),
-				subtitle,
-				text(props.meta):style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-				div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center")):children(actions)
-			}
-		)
+	local titleStyle = theme:s():text(titleSize):weight("bold"):fg(theme:color("text")):ellipsis()
+	local metaStyle = theme:s():text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+	if phoneHero then
+		titleStyle:w(fitted(props.title, titleStyle, titleSize))
+		metaStyle:w(fitted(props.meta, metaStyle, theme:type("sm")))
+	else
+		metaStyle:wrel(1.0)
+	end
+	local info
+	if phoneHero then
+		info = div()
+			:style(sty():column():h(infoHeight):justify("center"):align("center"):gap(theme:px(8)):w(content))
+			:children(
+				{
+					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center"):justify("center")):children(
+						labelChildren
+					),
+					text(props.title):style(titleStyle),
+					subtitle,
+					text(props.meta):style(metaStyle),
+					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center"):justify("center")):children(
+						actions
+					)
+				}
+			)
+	else
+		info = div()
+			:style(sty():column():h(stacked and infoHeight or heroHeight):justify("center"):gap(theme:px(8)):wrel(1.0))
+			:children(
+				{
+					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center")):children(labelChildren),
+					text(props.title):style(titleStyle),
+					subtitle,
+					text(props.meta):style(metaStyle),
+					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center")):children(actions)
+				}
+			)
+	end
 	local hero
-	if stacked then
+	if phoneHero then
+		hero = div()
+			:style(sty():column():wrel(1.0):h(heroHeight):pad(theme:space(24), 0, 0, 0):gap(theme:space(16)))
+			:children({ div():style(sty():row():wrel(1.0):h(coverSize):justify("center")):children({ cover }), info })
+	elseif stacked then
 		hero = div()
 			:style(sty():column():wrel(1.0):h(heroHeight):gap(theme:space(16)))
 			:children({ div():style(sty():row():wrel(1.0):h(coverSize):justify("center")):children({ cover }), info })
@@ -122,14 +192,20 @@ function collection.view(app, props)
 	end
 
 	local rows = {}
-	local ratingWidth = props.ratings and trackRow.ratingWidth(app, content) or nil
+	local ratingWidth = props.ratings and ratings and trackRow.ratingWidth(app, content, mobile) or nil
 	if hasTracks then
+		local moreColumn = mobile and theme:px(44) + theme:px(12) or 0
 		local header = {
 			text("#"):style(theme:s():w(24):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
 			text("TITLE")
 				:style(
 					theme:s()
-						:w(content - theme:px(122) - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0))
+						:w(
+							content
+								- theme:px(122)
+								- moreColumn
+								- (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
+						)
 						:text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
 				)
 		}
@@ -138,21 +214,30 @@ function collection.view(app, props)
 				:style(theme:s():w(ratingWidth):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
 		end
 		header[#header + 1] = text("TIME"):style(theme:s():w(54):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
+		if mobile then header[#header + 1] = div():style(sty():w(theme:px(44))) end
 		rows[#rows + 1] = div()
 			:style(
-				sty():row():w(content):h(theme:px(34)):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
+				sty():row():w(content):h(tableHeaderHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align(
+					"center"
+				)
 			)
 			:children(header)
 	end
 
-	local trackStart = heroHeight + theme:space(20) + (hasTracks and theme:px(34) or 0)
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(), math.max(0, heroHeight + trackListHeight + theme:space(20) - viewport))
-	local scroll = app.services.scroll:offset(app:pageKey())
+	-- The shell leaves the page's own top padding above the content, so the room the content can
+	-- actually use is that much smaller than the viewport: the last row still has to reach the
+	-- fold, and the extra scroll is that padding, not another row.
+	local limit = math.max(0, contentHeight + theme:space(20) - viewport)
+	app.services.scroll:setLimit(app:pageKey(), limit)
+	-- An offset kept from a taller layout is clamped here too, so a page that grew shorter does
+	-- not open scrolled past its own list.
+	local scroll = math.min(app.services.scroll:offset(app:pageKey()), limit)
+	local trackStart = heroHeight + listPadTop + tableHeaderHeight
 	local first, last, top = app.services.scroll.slices(
 		#props.tracks,
 		1,
-		theme:px(48),
+		rowHeight,
 		math.max(0, scroll - trackStart),
 		viewport
 	)
@@ -173,8 +258,9 @@ function collection.view(app, props)
 					width = content,
 					showAlbum = false,
 					titleOnly = props.titleOnly,
-					rating = props.ratings and app.services.collections.taxonomy:rating(names.trackKey(track)) or nil,
-					ui = props.ratings and ctx or nil
+					rating = props.ratings and ratings and app.services.collections.taxonomy:rating(names.trackKey(track)) or nil,
+					mobile = mobile,
+					ui = ctx
 				}
 			)
 		end
@@ -182,11 +268,11 @@ function collection.view(app, props)
 	if #props.tracks == 0 and props.empty ~= nil then rows[#rows + 1] = props.empty end
 
 	return div()
-		:style(sty():column():wrel(1.0):h(heroHeight + trackListHeight))
+		:style(sty():column():wrel(1.0):h(contentHeight))
 		:children(
 			{
 				hero,
-				div():style(sty():column():wrel(1.0):h(trackListHeight):pad(theme:space(20), 0, theme:space(24), 0)):children(rows)
+				div():style(sty():column():wrel(1.0):h(trackListHeight):pad(listPadTop, 0, listPadBottom, 0)):children(rows)
 			}
 		)
 end

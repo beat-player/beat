@@ -26,7 +26,7 @@
 			"version": "^0.1.3"
 		},
 		"curl-sys": {
-			"version": "^0.1.2"
+			"version": "^0.1.3"
 		},
 		"process": {
 			"version": "^0.1.2"
@@ -36,6 +36,9 @@
 		},
 		"winit": {
 			"version": "^0.1.15"
+		},
+		"threading": {
+			"version": "^0.2.0"
 		}
 	},
 	"devDependencies": {
@@ -49,7 +52,12 @@
 	"android": {
 		"package": "dev.lde.beat",
 		"label": "beat",
-		"permissions": ["android.permission.READ_MEDIA_AUDIO", "android.permission.READ_EXTERNAL_STORAGE"]
+		"icon": "assets/icon-256.png",
+		"permissions": [
+			"android.permission.INTERNET",
+			"android.permission.READ_MEDIA_AUDIO",
+			"android.permission.READ_EXTERNAL_STORAGE"
+		]
 	},
 	"$schema": "https://raw.githubusercontent.com/lde-org/lde/master/schemas/lde.schema.json"
 }

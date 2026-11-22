@@ -296,7 +296,7 @@ function nowPlaying.view(app, _overlay, window)
 		-- still has it at the top of the three dots' menu.
 		local starSize = theme:px(16)
 		local starGap = theme:px(2)
-		if progressWidth - toolGroupWidth * 2 >= starSize * 5 + starGap * 4 + theme:px(24) then
+		if app.registry:hasPlugin("ratings") and progressWidth - toolGroupWidth * 2 >= starSize * 5 + starGap * 4 + theme:px(24) then
 			toolChildren[#toolChildren + 1] = ui.rating(ctx, {
 				value = app.services.collections.taxonomy:rating(names.trackKey(track)),
 				onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },

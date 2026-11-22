@@ -164,6 +164,7 @@ end
 ---@field artSize number
 ---@field nextSize number
 ---@field empty wonderland.StyleBuilder
+---@field bar wonderland.StyleBuilder
 ---@field row wonderland.StyleBuilder
 ---@field info wonderland.StyleBuilder
 ---@field title wonderland.StyleBuilder
@@ -194,7 +195,10 @@ local function mobileStyles(theme, width)
 		artSize = artSize,
 		nextSize = nextSize,
 		empty = cache.playerBarEmpty or sty():h(0),
-		row = sty():row():wrel(1.0):h(theme:px(64)):pad(0, pad, 0, pad):gap(gap):align("center"):bg(theme:color("surface")),
+		-- The bar's background is a box of its own so the meter, a layer behind the row, is not
+		-- inset by the row's padding: the same shape as the desktop bar.
+		bar = sty():row():wrel(1.0):h(theme:px(64)):bg(theme:color("surface")),
+		row = sty():row():wrel(1.0):hrel(1.0):pad(0, pad, 0, pad):gap(gap):align("center"),
 		info = sty():column():w(textWidth):hrel(1.0):justify("center"):gap(1),
 		title = theme:s():w(textWidth):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis(),
 		artist = theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color("muted")):ellipsis(),
@@ -210,8 +214,9 @@ local function mobileStyles(theme, width)
 	return styles
 end
 
---- The phone mini player: one row above the bottom tabs. The whole row opens the individual
---- track view; the play and next controls inside it keep their own actions.
+--- The phone mini player: one row above the bottom tabs, over the same spectrum the desktop bar
+--- draws. The whole row opens the individual track view; the play and next controls inside it
+--- keep their own actions.
 ---@param app beat.App
 ---@param props beat.components.chrome.PlayerBarProps
 ---@return wonderland.Element
@@ -238,7 +243,7 @@ function playerBar.mobile(app, props)
 
 	local playback = app.services.playback
 
-	return div():style(styles.row):onClick({ type = "open", overlay = "now_playing" }):canvas(function(canvas)
+	local row = div():style(styles.row):canvas(function(canvas)
 		-- The place in the track is read when the strip is drawn, not when the view was built: a
 		-- repaint moves it without the row being laid out again.
 		local duration = track.duration > 0 and track.duration or playback.player:duration()
@@ -259,6 +264,13 @@ function playerBar.mobile(app, props)
 			colour = theme.accentInk
 		})),
 		ui.iconButton(ctx, { name = "next", size = styles.nextSize, onClick = { type = "next" } })
+	})
+
+	-- The meter is the desktop bar's own, put behind the row: it reads the levels when the frame
+	-- is drawn, so the app's repaints move it while the music plays and leave it still once it stops.
+	return div():style(styles.bar):onClick({ type = "open", overlay = "now_playing" }):children({
+		spectrumBackground.view(app, {}),
+		row
 	})
 end
 

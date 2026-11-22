@@ -122,7 +122,10 @@ local Log = require("beat.log")
 ---@class beat.Plugin
 ---@field name string
 ---@field version string
+---@field author string? # The person or project the plugin declared
+---@field description string? # The plugin's own one line about what it adds
 ---@field builtin boolean
+---@field required boolean? # A built-in the app cannot run without; it has no switch in Settings
 ---@field disabled boolean
 ---@field source string # "built-in", or the file outside plugins were read from
 ---@field file string? # The plugins-folder file, when this plugin came from one
@@ -134,6 +137,8 @@ local Log = require("beat.log")
 ---@class beat.PluginModule
 ---@field name string
 ---@field version string
+---@field author string? # Who made it; the plugins page shows it beside the version
+---@field description string? # What it adds, in one line; the plugins page shows it
 ---@field requires table<string, string>? # Plugin name to the version it needs
 ---@field setup fun(handle: beat.PluginHandle)
 
@@ -231,6 +236,18 @@ function Registry.new(app)
 	-- frame: a page or an overlay is looked up while the frame is being built.
 	registry.disableFn = function(plugin, reason) registry:disable(plugin, reason) end
 	return registry
+end
+
+--- Whether a plugin of this name is loaded and on. A screen whose part exists only because of a
+--- plugin asks this before drawing it: a plugin switched off in Settings is not loaded at all,
+--- so there is nothing to draw and no message for its controls to send.
+---@param name string
+---@return boolean
+function Registry:hasPlugin(name)
+	for _, plugin in ipairs(self.plugins) do
+		if plugin.name == name then return not plugin.disabled end
+	end
+	return false
 end
 
 ---@param text string

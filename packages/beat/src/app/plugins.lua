@@ -4,7 +4,24 @@
 -- mistake in one stops the app; an outside plugin that does not fit is reported and left out,
 -- taking its own registrations with it.
 
+local settingsModel = require("beat.app.services.settings.model")
+
 local Plugins = {}
+
+-- The built-in plugins that only add something a person can do without. Every other built-in is
+-- part of how the app is made -- the shell, the settings page or another built-in asks for its
+-- services by name -- so it cannot be switched off at the next start. The page draws no switch
+-- for those, and a name in `disabledPlugins` is ignored for them.
+local OPTIONAL = {
+	ratings = true
+}
+
+--- Whether a built-in plugin can be switched off.
+---@param name string
+---@return boolean
+function Plugins.isOptional(name)
+	return OPTIONAL[name] == true
+end
 
 ---@param text string
 local function parseVersion(text)
@@ -32,7 +49,10 @@ end
 ---@class beat.PluginStatus
 ---@field name string
 ---@field version string?
+---@field author string? # The person or project the plugin declared, when it declared one
+---@field description string? # The plugin's own one line about what it adds
 ---@field builtin boolean
+---@field required boolean? # A built-in the app cannot run without; it has no switch
 ---@field disabled boolean # Switched off by the person, or by a hook that raised
 ---@field source string # "built-in", or the file the plugin came from (or was given by a caller)
 ---@field file string? # The plugins-folder file, when it came from one; the switch is keyed by its name
@@ -118,6 +138,12 @@ local function checkModule(module)
 	if module.requires ~= nil and type(module.requires) ~= "table" then
 		return false, "plugin " .. module.name .. " has requires that are not a table"
 	end
+	if module.author ~= nil and type(module.author) ~= "string" then
+		return false, "plugin " .. module.name .. " has an author that is not a name"
+	end
+	if module.description ~= nil and type(module.description) ~= "string" then
+		return false, "plugin " .. module.name .. " has a description that is not text"
+	end
 	if type(module.setup) ~= "function" then
 		return false, "plugin " .. module.name .. " needs setup(beat)"
 	end
@@ -198,6 +224,17 @@ end
 ---@field release (fun())?
 ---@field disabled boolean?
 
+---@param module table
+---@param builtin boolean
+---@param entry beat.PluginStatus
+---@return beat.PluginStatus
+local function withMetadata(module, builtin, entry)
+	if module.author ~= nil and module.author ~= "" then entry.author = module.author end
+	if module.description ~= nil and module.description ~= "" then entry.description = module.description end
+	if builtin then entry.required = not Plugins.isOptional(module.name) end
+	return entry
+end
+
 ---@param registry beat.Registry
 ---@param candidate beat.PluginCandidate
 ---@param builtin boolean
@@ -221,7 +258,11 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 		if builtin then error("beat plugin " .. module.name .. " is loaded twice", 0) end
 		local reason = "the name is already taken"
 		registry:report("Plugin " .. module.name .. " was not loaded: " .. reason)
-		entries[#entries + 1] = status(module.name, module.version, source, "doesn't fit", reason, builtin, candidate.file)
+		entries[#entries + 1] = withMetadata(
+			module,
+			builtin,
+			status(module.name, module.version, source, "doesn't fit", reason, builtin, candidate.file)
+		)
 		if candidate.release ~= nil then candidate.release() end
 		return
 	end
@@ -230,7 +271,11 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 	if not met then
 		if builtin then error("beat plugin " .. module.name .. " " .. why, 0) end
 		registry:report("Plugin " .. module.name .. " was not loaded: " .. why)
-		entries[#entries + 1] = status(module.name, module.version, source, "doesn't fit", why, builtin, candidate.file)
+		entries[#entries + 1] = withMetadata(
+			module,
+			builtin,
+			status(module.name, module.version, source, "doesn't fit", why, builtin, candidate.file)
+		)
 		if candidate.release ~= nil then candidate.release() end
 		return
 	end
@@ -238,12 +283,15 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 	local plugin = {
 		name = module.name,
 		version = module.version,
+		author = module.author ~= nil and module.author ~= "" and module.author or nil,
+		description = module.description ~= nil and module.description ~= "" and module.description or nil,
 		builtin = builtin,
 		disabled = false,
 		source = source,
 		file = candidate.file,
 		state = "loaded"
 	}
+	if builtin then plugin.required = not Plugins.isOptional(module.name) end
 	local undo = {}
 	local handle = handleFor(registry, plugin, undo)
 	local setupOk, setupErr = pcall(module.setup, handle)
@@ -252,14 +300,18 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 		if builtin then error(setupErr, 0) end
 		local reason = tostring(setupErr)
 		registry:report("Plugin " .. plugin.name .. " was not loaded: " .. reason)
-		entries[#entries + 1] = status(
-			plugin.name,
-			plugin.version,
-			source,
-			readsAsClash(setupErr) and "doesn't fit" or "failed",
-			reason,
+		entries[#entries + 1] = withMetadata(
+			module,
 			builtin,
-			candidate.file
+			status(
+				plugin.name,
+				plugin.version,
+				source,
+				readsAsClash(setupErr) and "doesn't fit" or "failed",
+				reason,
+				builtin,
+				candidate.file
+			)
 		)
 		if candidate.release ~= nil then candidate.release() end
 		return
@@ -275,14 +327,33 @@ end
 ---@param registry beat.Registry
 ---@param builtins string[] # Module names under `beat.plugins`
 ---@param outside beat.PluginCandidate[]? # `beat.PluginFile`s, or `{ module = plugin }` from a caller
+---@param disabled string[]? # Plugin names switched off; read from the settings file when absent
 ---@return table<string, beat.Plugin>
 ---@return beat.PluginStatus[]
-function Plugins.load(registry, builtins, outside)
+function Plugins.load(registry, builtins, outside, disabled)
 	local loaded = {}
 	local entries = {}
 
+	if disabled == nil then disabled = settingsModel.load().disabledPlugins end
+	local off = {}
+	for _, name in ipairs(disabled or {}) do off[name] = true end
+
 	for _, name in ipairs(builtins) do
-		loadOne(registry, { module = require("beat.plugins." .. name), source = "built-in" }, true, loaded, entries)
+		local module = require("beat.plugins." .. name)
+		local ok, err = checkModule(module)
+		if not ok then error("beat plugin: " .. err, 0) end
+
+		if off[module.name] and Plugins.isOptional(module.name) then
+			-- The module has run -- that is how its version and author are known -- but its setup
+			-- has not: nothing it would add is in the app.
+			entries[#entries + 1] = withMetadata(
+				module,
+				true,
+				status(module.name, module.version, "built-in", "off", "switched off in Settings", true)
+			)
+		else
+			loadOne(registry, { module = module, source = "built-in" }, true, loaded, entries)
+		end
 	end
 
 	for _, candidate in ipairs(outside or {}) do

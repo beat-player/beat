@@ -7,6 +7,7 @@
 -- where it has none. A version-1 file keyed everything by path and is read into `legacy`, which
 -- `adopt` empties onto keys as soon as a library holds those paths.
 local names = require("beat.music.names")
+local Smart = require("beat.app.services.collections.smart")
 
 ---@class beat.Tag
 ---@field id number
@@ -25,6 +26,7 @@ local names = require("beat.music.names")
 ---@field hiddenTagId number? # The hidden tag that holds hand-added tracks
 ---@field autoTagId number? # The tag whose automatic playlist this is, where one made it
 ---@field updatedAt number # Last change to the playlist or its membership
+---@field builtin boolean? # A list the app always has, computed from the library rather than saved
 
 ---@class beat.Metric
 ---@field count number
@@ -311,16 +313,20 @@ function Taxonomy:addPlaylist(name, smart, tagIds, match, opts)
 	return playlist
 end
 
+--- A playlist by id: one the listener made, or one of the built-in lists that live at negative
+--- ids so every page and every playback message can name them the same way.
 ---@param playlistId number
 ---@return beat.Playlist?
 function Taxonomy:playlist(playlistId)
-	return self.playlistById[playlistId]
+	return self.playlistById[playlistId] or Smart.byId(playlistId)
 end
 
 ---@param playlist beat.Playlist
 ---@param library beat.Library
 ---@return beat.Track[]
 function Taxonomy:playlistTracks(playlist, library)
+	if playlist.builtin then return Smart.tracks(playlist.id, self, library) end
+
 	local tracks = {}
 	for _, track in ipairs(library.tracks) do
 		local key = names.trackKey(track)

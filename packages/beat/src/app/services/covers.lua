@@ -1,22 +1,22 @@
 -- The pictures the current screen is drawing.
 --
 -- This is not a cache of everything: it holds the covers that screens have asked for lately, keeps
--- a bounded number of them, decodes the ones a page asked for a few ticks at a time (so the frame
--- that asks for a cover draws a placeholder and a following one draws the art), and releases every
--- texture when the assets go away. Staying on a page does not decode anything twice.
-local artwork = require("beat.music.artwork")
+-- a bounded number of them, decodes the ones a page asked for on threads of their own (so the
+-- frame that asks for a cover draws a placeholder and a later one draws the art), and releases
+-- every texture when the assets go away. Staying on a page does not decode anything twice.
+local ffi = require("ffi")
+local threading = require("threading")
 
 -- Covers stay across page changes: going home again, or back to an album, must not decode and
 -- upload the same picture again. The cache is bounded, oldest first, so browsing does not grow
 -- it without end.
 local CACHE_LIMIT = 48
 
--- How much decoding one tick may do. A grid asks for twenty or more covers at once; one a tick
--- takes a third of a second to fill, while seven milliseconds of a 60 Hz tick still leaves the
--- view and the solve room and fills the grid in a handful of frames. It is process time rather
--- than the clock on the wall, so a tick does the same amount of work however loaded the machine
--- is -- a busier one fills the grid over more frames rather than in one long one.
-local STEP_BUDGET = 0.007
+-- How many covers decode at once. A decode is tens of milliseconds on a phone -- longer than a
+-- frame -- which on the window's own thread is a list that stutters every time a row of albums
+-- scrolls in; on threads of their own the window only uploads what comes back. Two keep a grid
+-- filling quickly without taking every core from the rest of the machine.
+local WORKERS = 2
 
 local olderFirst = |a, b| -> a.seen < b.seen
 
@@ -41,6 +41,7 @@ local olderFirst = |a, b| -> a.seen < b.seen
 ---@field pending table<number, table<number, beat.CoverJob>> # album id, then size
 ---@field epoch number
 ---@field frame number # The view being built, which is what says a cover is still on screen
+---@field decoding { job: beat.CoverJob, handle: threading.Handle }[] # Covers on a thread, in the order they started
 local Covers = {}
 Covers.__index = Covers
 Covers.needs = {}
@@ -57,7 +58,8 @@ function Covers.new(_deps)
 		jobs = {},
 		pending = {},
 		epoch = 0,
-		frame = 0
+		frame = 0,
+		decoding = {}
 	}, Covers)
 end
 
@@ -180,55 +182,105 @@ function Covers:colourOf(album)
 	return nil
 end
 
---- Decodes what the view asked for, several covers per tick within a fixed slice of it. A cover
---- is a couple of milliseconds; doing one keeps a grid's first frame responsive but takes twenty
---- ticks to fill, so a tick takes as many as fit in `STEP_BUDGET` and draws them together. The
---- job list holds only covers the last view asked for, so this always fills what is on screen
---- first. Busy while covers are waiting, so the ticker comes back for the next batch rather than
---- at the idle interval.
+--- What a thread decodes: the cached cover of one album, fitted for one size, handed back as the
+--- pixels the window uploads and the colour its page tints with.
+---@param coverCache string
+---@param size number
+---@return threading.Handle
+local function decodeOnThread(coverCache, size)
+	return threading.spawn(function()
+		local ffi = require("ffi")
+		local artwork = require("beat.music.artwork")
+		local fitted, colour = artwork.forAlbum({ coverCache = coverCache }, size)
+		if fitted == nil then return nil end
+		local width, height = fitted.width, fitted.height
+		local pixels = ffi.string(fitted.pixels, width * height * 4)
+		fitted:close()
+		return width, height, pixels, colour
+	end)
+end
+
+--- Starts what the view asked for, as threads come free, and uploads what they decoded. The job
+--- list holds only covers the last view asked for, so what is on screen starts first. Busy while
+--- covers are waiting or decoding, so the ticker comes back for them rather than at the idle
+--- interval.
 ---@return boolean changed
 ---@return boolean busy
 function Covers:step()
-	local jobs = self.jobs
-	local waiting = #jobs
 	local assets = self.assets
-	if assets == nil or waiting == 0 then return false, waiting > 0 end
+	if assets == nil then return false, #self.jobs > 0 end
 
-	local deadline = os.clock() + STEP_BUDGET
-	local at = 1
-	while at <= #jobs and os.clock() < deadline do
-		local job = jobs[at]
-		at += 1
-
-		local albumId, size = job.album.id, job.size
-		local pending = self.pending[albumId]
-		if pending ~= nil then
-			pending[size] = nil
-			if next(pending) == nil then self.pending[albumId] = nil end
+	-- One cover is taken in a tick: what it costs the window is a texture upload and a rebuild of
+	-- the view that shows it, and two of those in one frame are a frame that comes late. Another
+	-- that has finished waits for the next tick, a frame away.
+	local changed = false
+	local decoding = self.decoding
+	local kept = 0
+	for at = 1, #decoding do
+		local item = decoding[at]
+		if not changed and item.handle:done() then
+			self:finish(item.job, assets, pcall(item.handle.join, item.handle))
+			changed = true
+		else
+			kept += 1
+			decoding[kept] = item
 		end
+	end
+	for at = #decoding, kept + 1, -1 do decoding[at] = nil end
 
-		if job.epoch == self.epoch then
-			local fitted, colour = artwork.forAlbum(job.album, size)
-			if fitted ~= nil then
-				---@cast fitted image.Image
-				local asset = assets:upload(fitted)
-				fitted:close()
-				self:store(albumId, size, { asset = asset, colour = colour, seen = job.seen })
-			else
-				-- A missing picture is normal; a broken one is only worth a single attempt.
-				self:store(albumId, size, { failed = true, seen = job.seen })
-			end
+	local jobs = self.jobs
+	local started = 0
+	while #decoding < WORKERS and started < #jobs do
+		started += 1
+		local job = jobs[started]
+		local cache = job.album.coverCache
+		if cache == nil then
+			-- Not cached yet: a placeholder until the next scan, not a thread to find that out.
+			self:finish(job, assets, true, nil)
+			changed = true
+		else
+			decoding[#decoding + 1] = { job = job, handle = decodeOnThread(cache, job.size) }
 		end
 	end
 
-	-- The decoded jobs leave the queue; what is left keeps the order the view asked for them in.
-	if at > 1 then
+	-- The started jobs leave the queue; what is left keeps the order the view asked for them in.
+	if started > 0 then
 		local left = #jobs
-		for index = at, left do jobs[index - at + 1] = jobs[index] end
-		for index = left - at + 2, left do jobs[index] = nil end
+		for index = started + 1, left do jobs[index - started] = jobs[index] end
+		for index = left - started + 1, left do jobs[index] = nil end
 	end
 
-	return at > 1, #jobs > 0
+	return changed, #jobs > 0 or #decoding > 0
+end
+
+--- What a thread came back with, into the cache: a texture, or a failure that is not tried again.
+--- A cover for a library that has since been replaced, or an album that has since been forgotten,
+--- is dropped.
+---@param job beat.CoverJob
+---@param assets wonderland.Assets
+---@param ok boolean
+---@param width number?
+---@param height number?
+---@param pixels string?
+---@param colour { r: number, g: number, b: number }?
+function Covers:finish(job, assets, ok, width, height, pixels, colour)
+	local albumId, size = job.album.id, job.size
+	local pending = self.pending[albumId]
+	if pending ~= nil and pending[size] == job then
+		pending[size] = nil
+		if next(pending) == nil then self.pending[albumId] = nil end
+	end
+	if job.epoch ~= self.epoch then return end
+
+	if ok and pixels ~= nil then
+		-- The texture reads the bytes through a pointer; `pixels` holds them until it has.
+		local bytes = ffi.cast("const uint8_t*", pixels)
+		local asset = assets:upload({ width = width, height = height, channels = 4, pixels = bytes })
+		self:store(albumId, size, { asset = asset, colour = colour, seen = job.seen })
+	else
+		-- A missing picture is normal; a broken one is only worth a single attempt.
+		self:store(albumId, size, { failed = true, seen = job.seen })
+	end
 end
 
 ---@param albumId number
@@ -259,12 +311,15 @@ function Covers:forget(albumId)
 		for _ in pairs(bySize) do self.count -= 1 end
 		self.entries[albumId] = nil
 	end
-
 	if self.pending[albumId] ~= nil then
 		self.pending[albumId] = nil
 		for at = #self.jobs, 1, -1 do
 			if self.jobs[at].album.id == albumId then table.remove(self.jobs, at) end
 		end
+	end
+	-- A cover still decoding is of the picture being forgotten: what it comes back with is dropped.
+	for _, item in ipairs(self.decoding) do
+		if item.job.album.id == albumId then item.job.epoch = -1 end
 	end
 end
 

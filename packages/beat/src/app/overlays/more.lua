@@ -91,11 +91,15 @@ function more.view(app, overlay, window)
 	local padding = theme:px(8)
 	local gap = theme:px(2)
 	-- The rating leads, as a row of its own: it is the one thing here that is set rather than
-	-- opened, so it is the stars themselves rather than a label that leads somewhere else.
-	local height = padding * 2 + (#entries + 1) * rowHeight + #entries * gap
+	-- opened, so it is the stars themselves rather than a label that leads somewhere else. It is
+	-- there only while the ratings plugin is loaded; the rows below are the rest of the menu.
+	local ratings = app.registry:hasPlugin("ratings")
+	local rowCount = #entries + (ratings and 1 or 0)
+	local height = padding * 2 + rowCount * rowHeight + math.max(0, rowCount - 1) * gap
 	local ctx = app:ui(window)
-	local rows = {
-		div()
+	local rows = {}
+	if ratings then
+		rows[1] = div()
 			:style(sty():row():w(width - padding * 2):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"))
 			:children(
 				{
@@ -110,7 +114,7 @@ function more.view(app, overlay, window)
 					)
 				}
 			)
-	}
+	end
 	for _, entry in ipairs(entries) do
 		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2], width - padding * 2, rowHeight)
 	end
