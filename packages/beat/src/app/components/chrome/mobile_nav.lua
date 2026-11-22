@@ -18,6 +18,8 @@ local GO_HOME = { type = "navigate", page = HOME }
 local GO_LIBRARY = { type = "navigate", page = LIBRARY }
 local GO_SEARCH = { type = "navigate", page = SEARCH }
 local GO_PLAYLISTS = { type = "navigate", page = PLAYLISTS }
+local OPEN_MORE = { type = "open", overlay = "mobile_menu" }
+local FOCUS_SEARCH = { type = "focusPageSearch" }
 
 -- What a tap on a plugin's destination says, by the registration that made it.
 ---@type table<beat.NavEntry, { type: string, page: beat.Route }>
@@ -32,6 +34,22 @@ local function navMessage(entry)
 		navMessages[entry] = message
 	end
 	return message
+end
+
+--- Three dots, drawn rather than taken from the icon face: the face has no ellipsis, and a text
+--- fallback would sit on the wrong baseline beside the other marks.
+---@param size number
+---@param colour string
+---@return wonderland.Element
+local function moreGlyph(size, colour)
+	return div():style(sty():size(size, size)):canvas(function(canvas)
+		local radius = math.max(1.2, math.floor(size * 0.08))
+		local y = math.floor(canvas.height / 2 - radius)
+		for at = 0, 2 do
+			local x = math.floor(canvas.width / 2 + (at - 1) * size * 0.26 - radius)
+			canvas:rect(x, y, radius * 2, radius * 2, colour, radius)
+		end
+	end)
 end
 
 ---@class beat.components.chrome.MobileTabStyles
@@ -79,7 +97,8 @@ function mobileNav.view(app, props)
 		{ kind = "home", icon = "home", label = "Home", route = HOME, message = GO_HOME },
 		{ kind = "library", icon = "library", label = "Library", route = LIBRARY, message = GO_LIBRARY },
 		{ kind = "search", icon = "search", label = "Search", route = SEARCH, message = GO_SEARCH },
-		{ kind = "playlists", icon = "playlists", label = "Playlists", route = PLAYLISTS, message = GO_PLAYLISTS }
+		{ kind = "playlists", icon = "playlists", label = "Playlists", route = PLAYLISTS, message = GO_PLAYLISTS },
+		{ kind = "more", icon = "more", label = "More", message = OPEN_MORE }
 	}
 	-- A plugin's destinations come after the app's own, in the order they asked for.
 	for _, entry in ipairs(app.registry:nav()) do
@@ -97,13 +116,19 @@ function mobileNav.view(app, props)
 		local active
 		if item.page ~= nil then
 			active = app.page.kind == route.kind and (route.id == nil or app.page.id == route.id)
+		elseif item.kind == "more" then
+			active = app:overlay("mobile_menu") ~= nil
 		else
 			active = app.page.kind == item.kind or (item.kind == "search" and app.page.kind == "searchAll") or (item.kind == "playlists" and app.page.kind == "playlist")
 		end
 		local colour = active ? (theme:color("accent")) : (theme:color("muted"))
 		local labelStyle = cache.of(ctx, tabLabelStyle, "mobileNavLabel", colour) --[[@as wonderland.StyleBuilder]]
-		tabs[#tabs + 1] = div():style(set.tab):hover(set.hover):onClick(item.message):children({
-			ui.icon(ctx, { name = item.icon, size = theme:px(21), colour = colour }),
+		local mark = item.kind == "more" and moreGlyph(theme:px(21), colour)
+			or ui.icon(ctx, { name = item.icon, size = theme:px(21), colour = colour })
+		-- Search already showing asks for its field rather than for the page again.
+		local action = item.kind == "search" and app.page.kind == "search" and FOCUS_SEARCH or item.message
+		tabs[#tabs + 1] = div():style(set.tab):hover(set.hover):onClick(action):children({
+			mark,
 			text(item.label):style(labelStyle)
 		})
 	end

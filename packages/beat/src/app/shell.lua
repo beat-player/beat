@@ -139,9 +139,12 @@ end
 ---@param ctx beat.ui.Context
 ---@param pageHeight number
 ---@param rightWidth number
+---@param topInset number # The status bar, which a phone's page starts under
 ---@return wonderland.StyleBuilder
-local function mainStyle(ctx, pageHeight, rightWidth)
-	return sty():column():w(rightWidth):h(pageHeight)
+local function mainStyle(ctx, pageHeight, rightWidth, topInset)
+	local style = sty():column():w(rightWidth):h(pageHeight)
+	if topInset > 0 then style:pad(topInset, 0, 0, 0) end
+	return style
 end
 
 ---@param ctx beat.ui.Context
@@ -240,11 +243,19 @@ function shell.view(app, window)
 	local pageClip = div():style(clip):scroll(0):onScroll(send.scroll):children({ moving })
 
 	local rightWidth = width - metrics.sidebarWidth(app, width)
-	local mainBox = cache.of(uiCtx, mainStyle, "shellMain", pageHeight, rightWidth) --[[@as wonderland.StyleBuilder]]
+	local topInset = mobile and metrics.topbarInset(app, width) or 0
+	local mainBox = cache.of(uiCtx, mainStyle, "shellMain", pageHeight, rightWidth, topInset) --[[@as wonderland.StyleBuilder]]
 	local main = div():style(mainBox)
 	if not mobile then main:onMouseMove(send.leavePlaylist) end
 	local inner = cache.of(uiCtx, clipStyle, "shellBody", bodyHeight) --[[@as wonderland.StyleBuilder]]
-	main:children({ topbar.view(app, { width = width, ui = uiCtx }), div():style(inner):children({ pageClip }) })
+	local body = div():style(inner):children({ pageClip })
+	-- A phone has no top bar: the page begins under the status bar, and the back gesture is the
+	-- system's rather than a chevron's. A desktop keeps the bar with its search field and settings.
+	if mobile then
+		main:children({ body })
+	else
+		main:children({ topbar.view(app, { width = width, ui = uiCtx }), body })
+	end
 
 	local shellChildren = { main }
 	if not mobile then

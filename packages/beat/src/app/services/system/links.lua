@@ -5,6 +5,46 @@ local fs = require("fs")
 
 local links = {}
 
+local isAndroid = rawget(_G, "LDE_ANDROID_APP") ~= nil
+
+---@class beat.LinksJni
+---@field frame fun(body: fun(): any): any
+---@field new fun(className: string, signature: string, ...: any): any
+---@field call fun(object: any, className: string, name: string, signature: string, ret: string, ...: any): any
+---@field callStatic fun(className: string, name: string, signature: string, ...: any): any
+---@field string fun(value: string): any
+
+---@class beat.LinksAndroidApi
+---@field isAndroid boolean
+---@field jni beat.LinksJni
+---@field activity fun(): { clazz: any }?
+
+--- Ask Android to show a URL in whatever activity handles it: the browser, or the app that
+--- registered the scheme. The activity is the app's, so the intent needs no new task of its own.
+---@param url string
+local function openAndroid(url)
+	local ok, android = pcall(require, "androidapi")
+	if not ok then return false end
+	---@cast android beat.LinksAndroidApi
+	if not android.isAndroid then return false end
+
+	local jni = android.jni
+	local activity = android.activity()
+	if activity == nil then return false end
+
+	local started = jni.frame(function()
+		local intent = jni.new("android/content/Intent", "(Ljava/lang/String;)V",
+			jni.string("android.intent.action.VIEW"))
+		local uri = jni.callStatic("android/net/Uri", "parse", "(Ljava/lang/String;)Landroid/net/Uri;", jni.string(url))
+		if uri == nil then return false end
+		jni.call(intent, "android/content/Intent", "setData", "(Landroid/net/Uri;)Landroid/content/Intent;", "object", uri)
+		jni.call(activity.clazz, "android/app/Activity", "startActivity", "(Landroid/content/Intent;)V", "void", intent)
+		return true
+	end)
+
+	return started == true
+end
+
 ---@param value string
 local function quote(value)
 	if jit.os == "Windows" then return '"' .. value:gsub('"', '\\"') .. '"' end
@@ -15,6 +55,8 @@ end
 ---@return boolean
 function links.open(url)
 	if type(url) ~= "string" or not url:match("^https?://") then return false end
+
+	if isAndroid then return openAndroid(url) end
 
 	local target = quote(url)
 	local osName = jit.os or ""

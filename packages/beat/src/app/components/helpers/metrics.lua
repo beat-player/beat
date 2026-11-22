@@ -71,8 +71,12 @@ local function sizesFor(app, width)
 			mobile = mobile,
 			pad = pad,
 			sidebar = sidebar,
-			content = width ~= nil and (width - sidebar - pad * 2 - theme:px(8)) or 0,
-			topbar = theme:px(mobile and 56 or 64) + (metrics.insets()),
+			-- The scroll bar is drawn at the body's far edge, which is the padding the page already
+			-- leaves: it does not take a strip out of the content beside it.
+			content = width ~= nil and (width - sidebar - pad * 2) or 0,
+			-- A phone has no top bar: its page begins under the status bar. A desktop keeps the
+			-- bar that holds the search field and settings.
+			topbar = mobile and (metrics.insets()) or (theme:px(64) + (metrics.insets())),
 			topbarInset = (metrics.insets())
 		}
 		sizes[app] = memo
@@ -104,7 +108,8 @@ function metrics.sidebarWidth(app, width)
 	return sizesFor(app, width).sidebar
 end
 
---- The room a page has inside the body: the shell, both paddings, and the scroll bar's strip.
+--- The room a page has inside the body: the shell and both paddings. The scroll bar sits in that
+--- padding rather than taking a strip of the content.
 ---@param app beat.App
 ---@param width number
 ---@return number

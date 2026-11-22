@@ -1018,16 +1018,28 @@ test.skipIf(not canRender)("draws the phone shell and switches tabs", function()
 		App.services.covers:use(assets)
 		return require("beat.app.shell").view(App, window)
 	end, { width = 390, height = 844 })
+	local previousLayout = App.layoutPlugin
+	local layout = assert(screen:getPlugin("layout"))
+	App.layoutPlugin = layout
 	screen:draw()
 
-	-- The second row of the phone shell is the tab bar; Search is the third of four tabs.
-	local message = screen:event({ name = "mousePress", window = screen.window, x = 243, y = 815, button = 1 })
+	-- The second row of the phone shell is the tab bar; Search is the third of five tabs.
+	local message = screen:event({ name = "mousePress", window = screen.window, x = 195, y = 815, button = 1 })
 	test.truthy(message ~= nil, "the bottom tab is a touch target")
 	App:act(message)
 	test.equal(App.page.kind, "search", "the tab switches the page")
 	screen:draw()
+	test.equal(layout:getFocusedId(screen.window), "pageSearch", "the page's own field has the keyboard")
+
+	-- The fifth tab opens the menu the top bar's settings control moved into.
+	local more = screen:event({ name = "mousePress", window = screen.window, x = 351, y = 815, button = 1 })
+	test.truthy(more ~= nil, "the More tab is a touch target")
+	App:act(more)
+	test.truthy(App:overlay("mobile_menu") ~= nil, "the More tab opens the menu")
+	screen:draw()
 
 	screen:close()
+	App.layoutPlugin = previousLayout
 	App.services.playback.player:close()
 end)
 

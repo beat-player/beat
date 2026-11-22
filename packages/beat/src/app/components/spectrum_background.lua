@@ -6,9 +6,30 @@ local div, sty = wonderland.div, wonderland.sty
 
 local spectrumBackground = {}
 
--- The strip: how many bars, and the room between them.
-local COUNT = 72
-local GAP = 3
+-- The strip: the most bars it draws, and the least it draws however narrow the window is. A phone
+-- is a third of a desktop's width at three times the density, so a fixed count makes bars that read
+-- as hairlines there; the count follows the width instead. A bar is at least eight theme pixels
+-- wide, and the gap is the room between two of them.
+local MAX_COUNT = 72
+local MIN_COUNT = 24
+
+--- The bars of a strip `width` pixels wide: how many there are, the room between them, and the
+--- width of one.
+---@param theme beat.Theme
+---@param width number
+---@return number count
+---@return number gap
+---@return number barWidth
+local function barLayout(theme, width)
+	local gap = math.max(2, theme:px(2))
+	local least = math.max(16, theme:px(8))
+	local count = math.floor((width + gap) / (least + gap))
+
+	if count < MIN_COUNT then count = MIN_COUNT end
+	if count > MAX_COUNT then count = MAX_COUNT end
+
+	return count, gap, math.max(1, (width - gap * (count - 1)) / count)
+end
 
 --- The accent's channels, which the shapes of the meter are drawn in. A canvas takes a colour as
 --- the string a theme hands out or as the four fractions of one, and the fractions cost nothing
@@ -54,16 +75,17 @@ local function drawMeter(canvas, theme, levels, intensity, reach)
 	-- shape is added to the frame, so only the alpha has to be set for each bar.
 	local wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
 	local core = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-	local barWidth = math.max(1, (canvas.width - GAP * (COUNT - 1)) / COUNT)
+	local count, gap, barWidth = barLayout(theme, canvas.width)
+	local spread = math.max(1, count - 1)
 
-	for at = 1, COUNT do
-		local position = (at - 1) / (COUNT - 1) * (#levels - 1) + 1
+	for at = 1, count do
+		local position = (at - 1) / spread * (#levels - 1) + 1
 		local lower = math.floor(position)
 		local upper = math.min(#levels, lower + 1)
 		local mix = position - lower
 		local level = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
 		local barHeight = math.max(2, level * canvas.height * reach)
-		local x = (at - 1) * (barWidth + GAP)
+		local x = (at - 1) * (barWidth + gap)
 		local alpha = (0.035 + level * 0.09) * intensity
 
 		-- A wider, nearly transparent pass and a narrower core: at this opacity it reads as a

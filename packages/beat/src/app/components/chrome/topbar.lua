@@ -1,8 +1,10 @@
--- The top bar: back and forward, the search field, and the way into settings.
+-- The top bar of a desktop: back and forward, the search field, and the way into settings. A
+-- phone has no bar of its own: the search page carries a field and the bottom menu has settings.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local cache = require("beat-ui.cache")
 local metrics = require("beat.app.components.helpers.metrics")
+local searchField = require("beat.app.components.search_field")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -11,30 +13,8 @@ local topbar = {}
 -- The messages the bar sends, made once: a click hands over the table the element holds.
 local BACK = { type = "back" }
 local FORWARD = { type = "forward" }
-local CLEAR_SEARCH = { type = "search", value = "" }
 local OPEN_TASKS = { type = "open", overlay = "tasks" }
 local OPEN_SETTINGS = { type = "navigate", page = { kind = "settings" } }
-
----@param value string
----@return { type: string, value: string }
-local function searchTyped(value)
-	return { type = "search", value = value }
-end
-
---- The search field's clear mark: a cross drawn in the colour it is given. It is made here so the
---- frame that draws the top bar defines no function.
----@param colour string
----@param weight number
----@param px4 number # How far each arm reaches, which is scaled by the theme
----@return fun(canvas: wonderland.Canvas)
-local function clearDraw(colour, weight, px4)
-	return function(canvas)
-		local middleX, middleY = canvas.width / 2, canvas.height / 2
-		local arm = math.max(3, px4)
-		canvas:line(middleX - arm, middleY - arm, middleX + arm, middleY + arm, weight, colour)
-		canvas:line(middleX + arm, middleY - arm, middleX - arm, middleY + arm, weight, colour)
-	end
-end
 
 ---@class beat.components.chrome.TasksStyles
 ---@field content wonderland.StyleBuilder
@@ -67,67 +47,6 @@ local function tasksTrackStyle(ctx, barWidth, barHeight, size)
 	return sty()
 		:w(barWidth):h(barHeight):radius(ctx:radius("full")):bg(ctx:color("text", 0.16))
 		:offset(ctx:px(4), size - barHeight - ctx:px(2))
-end
-
----@param ctx beat.ui.Context
----@param searchAreaWidth number
----@return wonderland.StyleBuilder
-local function searchAreaStyle(ctx, searchAreaWidth)
-	return sty():w(searchAreaWidth):h(ctx:px(32)):row():align("center")
-end
-
----@param ctx beat.ui.Context
----@return wonderland.StyleBuilder
-local function searchInputStyle(ctx)
-	return sty()
-		:wrel(1.0):h(ctx:px(32)):row():align("center"):pad(ctx:px(10), 0, ctx:px(10), 0):text(ctx:type("sm"))
-		:fg(ctx:color("text"))
-end
-
----@param ctx beat.ui.Context
----@param colour string
----@return wonderland.StyleBuilder
-local function searchTextStyle(ctx, colour)
-	return ctx:s():wrel(1.0):text(ctx:type("sm")):fg(colour):ellipsis()
-end
-
----@param ctx beat.ui.Context
----@return wonderland.StyleBuilder
-local function fieldSearchStyle(ctx)
-	return sty():row():wrel(1.0):h(ctx:px(32)):gap(ctx:px(8)):align("center")
-end
-
----@class beat.components.chrome.ClearStyles
----@field box wonderland.StyleBuilder
----@field draw fun(canvas: wonderland.Canvas)
-
----@param ctx beat.ui.Context
----@return beat.components.chrome.ClearStyles
-local function clearStyles(ctx)
-	return {
-		box = sty():size(ctx:px(20), ctx:px(20)):radius(ctx:radius("full")):align("center"):justify("center"),
-		draw = clearDraw(ctx:color("muted"), math.max(1, ctx:px(1.25)), ctx:px(4))
-	}
-end
-
----@param ctx beat.ui.Context
----@param searchWidth number
----@param pillHeight number
----@param focused boolean
----@return wonderland.StyleBuilder
-local function pillStyle(ctx, searchWidth, pillHeight, focused)
-	return sty()
-		:row():w(searchWidth):h(pillHeight):radius(ctx:radius("full"))
-		:bg(focused and ctx:color("hover") or ctx:color("elevated")):pad(0, ctx:px(12), 0, ctx:px(12)):align("center")
-end
-
----@param ctx beat.ui.Context
----@param searchWidth number
----@param pillHeight number
----@return wonderland.StyleBuilder
-local function ringStyle(ctx, searchWidth, pillHeight)
-	return sty()
-		:w(searchWidth):h(pillHeight):radius(ctx:radius("full")):border(ctx:px(1), ctx:color("accent")):offset(-ctx:px(12), 0)
 end
 
 ---@param ctx beat.ui.Context
@@ -226,59 +145,23 @@ function topbar.view(app, props)
 	local width = props.width
 	local ctx = props.ui
 	local theme = app.services.appearance.theme
-	local mobile = metrics.mobile(app, width)
-	local focused = app.layoutPlugin ~= nil and app.window ~= nil and app.layoutPlugin:getFocusedId(app.window) == "search"
-	local search = app.services.search.query
 	local available = metrics.contentWidth(app, width)
 	local tasks = app.services.tasks:tasks()
 	local hasTasks = #tasks > 0
-	local pillHeight = (theme:px(mobile ? 38 : 34))
-	local iconSize = (theme:px(mobile ? 40 : 32))
+	local pillHeight = theme:px(34)
+	local iconSize = theme:px(32)
 	local gap = theme:px(10)
 	local rightWidth = iconSize + (hasTasks and (iconSize + gap) or 0)
 	local leftWidth = available - rightWidth - gap
-	local searchWidth = leftWidth - (theme:px(mobile ? 50 : 84))
+	local searchWidth = leftWidth - theme:px(84)
 
-	local searchAreaWidth = searchWidth - theme:px(24) - theme:px(16) - theme:px(8) - (search ~= "" and theme:px(28) or 0)
-	local searchBoxStyle = cache.of(ctx, searchAreaStyle, "topbarSearchArea", searchAreaWidth) --[[@as wonderland.StyleBuilder]]
-	local searchArea = div():style(searchBoxStyle)
-	local searchText = search ~= "" and search or (focused and " " or (metrics.units(app, width) < 480 and "Search" or "Search artists, albums, tracks"))
-	local searchColour = search ~= "" ? (theme:color("text")) : focused and (theme:color("text")) or (theme:color("faint"))
-
-	local inputStyle = cache.of(ctx, searchInputStyle, "topbarSearchInput") --[[@as wonderland.StyleBuilder]]
-	local textStyle = cache.of(ctx, searchTextStyle, "topbarSearchText", searchColour) --[[@as wonderland.StyleBuilder]]
-	local searchInput = div():style(inputStyle):input({ name = "search", value = search, oninput = searchTyped })
-	searchInput:children(text(searchText):style(textStyle))
-
-	searchArea:children({ searchInput })
-
-	local fieldStyle = cache.of(ctx, fieldSearchStyle, "topbarField") --[[@as wonderland.StyleBuilder]]
-	local field = div():style(fieldStyle):children({
-		ui.icon(ctx, { name = "search", size = theme:px(16), colour = theme:color("faint") }),
-		searchArea
-	})
-
-	if search ~= "" then
-		local clear = cache.of(ctx, clearStyles, "topbarClear") --[[@as beat.components.chrome.ClearStyles]]
-		field:children(div():style(clear.box):onClick(CLEAR_SEARCH):canvas(clear.draw))
-	end
-
-	local searchStyle = cache.of(ctx, pillStyle, "topbarPill", searchWidth, pillHeight, focused) --[[@as wonderland.StyleBuilder]]
-
-	local searchPill = div():style(searchStyle):children(field)
-	if focused then
-		-- A focus ring is painted over the pill rather than styled onto it: a border that takes
-		-- part in layout shrinks the content box by a pixel and makes the field jump when focus
-		-- arrives. The ring is outside the flow and the field keeps its exact position.
-		local ring = cache.of(ctx, ringStyle, "topbarRing", searchWidth, pillHeight) --[[@as wonderland.StyleBuilder]]
-		searchPill:children(div():style(ring))
-	end
-
-	local leftChildren = { navButton(ctx, iconSize, "chevronLeft", BACK, #app.history > 0) }
-	if not mobile then
-		leftChildren[#leftChildren + 1] = navButton(ctx, iconSize, "chevronRight", FORWARD, #app.future > 0)
-	end
-	leftChildren[#leftChildren + 1] = searchPill
+	local search = app.services.search.query
+	local placeholder = metrics.units(app, width) < 480 and "Search" or "Search artists, albums, tracks"
+	local leftChildren = {
+		navButton(ctx, iconSize, "chevronLeft", BACK, #app.history > 0),
+		navButton(ctx, iconSize, "chevronRight", FORWARD, #app.future > 0),
+		searchField.view(ctx, { name = "search", value = search, width = searchWidth, placeholder = placeholder })
+	}
 	local leftBox = cache.of(ctx, leftStyle, "topbarLeft", leftWidth, pillHeight) --[[@as wonderland.StyleBuilder]]
 	local left = div():style(leftBox):children(leftChildren)
 

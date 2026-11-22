@@ -7,6 +7,7 @@ local cover = require("beat.app.components.cover")
 local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
+local searchField = require("beat.app.components.search_field")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -14,13 +15,42 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@type beat.PageSurface
 local searchPage = {}
 
+--- A phone opens this page with its own field in the keyboard's way: the top bar has no field
+--- there, and a search screen that waits for a tap before taking a letter is a screen that asks
+--- twice.
+---@param app beat.App
+function searchPage.new(app)
+	local window = app.window
+	if window ~= nil and metrics.mobile(app, window.width) then
+		app:focusField("pageSearch", #app.services.search.query)
+	end
+	return {}
+end
+
 ---@param app beat.App
 ---@param page beat.PageInstance
 ---@param message beat.Message
 function searchPage.update(app, page, message)
+	local search = app.services.search
+
+	-- A tap on the field's clear mark is a press on the mark rather than in the field, and the
+	-- keyboard follows the field: it is put back where the typing was.
+	if message.type == "clearPageSearch" then
+		search:clear()
+		app:focusField("pageSearch", 0)
+		app:refresh()
+		return true
+	end
+
+	-- The Search tab on the page already showing has no route to take: the tab asks for the field
+	-- it would have brought up, and the caret goes back to the end of what was typed.
+	if message.type == "focusPageSearch" then
+		app:focusField("pageSearch", #search.query)
+		return true
+	end
+
 	-- Escape clears what was typed before it leaves the page. The field belongs to the search
 	-- service; the page only decides that Escape means the field first.
-	local search = app.services.search
 	if message.type == "escape" and search.query ~= "" then
 		search:clear()
 		app:refresh()
@@ -115,6 +145,22 @@ function searchPage.view(app, page, window)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local cardHeight = albumCard.height(app, { width = cardWidth })
+	-- On a phone the field is this page's, not the top bar's: it leads the page and the keyboard
+	-- comes up for it. A desktop keeps the one in the top bar.
+	local field, fieldHeight = nil, 0
+	if ctx.mobile then
+		field = searchField.view(
+			ctx,
+			{
+				name = "pageSearch",
+				value = search.query,
+				width = content,
+				placeholder = "Artists, albums and tracks",
+				clearMessage = { type = "clearPageSearch" }
+			}
+		)
+		fieldHeight = theme:px(38) + gap
+	end
 
 	if search.query == "" then
 		local recent = library:recentlyAdded(columns)
@@ -146,17 +192,20 @@ function searchPage.view(app, page, window)
 				}
 			)
 		end
+		local children = {}
+		if field ~= nil then children[#children + 1] = field end
+		children[#children + 1] = text("Search your library"):style(
+			theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
+		)
+		children[#children + 1] = text("Artists, albums and tracks are all one field."):style(
+			theme:s():text(theme:type("sm")):fg(theme:color("muted"))
+		)
+		children[#children + 1] = ui.section(ctx, { title = "Recently added" })
+		children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
+
 		return div()
-			:style(sty():column():wrel(1.0):h(cardHeight + theme:px(150)):gap(gap))
-			:children(
-				{
-					text("Search your library"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-					text("Artists, albums and tracks are all one field.")
-						:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-					ui.section(ctx, { title = "Recently added" }),
-					div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
-				}
-			)
+			:style(sty():column():wrel(1.0):h(cardHeight + theme:px(150) + fieldHeight):gap(gap))
+			:children(children)
 	end
 
 	local albums, artists, tracks = search:results()
@@ -167,7 +216,7 @@ function searchPage.view(app, page, window)
 	local rowGap = theme:space(16)
 	local sectionGap = theme:space(16)
 	local sectionHeight = theme:px(24)
-	local height = theme:px(40) + filterHeight
+	local height = theme:px(40) + filterHeight + fieldHeight
 	if albumLimit > 0 then
 		height = height + sectionGap + sectionHeight + sectionGap + albumRows * cardHeight + math.max(0, albumRows - 1) * rowGap
 	end
@@ -178,10 +227,10 @@ function searchPage.view(app, page, window)
 		height = height + sectionGap + sectionHeight + sectionGap + trackLimit * theme:px(48)
 	end
 
-	local children = {
-		text("Results for \"" .. search.query .. "\"")
-			:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
-	}
+	local children = {}
+	if field ~= nil then children[#children + 1] = field end
+	children[#children + 1] = text("Results for \"" .. search.query .. "\"")
+		:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then

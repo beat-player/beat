@@ -239,8 +239,11 @@ function nowPlaying.view(app, _overlay, window)
 	if track ~= nil and album ~= nil then
 		local coverSize
 		local progressWidth
+		local stackGap = theme:space(24)
 		if stacked then
-			coverSize = math.min(theme:px(220), math.floor(availableWidth * 0.58), math.floor(availableHeight * 0.34))
+			-- The cover is the page's one picture, and a little larger than the album page's: what is
+			-- left of the window's height after it is what the title block and the controls share.
+			coverSize = math.min(theme:px(340), availableWidth, math.floor(availableHeight * 0.46))
 			progressWidth = math.max(theme:px(160), availableWidth - mainPad * 2)
 		else
 			coverSize = math.min(theme:px(390), math.floor(availableWidth * 0.27), math.floor(availableHeight * 0.43))
@@ -357,7 +360,7 @@ function nowPlaying.view(app, _overlay, window)
 		-- The queue and the menu open from the tool row, towards whichever side of it has the room.
 		-- Where the row is comes from the sizes the stage is centred with -- a line of text is as
 		-- tall as its type -- so the panels can be sized before the layout has run.
-		local lead = stacked and (coverSize + theme:space(16)) or 0
+		local lead = stacked and (coverSize + stackGap) or 0
 		local rowTop = margin + mainPad + (availableHeight - mainPad * 2 - lead - textHeight) / 2 + lead + titleSize + theme:type(
 			"lg"
 		) + stageGap * 2
@@ -383,7 +386,7 @@ function nowPlaying.view(app, _overlay, window)
 			main = div()
 				:style(
 					sty()
-						:h(availableHeight):column():align("center"):justify("center"):gap(theme:space(16)):pad(mainPad, 0, mainPad, 0)
+						:h(availableHeight):column():align("center"):justify("center"):gap(stackGap):pad(mainPad, 0, mainPad, 0)
 				)
 			main:children({
 				coverFrame,

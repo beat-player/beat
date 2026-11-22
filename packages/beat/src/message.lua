@@ -132,6 +132,8 @@
 ---@field type "clearSearch"
 ---@class beat.OpenSearchMessage: beat.MessageFields
 ---@field type "openSearch"
+---@class beat.FocusPageSearchMessage: beat.MessageFields
+---@field type "focusPageSearch"
 ---@class beat.ToggleTagFilterMessage: beat.MessageFields
 ---@field type "toggleTagFilter"
 ---@field id number
@@ -428,6 +430,7 @@
 --- | beat.SearchMessage
 --- | beat.ClearSearchMessage
 --- | beat.OpenSearchMessage
+--- | beat.FocusPageSearchMessage
 --- | beat.ToggleTagFilterMessage
 --- | beat.TagFilterMatchMessage
 --- | beat.ClearTagFilterMessage
