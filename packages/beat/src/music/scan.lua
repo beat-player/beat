@@ -11,7 +11,7 @@ local names = require("beat.music.names")
 local Library = require("beat.music.library")
 local audio = require("treble.audio")
 
-local AUDIO = { flac = true, mp3 = true, opus = true, ogg = true, wav = true }
+local AUDIO = { flac = true, mp3 = true, opus = true, ogg = true, wav = true, m4a = true }
 
 local IMAGES = { jpg = true, jpeg = true, png = true, gif = true, bmp = true }
 
