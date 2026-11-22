@@ -85,7 +85,7 @@ function home.view(app, page, window)
 	end
 
 	local content = metrics.contentWidth(app, window.width)
-	local columns = metrics.gridColumns(content)
+	local columns = metrics.gridColumns(app, content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local recent = library:recentlyAdded(columns)

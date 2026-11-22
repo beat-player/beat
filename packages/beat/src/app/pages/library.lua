@@ -97,24 +97,13 @@ function libraryPage.view(app, page, window)
 	local mobile = metrics.mobile(app, window.width)
 
 	local list = app.services.settings.values.view == "list"
-	local columns
-	if content >= 900 then
-		columns = 5
-	elseif content >= 640 then
-		columns = 4
-	elseif content >= 420 then
-		columns = 3
-	elseif content >= 260 then
-		columns = 2
-	else
-		columns = 1
-	end
+	local columns = metrics.gridColumns(app, content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 
 	-- Below this the title and the controls cannot sit on one line without one covering the
 	-- other, so the controls move under the title and the header grows by a row.
-	local stacked = content < 480
+	local stacked = metrics.units(app, content) < 480
 	local headerHeight = stacked ? (theme:px(104)) : (theme:px(58))
 	local viewWidth = theme:px(32)
 	local sortWidth = math.max(theme:px(88), math.min(theme:px(150), content - viewWidth - theme:px(8)))

@@ -5,6 +5,8 @@
 local Picker = require("beat.app.services.scan.picker")
 local ScanJob = require("beat.app.services.scan.job")
 local time = require("wonderland.time")
+local Log = require("beat.log")
+local platform = require("beat.platform")
 
 -- How much of a worker's output one tick takes into the library. A fast local scan can write a
 -- whole library in a fraction of a second: taking it a fixed handful of tracks a tick makes the
@@ -31,6 +33,7 @@ local INGEST_BATCH = 128
 ---@field summary beat.ScanSummary? # What the last finished scan added, until it is dismissed
 ---@field skipped number # Files the last finished scan could not read
 ---@field errors { path: string, message: string }[]
+---@field awaitingAccess boolean? # Asked the system for access to the music folder; the scan starts once it is granted
 ---@field settings beat.SettingsService
 ---@field library beat.LibraryService
 ---@field covers beat.CoversService
@@ -103,7 +106,15 @@ end
 function Scan:resume()
 	local root = self.settings.values.root
 	if root == nil or self.options.scan == false then return end
-	if self.library.current == nil then self:start(root) end
+	if self.library.current ~= nil then return end
+	-- A phone keeps the music folder behind a permission. Without it the folder reads as empty,
+	-- and a scan of it would save an empty library over the one the listener is about to allow.
+	if not platform.canReadMusic() then
+		self.awaitingAccess = true
+		platform.requestMusicAccess()
+		return
+	end
+	self:start(root)
 end
 
 --- A new library for a root. What was playing is from the old one, so it stops; every cover on
@@ -300,6 +311,12 @@ Scan.on = {
 function Scan:step(now)
 	local changed = false
 
+	if self.awaitingAccess and platform.canReadMusic() then
+		self.awaitingAccess = false
+		self:resume()
+		changed = true
+	end
+
 	if self.pick ~= nil then
 		local chosen, status = Picker.poll(self.pick)
 		if chosen ~= nil then
@@ -347,6 +364,16 @@ function Scan:step(now)
 					skipped = progress.skipped,
 					at = now
 				}
+				Log.write(
+					"info",
+					string.format(
+						"scan of %s: %d tracks, %d files, %d skipped",
+						job.root,
+						#library.current.tracks,
+						progress.files,
+						progress.skipped
+					)
+				)
 			elseif job.error ~= nil then
 				self.toasts:show(job.error or "Scan failed", "error")
 			else
@@ -395,7 +422,7 @@ function Scan:step(now)
 		changed = true
 	end
 
-	return changed, self.job ~= nil or self.addJob ~= nil or self.pick ~= nil
+	return changed, self.job ~= nil or self.addJob ~= nil or self.pick ~= nil or self.awaitingAccess == true
 end
 
 --- The app is being set up again, so nothing will read this job's events any more: tell the

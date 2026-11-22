@@ -40,7 +40,8 @@ local function searchTagFilter(app, width)
 	if #tags == 0 then return nil, 0 end
 	local theme = app.services.appearance.theme
 	local search = app.services.search
-	local columns = width >= 900 ? 6 : width >= 600 and 4 or 3
+	local units = metrics.units(app, width)
+	local columns = units >= 900 ? 6 : units >= 600 and 4 or 3
 	local pills = tagPills.view(
 		app,
 		{
@@ -110,7 +111,7 @@ function searchPage.view(app, page, window)
 
 	local content = metrics.contentWidth(app, window.width)
 	local filter, filterHeight = searchTagFilter(app, content)
-	local columns = metrics.gridColumns(content)
+	local columns = metrics.gridColumns(app, content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local cardHeight = albumCard.height(app, { width = cardWidth })

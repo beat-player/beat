@@ -28,6 +28,14 @@ end
 ---@param message any
 ---@return boolean
 function log.write(level, message)
+	-- An Android app has no terminal and its config directory is private: logcat is where a
+	-- developer reads what went wrong.
+	if rawget(_G, "LDE_ANDROID_APP") ~= nil then
+		pcall(function()
+			require("androidapi").log(level == "fatal" and "error" or level, "beat: " .. tostring(message))
+		end)
+	end
+
 	return pcall(function()
 		local directory = paths.directory()
 

@@ -149,10 +149,11 @@ end
 ---@param ctx beat.ui.Context
 ---@param topbarHeight number
 ---@param pad number
+---@param inset number # The status bar's height, which the controls sit below
 ---@return wonderland.StyleBuilder
-local function barStyle(ctx, topbarHeight, pad)
+local function barStyle(ctx, topbarHeight, pad, inset)
 	return sty()
-		:row():wrel(1.0):h(topbarHeight):pad(0, pad, 0, pad):gap(ctx:px(10)):align("center"):justify("space-between")
+		:row():wrel(1.0):h(topbarHeight):pad(inset, pad, 0, pad):gap(ctx:px(10)):align("center"):justify("space-between")
 end
 
 --- The task list's button: an icon with how many tasks there are, and the progress of the one
@@ -241,7 +242,7 @@ function topbar.view(app, props)
 	local searchAreaWidth = searchWidth - theme:px(24) - theme:px(16) - theme:px(8) - (search ~= "" and theme:px(28) or 0)
 	local searchBoxStyle = cache.of(ctx, searchAreaStyle, "topbarSearchArea", searchAreaWidth) --[[@as wonderland.StyleBuilder]]
 	local searchArea = div():style(searchBoxStyle)
-	local searchText = search ~= "" and search or (focused and " " or (width < 480 and "Search" or "Search artists, albums, tracks"))
+	local searchText = search ~= "" and search or (focused and " " or (metrics.units(app, width) < 480 and "Search" or "Search artists, albums, tracks"))
 	local searchColour = search ~= "" ? (theme:color("text")) : focused and (theme:color("text")) or (theme:color("faint"))
 
 	local inputStyle = cache.of(ctx, searchInputStyle, "topbarSearchInput") --[[@as wonderland.StyleBuilder]]
@@ -287,7 +288,7 @@ function topbar.view(app, props)
 	local rightBox = cache.of(ctx, rightStyle, "topbarRight", rightWidth, pillHeight) --[[@as wonderland.StyleBuilder]]
 	local right = div():style(rightBox):children(rightChildren)
 
-	local top = cache.of(ctx, barStyle, "topbar", metrics.topbarHeight(app, width), metrics.pad(app, width)) --[[@as wonderland.StyleBuilder]]
+	local top = cache.of(ctx, barStyle, "topbar", metrics.topbarHeight(app, width), metrics.pad(app, width), metrics.topbarInset(app, width)) --[[@as wonderland.StyleBuilder]]
 
 	return div():style(top):children({ left, right })
 end

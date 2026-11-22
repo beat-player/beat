@@ -8,7 +8,7 @@
 			"path": "../beat-ui"
 		},
 		"wonderland": {
-			"version": "^0.1.13"
+			"version": "^0.1.14"
 		},
 		"fs": {
 			"version": "^0.3.2"
@@ -45,6 +45,11 @@
 		"lde-build": {
 			"git": "https://github.com/lde-org/lde"
 		}
+	},
+	"android": {
+		"package": "dev.lde.beat",
+		"label": "beat",
+		"permissions": ["android.permission.READ_MEDIA_AUDIO", "android.permission.READ_EXTERNAL_STORAGE"]
 	},
 	"$schema": "https://raw.githubusercontent.com/lde-org/lde/master/schemas/lde.schema.json"
 }

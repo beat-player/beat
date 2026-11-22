@@ -56,6 +56,11 @@ end
 ---@return beat.Instance? claim # What this launch holds while it runs
 ---@return string? err # Why it runs without a claim
 function instance.start(directory)
+	-- Android keeps one activity per app itself, and runs a relaunch in the process the last one
+	-- ran in: the lock that process's earlier run took is still held, by a copy that is gone, and
+	-- the relaunch would hand over to it and end with nothing on the screen.
+	if rawget(_G, "LDE_ANDROID_APP") ~= nil then return false, nil, nil end
+
 	local key = instance.key(directory)
 	local err
 	for attempt = 1, ATTEMPTS do

@@ -45,7 +45,7 @@ function artistPage.view(app, page, window)
 	local heroSize = math.min(theme:px(160), math.floor(content * 0.24))
 	local heroHeight = heroSize + theme:space(24)
 	local album = artist.albums[1]
-	local columns = metrics.gridColumns(content)
+	local columns = metrics.gridColumns(app, content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local cardHeight = albumCard.height(app, { width = cardWidth })

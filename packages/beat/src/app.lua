@@ -27,6 +27,7 @@ local metrics = require("beat.app.components.helpers.metrics")
 local settingsModel = require("beat.app.services.settings.model")
 local ServiceCollection = require("beat.app.service_collection")
 local Signal = require("beat.app.signal")
+local platform = require("beat.platform")
 
 -- Written by build.lua from assets/icon-256.png, so a compiled binary carries it too.
 local iconData = require("beat.app.icon")
@@ -423,6 +424,14 @@ function App:init(opts)
 	self.registry:attach(self.services)
 
 	local values = self.services.settings.values
+
+	-- A phone keeps its music in one shared folder, and has no folder dialog to pick another from:
+	-- the first launch reads that folder rather than asking.
+	local defaultFolder = platform.defaultMusicFolder()
+	if values.root == nil and defaultFolder ~= nil then
+		values.root = defaultFolder
+		self.services.settings:save()
+	end
 
 	self.history = {}
 	self.future = {}

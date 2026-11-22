@@ -8,10 +8,19 @@
 -- stay in one place.
 local wonderland = require("wonderland")
 local theme = require("beat.app.services.appearance.theme")
+local platform = require("beat.platform")
 
 local time = wonderland.time
 
 local FADE_TIME = 0.22
+
+--- The theme for the settings: the listener's UI scale, times the screen's density, so a phone at
+--- 2.6 pixels a point draws the same physical sizes a desktop draws at 1.
+---@param values beat.Settings
+---@return beat.Theme
+local function themeFor(values)
+	return theme.new(values.theme, values.accent, values.uiScale * platform.screen().density)
+end
 
 ---@class beat.AppearanceService: beat.Service
 ---@field settings beat.SettingsService
@@ -30,7 +39,7 @@ function Appearance.new(deps)
 		{
 			settings = deps.settings,
 			motion = deps.motion,
-			theme = theme.new(values.theme, values.accent, values.uiScale),
+			theme = themeFor(values),
 			fade = nil
 		},
 		Appearance
@@ -68,7 +77,7 @@ end
 function Appearance:change(animate)
 	local previous = self.theme
 	local values = self.settings.values
-	self.theme = theme.new(values.theme, values.accent, values.uiScale)
+	self.theme = themeFor(values)
 
 	if animate ~= false and previous ~= nil and not self.motion.clock.reduce then
 		self.theme.fromColors = previous.colors

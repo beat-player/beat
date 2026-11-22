@@ -7,6 +7,10 @@
 local fs = require("fs")
 local json = require("json")
 local Log = require("beat.log")
+local Scanner = require("beat.music.scan")
+local artwork = require("beat.music.artwork")
+local names = require("beat.music.names")
+local platform = require("beat.platform")
 local workerProcess = require("beat.workers.process")
 
 -- How much of the worker's output one read may take, and how many decoded tracks may wait. A scan
@@ -15,6 +19,9 @@ local workerProcess = require("beat.workers.process")
 -- chunk is small enough that one poll stays a few milliseconds on a fast local scan.
 local READ_CHUNK = 64 * 1024
 local QUEUE_LIMIT = 256
+
+-- How long one tick may spend scanning when the scan runs in the app's own process.
+local INLINE_BUDGET = 0.008
 
 local ScanJob = {}
 ScanJob.__index = ScanJob
@@ -34,6 +41,7 @@ ScanJob.__index = ScanJob
 ---@field child process.Child? # The coordinator process, until it exits
 ---@field exitCode number? # How the coordinator exited, once it has
 ---@field decodeErrors number # Lines the worker wrote that were not JSON this could read
+---@field scanner beat.Scanner? # The scan itself, where it runs in this process: an Android app cannot start a copy of itself
 
 --- A job over an already-known output path, which is also what the tests write by hand.
 ---@param root string
@@ -60,9 +68,10 @@ function ScanJob.new(root, output, cancelFile)
 	)
 end
 
+--- A scan in a coordinator process, which starts the inspectors.
 ---@param root string
 ---@return beat.ScanJob
-function ScanJob.start(root)
+local function startWorker(root)
 	local output = os.tmpname() .. "-beat-scan.jsonl"
 	local cancelFile = os.tmpname() .. "-beat-scan.cancel"
 	fs.delete(output)
@@ -83,6 +92,57 @@ function ScanJob.start(root)
 	return job
 end
 
+--- A scan in this process, a slice a tick: Android starts an app from the zygote, and an APK has
+--- no executable a second process could be started from.
+---@param root string
+---@return beat.ScanJob
+local function startInline(root)
+	local job = ScanJob.new(root, "", "")
+	local scanner = Scanner.new(root, { library = false })
+	---@type table<string, string|false>
+	local covers = {}
+	---@param info treble.audio.Inspect
+	---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number? }
+	---@param cover string?
+	scanner.onTrack = function(info, entry, cover)
+		local key = names.albumKey(info.tags, entry.dir)
+		local coverCache = covers[key]
+		if coverCache == nil then
+			if info.hasPicture or cover ~= nil then
+				coverCache = artwork.cacheCover(
+					{
+						path = entry.path,
+						hasPicture = info.hasPicture,
+						coverPath = cover,
+						modified = entry.modifyTime
+					},
+					512,
+					root
+				) or false
+			else
+				coverCache = false
+			end
+			covers[key] = coverCache
+		end
+		job.queued[#job.queued + 1] = {
+			type = "track",
+			info = info,
+			entry = entry,
+			cover = cover,
+			coverCache = coverCache or nil
+		}
+	end
+	job.scanner = scanner
+	return job
+end
+
+---@param root string
+---@return beat.ScanJob
+function ScanJob.start(root)
+	if platform.android then return startInline(root) end
+	return startWorker(root)
+end
+
 --- A worker line as the Lua table the app reads. A function rather than a closure per line: this
 --- is the hot loop of a scan, and a new closure for every track is allocation and a trace abort.
 ---@param line string
@@ -96,6 +156,7 @@ end
 ---@return boolean more # Whether there may be output left: something was read, or the queue is full
 function ScanJob:read()
 	if #self.queued >= QUEUE_LIMIT then return true end
+	if self.scanner ~= nil then return false end
 
 	-- Binary, so the offset counts bytes: text mode on Windows reads "\r\n" as one character, and
 	-- an offset that falls behind the file re-reads the end of what was already taken.
@@ -169,6 +230,17 @@ end
 function ScanJob:poll(limit)
 	limit = limit or 32
 
+	local scanner = self.scanner
+	if scanner ~= nil and not self.done and #self.queued < QUEUE_LIMIT then
+		scanner:step(INLINE_BUDGET, os.clock)
+		self.latest = scanner:progress()
+		self.changed = true
+		if scanner:isDone() then
+			self.done = true
+			self.cancelled = scanner.phase == "cancelled"
+		end
+	end
+
 	if self.child ~= nil then
 		local code = self.child:poll()
 		if code ~= nil then
@@ -231,6 +303,12 @@ end
 ---@param self beat.ScanJob
 ---@return boolean
 function ScanJob:cancel()
+	if self.scanner ~= nil then
+		self.scanner:cancel()
+		self.changed = true
+		return true
+	end
+
 	fs.write(self.cancelFile, "1")
 
 	if self.child ~= nil then
@@ -245,6 +323,7 @@ end
 
 ---@param self beat.ScanJob
 function ScanJob:close()
+	if self.scanner ~= nil then return end
 	fs.delete(self.output)
 	fs.delete(self.cancelFile)
 end

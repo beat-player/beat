@@ -5,7 +5,28 @@
 -- that sizes itself from the content box -- and the answer only changes when the window, the theme
 -- or the rail's own settings do. What is worked out is kept against those, so the arithmetic is
 -- done once per window rather than once per question.
+local platform = require("beat.platform")
+
 local metrics = {}
+
+--- A length in the theme's own units: what a window `px` wide is at the listener's scale and the
+--- screen's density. Breakpoints are written in these, so a phone at 2.6 pixels a point is a
+--- phone and not a 1080-wide desktop.
+---@param app beat.App
+---@param px number
+---@return number
+function metrics.units(app, px)
+	return px / app.services.appearance.theme.scale
+end
+
+--- The pixels the system bars cover: the status bar above, the navigation bar below. Nothing is
+--- drawn under them but the background.
+---@return number top
+---@return number bottom
+function metrics.insets()
+	local screen = platform.screen()
+	return screen.top, screen.bottom
+end
 
 ---@class beat.components.metrics.Sizes
 ---@field window number?
@@ -16,7 +37,8 @@ local metrics = {}
 ---@field pad number
 ---@field sidebar number
 ---@field content number
----@field topbar number
+---@field topbar number # The top bar with the status bar above it
+---@field topbarInset number # How much of `topbar` is the status bar
 
 ---@type table<beat.App, beat.components.metrics.Sizes>
 local sizes = setmetatable({}, { __mode = "k" })
@@ -34,7 +56,7 @@ local function sizesFor(app, width)
 		local mobile = width ~= nil and width < theme:px(760)
 		local sidebar = 0
 		if width ~= nil and not mobile then
-			if values.sidebarCollapsed or width < 1040 then
+			if values.sidebarCollapsed or width < theme:px(1040) then
 				sidebar = theme:px(76)
 			else
 				sidebar = theme:px(values.sidebarWidth)
@@ -50,7 +72,8 @@ local function sizesFor(app, width)
 			pad = pad,
 			sidebar = sidebar,
 			content = width ~= nil and (width - sidebar - pad * 2 - theme:px(8)) or 0,
-			topbar = theme:px(mobile and 56 or 64)
+			topbar = theme:px(mobile and 56 or 64) + (metrics.insets()),
+			topbarInset = (metrics.insets())
 		}
 		sizes[app] = memo
 	end
@@ -96,16 +119,25 @@ function metrics.topbarHeight(app, width)
 	return sizesFor(app, width).topbar
 end
 
+--- How much of the top bar's height is the status bar, which its controls sit below.
+---@param app beat.App
+---@param width number
+---@return number
+function metrics.topbarInset(app, width)
+	return sizesFor(app, width).topbarInset
+end
+
 ---@param app beat.App
 ---@param width number
 ---@return number
 function metrics.bottomHeight(app, width)
 	local theme = app.services.appearance.theme
+	local _, inset = metrics.insets()
 	if sizesFor(app, width).mobile then
 		local player = (app.services.playback:current()) ~= nil ? (theme:px(64)) : 0
-		return player + theme:px(58)
+		return player + theme:px(58) + inset
 	end
-	return (app.services.playback:current()) ~= nil ? (theme:px(88)) : 0
+	return ((app.services.playback:current()) ~= nil ? (theme:px(88)) : 0) + inset
 end
 
 ---@param app beat.App
@@ -117,14 +149,17 @@ function metrics.viewportHeight(app, width, height)
 end
 
 --- The same 1–5 column ladder for every album shelf. It is driven by the content box, because
---- the sidebar and the mobile bottom bars are not part of the width a grid can use.
+--- the sidebar and the mobile bottom bars are not part of the width a grid can use, and read in
+--- the theme's units, so a dense phone screen gets a phone's two columns.
+---@param app beat.App
 ---@param content number
 ---@return number
-function metrics.gridColumns(content)
-	if content >= 900 then return 5 end
-	if content >= 640 then return 4 end
-	if content >= 420 then return 3 end
-	if content >= 260 then return 2 end
+function metrics.gridColumns(app, content)
+	local units = metrics.units(app, content)
+	if units >= 900 then return 5 end
+	if units >= 640 then return 4 end
+	if units >= 420 then return 3 end
+	if units >= 260 then return 2 end
 	return 1
 end
 

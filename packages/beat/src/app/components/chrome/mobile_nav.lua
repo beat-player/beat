@@ -3,6 +3,7 @@
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local cache = require("beat-ui.cache")
+local metrics = require("beat.app.components.helpers.metrics")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -56,9 +57,10 @@ end
 
 ---@param ctx beat.ui.Context
 ---@param height number
+---@param inset number # The navigation bar's height, which the tabs sit above
 ---@return wonderland.StyleBuilder
-local function tabBarStyle(ctx, height)
-	return sty():row():wrel(1.0):h(height):bg(ctx:color("surface"))
+local function tabBarStyle(ctx, height, inset)
+	return sty():row():wrel(1.0):h(height + inset):pad(0, 0, inset, 0):bg(ctx:color("surface"))
 end
 
 ---@class beat.components.chrome.MobileNavProps
@@ -106,7 +108,8 @@ function mobileNav.view(app, props)
 		})
 	end
 
-	local barStyle = cache.of(ctx, tabBarStyle, "mobileNavBar", height) --[[@as wonderland.StyleBuilder]]
+	local _, inset = metrics.insets()
+	local barStyle = cache.of(ctx, tabBarStyle, "mobileNavBar", height, inset) --[[@as wonderland.StyleBuilder]]
 
 	return div():style(barStyle):children(tabs)
 end
