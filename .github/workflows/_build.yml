@@ -56,6 +56,8 @@ jobs:
     env:
       OUTFILE: ${{ matrix.outfile }}
       ARCHIVE: ${{ matrix.archive }}
+      # A release drops the nightly commit suffix from the generated version.
+      BEAT_RELEASE: ${{ inputs.channel == 'release' && '1' || '' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -142,4 +144,93 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           files: packages/beat/${{ matrix.archive }}
+          fail_on_unmatched_files: true
+
+  android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: android-aarch64-apk
+            outfile: beat-android-aarch64.apk
+          - target: android-x86-64-apk
+            outfile: beat-android-x86-64.apk
+
+    env:
+      TARGET: ${{ matrix.target }}
+      OUTFILE: ${{ matrix.outfile }}
+      # A release drops the nightly commit suffix from the generated version.
+      BEAT_RELEASE: ${{ inputs.channel == 'release' && '1' || '' }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: lde-org/setup-lde@v2
+        with:
+          version: nightly
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: |
+            platforms;android-35
+            build-tools;35.0.0
+            ndk;27.2.12479018
+
+      - name: Select Android toolchain
+        run: |
+          ndk="$ANDROID_HOME/ndk/27.2.12479018"
+          test -d "$ndk"
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+          echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+
+      - name: Cache native deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            packages/*/target/curl-sys
+            packages/*/target/deflate-sys
+            packages/*/target/git2-sys
+          key: native-deps-ubuntu-22.04-x64-${{ matrix.target }}
+
+      - name: Install shader compiler
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+
+      - name: Install dependencies
+        run: lde sync -C packages/beat
+
+      - name: Build ${{ matrix.target }}
+        run: lde compile -C packages/beat --target "$TARGET" --outfile "$OUTFILE"
+
+      - name: Upload nightly release
+        if: inputs.channel == 'nightly'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          overwrite_files: true
+          body: |
+            Automated nightly build from `${{ github.ref_name }}`.
+            Commit: `${{ github.sha }}`
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          files: packages/beat/${{ matrix.outfile }}
+          fail_on_unmatched_files: true
+
+      - name: Upload release asset
+        if: inputs.channel == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: packages/beat/${{ matrix.outfile }}
           fail_on_unmatched_files: true

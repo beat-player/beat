@@ -6,6 +6,7 @@ local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local volume = require("beat.app.components.volume")
 local metrics = require("beat.app.components.helpers.metrics")
+local version = require("beat.version")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -430,7 +431,7 @@ function settings.view(app, page, window)
 		{ pluginsRow },
 		pluginsHeight
 	)
-	sections[#sections + 1] = section("About", "beat 0.1 · local files only · wonderland + treble · Ionicons", { githubRow }, aboutHeight)
+	sections[#sections + 1] = section("About", "beat " .. version .. " · local files only · wonderland + treble · Ionicons", { githubRow }, aboutHeight)
 
 	local children = { text("Settings"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))) }
 	for _, built in ipairs(sections) do children[#children + 1] = built end
