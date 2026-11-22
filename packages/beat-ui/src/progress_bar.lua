@@ -2,6 +2,7 @@
 -- gives the moving band a job of unknown length uses. The value is clamped to 0..1, so a caller
 -- cannot draw a fill past either end of the track.
 local wonderland = require("wonderland")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 local time = wonderland.time
@@ -24,6 +25,22 @@ end
 ---@field height number? # Default px(4)
 ---@field tone string? # A theme colour token; default "accent"
 
+--- The track is a height and a width; what is drawn in it changes with the value, which is what
+--- the canvas is for, but the box around it does not.
+---@param ctx beat.ui.Context
+---@param height number
+---@param width number|string # The width, or "rel"
+---@return wonderland.StyleBuilder
+local function trackStyle(ctx, height, width)
+	local style = sty():h(height):radius(ctx:radius("full"))
+	if type(width) == "number" then
+		style:w(width)
+	else
+		style:wrel(1.0)
+	end
+	return style
+end
+
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.ProgressBarProps
 ---@return wonderland.Element
@@ -33,12 +50,8 @@ function progressBar.view(ctx, props)
 	local moving = fraction == nil and props.indeterminate == true
 	local tone = ctx:color(props.tone or "accent")
 	local track = ctx:color("text", 0.12)
-	local style = sty():h(height):radius(ctx:radius("full"))
-	if props.width ~= nil then
-		style:w(props.width)
-	else
-		style:wrel(1.0)
-	end
+
+	local style = cache.of(ctx, trackStyle, "progressBar", height, props.width or "rel") --[[@as wonderland.StyleBuilder]]
 
 	---@param canvas wonderland.Canvas
 	local function draw(canvas)

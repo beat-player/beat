@@ -4,7 +4,6 @@
 -- when a cover is first requested.
 local fs = require("fs")
 local json = require("json")
-local path = require("path")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Log = require("beat.log")
@@ -75,64 +74,66 @@ function LibraryCache.save(library)
 	return true
 end
 
+--- A field of a decoded value, or nil when the document does not have it. `json.Value:get` raises
+--- for a missing key unless it is given a default, and a default of nil means "no default".
+local MISSING = {}
+
+---@param value json.Value
+---@param key string
+---@return any
+local function field(value, key)
+	local got = value:get(key, MISSING)
+	if got == MISSING then return nil end
+	---@cast got json.Value
+	return got:val()
+end
+
+--- The library a decoded cache says, or nothing for one written for another root or version.
+---@param decoded json.Value
 ---@param root string
 ---@return beat.Library?
-function LibraryCache.load(root)
-	local bytes = fs.read(cacheFile())
-	if bytes == nil then return nil end
-
-	local ok, decoded = pcall(|| -> json.decode(bytes):unpack())
-
-	if not ok then
-		Log.write("error", "library cache could not be read: " .. tostring(decoded))
+local function read(decoded, root)
+	if decoded:type() ~= "object" or field(decoded, "version") ~= VERSION or field(decoded, "root") ~= root then
 		return nil
 	end
 
-	if type(decoded) ~= "table" or decoded.version ~= VERSION or decoded.root ~= root or type(decoded.tracks) ~= "table" then
-		return nil
-	end
+	local tracks = decoded:get("tracks", MISSING)
+	if tracks == MISSING then return nil end
+	---@cast tracks json.Value
+	if not (tracks:is("array") or tracks:is("object")) then return nil end
 
 	local library = Library.new(root)
-	for _, item in ipairs(decoded.tracks) do
-		if type(item) ~= "table" or type(item.path) ~= "string" then return nil end
-
-		local dir = path.dirname(item.path)
-		local name = path.basename(item.path)
-		local ext = name:match("%.([^%.]+)$") or ""
-		local info = {
-			format = item.format or "unknown",
-			sampleRate = item.sampleRate or 0,
-			channels = item.channels or 0,
-			duration = item.duration or 0,
-			hasPicture = item.hasPicture == true,
-			fingerprint = type(item.fingerprint) == "string" and item.fingerprint or nil,
-			tags = {
-				title = item.title,
-				artist = item.artist,
-				album = item.album,
-				albumArtist = item.albumArtist,
-				track = item.number,
-				disc = item.disc,
-				date = item.year ? tostring(item.year) : nil,
-				genre = item.genre
-			}
-		}
-		library:add(
-			info,
-			{
-				path = item.path,
-				dir = dir,
-				name = name,
-				ext = ext,
-				modifyTime = item.modified,
-				key = type(item.key) == "string" and item.key or nil
-			},
-			item.coverPath,
-			item.coverCache
-		)
+	for _, item in tracks:children() do
+		if item == nil or not item:is("object") then return nil end
+		local record = item:unpack()
+		if type(record.path) ~= "string" then return nil end
+		library:addCached(record)
 	end
 	library:finish()
 
+	return library
+end
+
+--- Reads the cache back into a library. The file is parsed by yyjson outside the Lua heap, and
+--- each record is unpacked one at a time, so the read never holds a full Lua copy of the
+--- decoded document and the library at once, and only the library outlives the read. The parsed
+--- document is freed as soon as the records are in: left to its finalizer it is several MiB of
+--- the process held until the collector happens to come round to it.
+---@param root string
+---@return beat.Library?
+function LibraryCache.load(root)
+	local file = cacheFile()
+	if not fs.isfile(file) then return nil end
+
+	local ok, document = pcall(json.Document.open, file)
+	if not ok then
+		Log.write("error", "library cache could not be read: " .. tostring(document))
+		return nil
+	end
+
+	---@cast document json.Document
+	local library = read(document:root(), root)
+	document:free()
 	return library
 end
 

@@ -2,6 +2,7 @@
 -- active fill is for the entry the app is already showing, so a navigation row can say where the
 -- person is without a second component.
 local wonderland = require("wonderland")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -18,25 +19,65 @@ local listRow = {}
 ---@field active boolean? # Draws the current-destination fill
 ---@field radius string? # A radius name; default "sm"
 
+---@class beat.ui.ListRowStyles
+---@field base wonderland.StyleBuilder
+---@field hover wonderland.StyleBuilder
+
+---@param ctx beat.ui.Context
+---@param height number
+---@param padding number
+---@param radiusName string
+---@param active boolean
+---@param width number|string # The width, or "rel" for a share of the parent
+---@param gap number|string # The gap, or "none"
+---@param justify string # The justification, or "-"
+---@return beat.ui.ListRowStyles
+local function listRowStyles(ctx, height, padding, radiusName, active, width, gap, justify)
+	local radius = ctx:radius(radiusName)
+	local base = sty():row():h(height):pad(0, padding, 0, padding):radius(radius):align("center")
+	local hover = sty():row():h(height):pad(0, padding, 0, padding):radius(radius):align("center")
+	if type(width) == "number" then
+		base:w(width)
+		hover:w(width)
+	else
+		base:wrel(1.0)
+		hover:wrel(1.0)
+	end
+	if type(gap) == "number" then
+		base:gap(gap)
+		hover:gap(gap)
+	end
+	if justify ~= "-" then
+		base:justify(justify --[[@as "start"|"center"|"end"|"space-between"|"space-around"]] )
+		hover:justify(justify --[[@as "start"|"center"|"end"|"space-between"|"space-around"]] )
+	end
+	if active then base:bg(ctx:color("elevated")) end
+	hover:bg(ctx:color("hover"))
+	return { base = base, hover = hover }
+end
+
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.ListRowProps
 ---@return wonderland.Element
 function listRow.view(ctx, props)
 	local padding = props.padding or ctx:px(10)
 
-	local function style(fill)
-		local value = sty()
-			:row():h(props.height):pad(0, padding, 0, padding):radius(ctx:radius(props.radius or "sm")):align("center")
-		if props.width ~= nil then value:w(props.width) else value:wrel(1.0) end
-		if props.gap ~= nil then value:gap(props.gap) end
-		if props.justify ~= nil then value:justify(props.justify) end
-		if fill ~= nil then value:bg(fill) end
-		return value
-	end
+	-- Every list on the screen -- the sidebar, a menu, a picker -- draws rows of one or two heights,
+	-- so the base and the hover of each combination are made once and handed to every frame.
+	local styles = cache.of(
+		ctx,
+		listRowStyles,
+		"listRow",
+		props.height,
+		padding,
+		props.radius or "sm",
+		props.active == true,
+		props.width or "rel",
+		props.gap or "none",
+		props.justify or "-"
+	) --[[@as beat.ui.ListRowStyles]]
 
-	local row = div()
-		:style(style(props.active and ctx:color("elevated") or nil))
-		:hover(style(ctx:color("hover")))
+	local row = div():style(styles.base):hover(styles.hover)
 	if props.onClick ~= nil then row:onClick(props.onClick) end
 	return row:children(props.children or {})
 end

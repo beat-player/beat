@@ -11,12 +11,12 @@
 ---@field needs string[]? # Services, or provided values, this one is made with
 ---@field on table<string, beat.Handler>? # The message types it answers, each with its handler; each type has one owner
 ---@field new fun(...): beat.ServiceInstance? # The instance: its state and its methods
----@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?)? # For a service that keeps none of its state on the instance
+---@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?, boolean?)? # For a service that keeps none of its state on the instance
 
 --- What a service's `new` returns. Every field past the state is optional: a service takes only
 --- the calls it has something to do for.
 ---@class beat.ServiceInstance
----@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?)? # Called every tick, after everything it needs
+---@field step (fun(self: beat.ServiceInstance, now: number): boolean?, boolean?, boolean?)? # Called every tick, after everything it needs: whether the screen must be built again, whether to come back at the frame rate, and whether only what canvases draw moved (a repaint, no rebuild)
 ---@field flush (fun(self: beat.ServiceInstance))? # Writes anything deferred before the app goes
 ---@field close (fun(self: beat.ServiceInstance))? # The app is being set up again
 

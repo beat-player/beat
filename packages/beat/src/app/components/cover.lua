@@ -12,6 +12,64 @@ local cover = {}
 ---@field glow boolean? # A soft halo in the picture's dominant colour
 ---@field sheen boolean? # Lightens under the pointer, for a cover that opens something
 
+---@class beat.components.CoverStyles
+---@field placeholder wonderland.StyleBuilder
+---@field initial wonderland.StyleBuilder
+---@field sheen wonderland.StyleBuilder
+---@field sheenHover wonderland.StyleBuilder
+---@field images table<wonderland.Asset, wonderland.StyleBuilder> # weak keys: released covers fall out
+
+--- The styles one box of a given size and corner radius draws with, made once per theme and mix
+--- step. A cover is drawn for every album a page lists, every frame, so building them again per
+--- frame is most of what the component costs. A picture's own style is kept beside them, keyed by
+--- the asset: the texture it names is the only thing about it that is not the size and the radius.
+---@param theme beat.Theme
+---@param size number
+---@param radius number
+---@return beat.components.CoverStyles
+local function stylesFor(theme, size, radius)
+	local cache = theme:cache()
+	---@type table<number, table<number, beat.components.CoverStyles>>?
+	local bySize = cache.coverStyles
+	if bySize == nil then
+		bySize = {}
+		cache.coverStyles = bySize
+	end
+	---@type table<number, beat.components.CoverStyles>?
+	local byRadius = bySize[size]
+	if byRadius == nil then
+		byRadius = {}
+		bySize[size] = byRadius
+	end
+	---@type beat.components.CoverStyles?
+	local styles = byRadius[radius]
+	if styles ~= nil then return styles end
+
+	styles = {
+		placeholder = sty():size(size, size):radius(radius):align("center"):justify("center"):bg(theme:color("elevated")),
+		initial = theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold"):fg(theme:color("muted", 0.8)),
+		sheen = sty():size(size, size):radius(radius):offset(0, 0),
+		sheenHover = sty():size(size, size):radius(radius):offset(0, 0):bg(theme:color("sheen", 0.14)),
+		images = setmetatable({}, { __mode = "k" })
+	}
+	byRadius[radius] = styles
+
+	return styles
+end
+
+---@param styles beat.components.CoverStyles
+---@param size number
+---@param radius number
+---@param asset wonderland.Asset
+local function imageStyle(styles, size, radius, asset)
+	local style = styles.images[asset]
+	if style == nil then
+		style = sty():size(size, size):radius(radius):image(asset.texture, asset.uv)
+		styles.images[asset] = style
+	end
+	return style
+end
+
 ---@param app beat.App
 ---@param props beat.components.CoverProps
 ---@return wonderland.Element
@@ -23,24 +81,25 @@ function cover.view(app, props)
 	-- fill in as albums appear instead of waiting for the scan to finish.
 	local asset = app.services.covers:request(album, size)
 	local radius = props.radius or 8
-	local style = sty():size(size, size):radius(radius)
+	local styles = stylesFor(theme, size, radius)
 
 	-- A picture is drawn as white times its texture, and white is as bright as a colour goes, so a
 	-- brightness on the card cannot lift the art. A veil of light laid over it can. It is a box of
 	-- its own because a hover belongs to the box the pointer is in.
 	local sheen = nil
 	if props.sheen then
-		sheen = div()
-			:style(sty():size(size, size):radius(radius):offset(0, 0))
-			:hover(sty():size(size, size):radius(radius):offset(0, 0):bg(theme:color("sheen", 0.14)))
+		sheen = div():style(styles.sheen):hover(styles.sheenHover)
 	end
 
 	if props.glow then
 		-- The dominant colour is known once the picture has been decoded into the cache. On the
 		-- first frame the cover is a placeholder, so the halo appears with the art.
 		local colour = app.services.covers:colourOf(album)
-		if colour ~= nil then
+		if colour ~= nil and asset ~= nil then
+			-- A halo is the one thing a cover's style cannot be shared with: it names this
+			-- album's colour, and a hero is the only place a cover wears one anyway.
 			local alpha = 0x66
+			local style = sty():size(size, size):radius(radius):image(asset.texture, asset.uv)
 			style:shadow(
 				0,
 				0,
@@ -53,24 +112,16 @@ function cover.view(app, props)
 					alpha
 				)
 			)
+
+			return div():style(style):children({ sheen })
 		end
 	end
 
 	if asset ~= nil then
-		return div():style(style:image(asset.texture, asset.uv)):children({ sheen })
+		return div():style(imageStyle(styles, size, radius, asset)):children({ sheen })
 	end
 
-	local initial = album.title:sub(1, 1):upper()
-
-	return div()
-		:style(style:align("center"):justify("center"):bg(theme:color("elevated")))
-		:children(
-			{
-				text(initial)
-					:style(theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold"):fg(theme:color("muted", 0.8))),
-				sheen
-			}
-		)
+	return div():style(styles.placeholder):children({ text(album.title:sub(1, 1):upper()):style(styles.initial), sheen })
 end
 
 return cover

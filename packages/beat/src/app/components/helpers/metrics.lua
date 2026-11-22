@@ -1,6 +1,62 @@
 -- The sizes the screen is cut into: the phone breakpoint, the gutters, the shell's bars and the
 -- room a page has between them. Pure functions of the app's theme, settings and the window.
+--
+-- A frame asks for the same width a dozen times -- the shell, the top bar, the page, each component
+-- that sizes itself from the content box -- and the answer only changes when the window, the theme
+-- or the rail's own settings do. What is worked out is kept against those, so the arithmetic is
+-- done once per window rather than once per question.
 local metrics = {}
+
+---@class beat.components.metrics.Sizes
+---@field window number?
+---@field theme beat.Theme
+---@field collapsed boolean?
+---@field settingWidth number
+---@field mobile boolean
+---@field pad number
+---@field sidebar number
+---@field content number
+---@field topbar number
+
+---@type table<beat.App, beat.components.metrics.Sizes>
+local sizes = setmetatable({}, { __mode = "k" })
+
+--- What the app's settings and the window come to, worked out when one of them changes: the same
+--- width is asked for a dozen times a frame.
+---@param app beat.App
+---@param width number?
+---@return beat.components.metrics.Sizes
+local function sizesFor(app, width)
+	local values = app.services.settings.values
+	local theme = app.services.appearance.theme
+	local memo = sizes[app]
+	if memo == nil or memo.window ~= width or memo.theme ~= theme or memo.collapsed ~= values.sidebarCollapsed or memo.settingWidth ~= values.sidebarWidth then
+		local mobile = width ~= nil and width < theme:px(760)
+		local sidebar = 0
+		if width ~= nil and not mobile then
+			if values.sidebarCollapsed or width < 1040 then
+				sidebar = theme:px(76)
+			else
+				sidebar = theme:px(values.sidebarWidth)
+			end
+		end
+		local pad = mobile and theme:space(16) or theme:space(32)
+		memo = {
+			window = width,
+			theme = theme,
+			collapsed = values.sidebarCollapsed,
+			settingWidth = values.sidebarWidth,
+			mobile = mobile,
+			pad = pad,
+			sidebar = sidebar,
+			content = width ~= nil and (width - sidebar - pad * 2 - theme:px(8)) or 0,
+			topbar = theme:px(mobile and 56 or 64)
+		}
+		sizes[app] = memo
+	end
+
+	return memo --[[@as beat.components.metrics.Sizes]]
+end
 
 --- The phone breakpoint. The 960×640 desktop still uses the icon rail; a phone gets the bottom
 --- navigation and a full-width page.
@@ -8,24 +64,21 @@ local metrics = {}
 ---@param width number
 ---@return boolean
 function metrics.mobile(app, width)
-	return width < app.services.appearance.theme:px(760)
+	return sizesFor(app, width).mobile
 end
 
 ---@param app beat.App
 ---@param width number?
 ---@return number
 function metrics.pad(app, width)
-	if width ~= nil and metrics.mobile(app, width) then return app.services.appearance.theme:space(16) end
-	return app.services.appearance.theme:space(32)
+	return sizesFor(app, width).pad
 end
 
 ---@param app beat.App
 ---@param width number
 ---@return number
 function metrics.sidebarWidth(app, width)
-	if metrics.mobile(app, width) then return 0 end
-	if app.services.settings.values.sidebarCollapsed or width < 1040 then return app.services.appearance.theme:px(76) end
-	return app.services.appearance.theme:px(app.services.settings.values.sidebarWidth)
+	return sizesFor(app, width).sidebar
 end
 
 --- The room a page has inside the body: the shell, both paddings, and the scroll bar's strip.
@@ -33,14 +86,14 @@ end
 ---@param width number
 ---@return number
 function metrics.contentWidth(app, width)
-	return width - metrics.sidebarWidth(app, width) - metrics.pad(app, width) * 2 - app.services.appearance.theme:px(8)
+	return sizesFor(app, width).content
 end
 
 ---@param app beat.App
 ---@param width number
 ---@return number
 function metrics.topbarHeight(app, width)
-	return (app.services.appearance.theme:px(metrics.mobile(app, width) ? 56 : 64))
+	return sizesFor(app, width).topbar
 end
 
 ---@param app beat.App
@@ -48,7 +101,7 @@ end
 ---@return number
 function metrics.bottomHeight(app, width)
 	local theme = app.services.appearance.theme
-	if metrics.mobile(app, width) then
+	if sizesFor(app, width).mobile then
 		local player = (app.services.playback:current()) ~= nil ? (theme:px(64)) : 0
 		return player + theme:px(58)
 	end

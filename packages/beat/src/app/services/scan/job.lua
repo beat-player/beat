@@ -9,11 +9,11 @@ local json = require("json")
 local Log = require("beat.log")
 local workerProcess = require("beat.workers.process")
 
--- How much of the worker's output one tick may read, and how many decoded tracks may wait.
--- A scan can write a whole library in a fraction of a second; reading it whole would hold every
--- decoded event at once. The queue is drained `limit` at a time, so it only refills when it is
--- nearly empty.
-local READ_CHUNK = 32 * 1024
+-- How much of the worker's output one read may take, and how many decoded tracks may wait. A scan
+-- can write a whole library in a fraction of a second; reading it whole would hold every decoded
+-- event at once, and a call that decoded a megabyte would hold a frame for as long as it took. A
+-- chunk is small enough that one poll stays a few milliseconds on a fast local scan.
+local READ_CHUNK = 64 * 1024
 local QUEUE_LIMIT = 256
 
 local ScanJob = {}
@@ -83,6 +83,14 @@ function ScanJob.start(root)
 	return job
 end
 
+--- A worker line as the Lua table the app reads. A function rather than a closure per line: this
+--- is the hot loop of a scan, and a new closure for every track is allocation and a trace abort.
+---@param line string
+---@return table?
+local function decodeEvent(line)
+	return json.decode(line):unpack()
+end
+
 --- Reads what the worker wrote since the last poll, keeping a partial last line for the next one.
 ---@param self beat.ScanJob
 ---@return boolean more # Whether there may be output left: something was read, or the queue is full
@@ -100,15 +108,20 @@ function ScanJob:read()
 	if data == "" then return false end
 
 	self.offset += #data
-	self.buffer ..= data
+	-- One pass over the new bytes: the line is cut out and the rest of the buffer is copied once at
+	-- the end, rather than a copy of everything left per line, which made a full library quadratic.
+	local buffer = self.buffer .. data
+	local cursor = 1
 
 	while true do
-		local line, rest = self.buffer:match("^(.-)\r?\n(.*)$")
-		if line == nil then break end
-		self.buffer = rest
+		local stop = buffer:find("\n", cursor, true)
+		if stop == nil then break end
+		local line = buffer:sub(cursor, stop - 1)
+		cursor = stop + 1
+		if #line > 0 and line:byte(-1) == 13 then line = line:sub(1, -2) end
 
 		if line ~= "" then
-			local ok, event = pcall(|| -> json.decode(line):unpack())
+			local ok, event = pcall(decodeEvent, line)
 			if not ok then
 				self.decodeErrors += 1
 				if self.decodeErrors <= 3 then
@@ -142,6 +155,8 @@ function ScanJob:read()
 			end
 		end
 	end
+
+	self.buffer = cursor <= #buffer and buffer:sub(cursor) or ""
 	return true
 end
 
@@ -210,6 +225,9 @@ function ScanJob:hasPending()
 	return #self.queued > 0
 end
 
+--- Asks the worker to stop: the cancel file is what it reads between files, and the coordinator is
+--- killed at once rather than waited for. Its inspectors notice that their parent is gone and stop
+--- on their own; see `beat.workers.parent`.
 ---@param self beat.ScanJob
 ---@return boolean
 function ScanJob:cancel()

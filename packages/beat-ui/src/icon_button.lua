@@ -3,6 +3,7 @@
 -- library's view toggle) while keeping the same hit area and hover.
 local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -14,6 +15,23 @@ local iconButton = {}
 ---@field size number # The hit area, and the box the glyph sits in
 ---@field onClick any # The message a click sends
 ---@field active boolean? # Draws the glyph in the text colour rather than muted
+
+---@class beat.ui.IconButtonStyles
+---@field base wonderland.StyleBuilder
+---@field hover wonderland.StyleBuilder
+
+--- The hit area is a size and the theme's full radius, and the hover only fills it: one record per
+--- size is every icon button on the screen.
+---@param ctx beat.ui.Context
+---@param size number
+---@return beat.ui.IconButtonStyles
+local function iconButtonStyles(ctx, size)
+	local radius = ctx:radius("full")
+	return {
+		base = sty():size(size, size):radius(radius):align("center"):justify("center"),
+		hover = sty():size(size, size):radius(radius):bg(ctx:color("hover")):align("center"):justify("center")
+	}
+end
 
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.IconButtonProps
@@ -27,13 +45,9 @@ function iconButton.view(ctx, props)
 		content = icon.view(ctx, { name = name, size = glyphSize, colour = colour })
 	end
 
-	return div()
-		:style(sty():size(props.size, props.size):radius(ctx:radius("full")):align("center"):justify("center"))
-		:hover(
-			sty()
-				:size(props.size, props.size):radius(ctx:radius("full")):bg(ctx:color("hover")):align("center"):justify("center")
-		)
-		:onClick(props.onClick):children({ content })
+	local styles = cache.of(ctx, iconButtonStyles, "iconButton", props.size) --[[@as beat.ui.IconButtonStyles]]
+
+	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children({ content })
 end
 
 return { view = iconButton.view }

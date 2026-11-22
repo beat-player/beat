@@ -5,8 +5,21 @@ local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
 local metrics = require("beat.app.components.helpers.metrics")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
+
+---@class beat.LibraryRowStyles
+---@field row wonderland.StyleBuilder
+---@field rowHover wonderland.StyleBuilder
+---@field coverSize number
+---@field coverRadius number
+---@field names wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field artist wonderland.StyleBuilder
+---@field count wonderland.StyleBuilder
+---@field duration wonderland.StyleBuilder
+---@field none wonderland.StyleBuilder
 
 ---@type beat.PageSurface
 local libraryPage = {}
@@ -174,42 +187,42 @@ function libraryPage.view(app, page, window)
 	if top > 0 then children[#children + 1] = div():style(sty():h(top)) end
 
 	if list then
+		local s = styles.of(theme, mobile and "libraryRowsMobile" or "libraryRows", content) --[[@as beat.LibraryRowStyles]]
+		if s.row == nil then
+			local function row()
+				return sty():row():w(content):h(rowHeight):gap(theme:px(14)):align("center"):radius(theme:radius("sm"))
+			end
+			s.row = row()
+			s.rowHover = row():bg(theme:color("hover"))
+			s.coverSize = theme:px(48)
+			s.coverRadius = theme:radius("sm")
+			s.names = sty():column():w(content - (theme:px(mobile ? 80 : 190)))
+			s.title = theme:s():wrel(1.0):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()
+			s.artist = theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+			s.count = theme:s():text(theme:type("sm")):fg(theme:color("muted"))
+			s.duration = theme:s():text(theme:type("sm")):fg(theme:color("faint"))
+			s.none = sty():w(0):h(0)
+		end
 		for at = first, last do
 			local album = albums[at]
+			local actions = albumCard.actions(album)
 			children[#children + 1] = div()
-				:style(sty():row():w(content):h(rowHeight):gap(theme:px(14)):align("center"):radius(theme:radius("sm")))
-				:hover(
-					sty()
-						:row():w(content):h(rowHeight):gap(theme:px(14)):align("center"):radius(theme:radius("sm"))
-						:bg(theme:color("hover"))
-				):onClick({ type = "navigate", page = { kind = "album", id = album.id } })
-				:onContextMenu(
-					|_, _, _, _, _, windowX, windowY| -> {
-						type = "open",
-						overlay = "menu",
-						menu = "album",
-						id = album.id,
-						x = windowX,
-						y = windowY
-					}
-				)
+				:style(s.row)
+				:hover(s.rowHover):onClick(actions.open)
+				:onContextMenu(actions.menu)
 				:children(
 					{
-						cover.view(app, { album = album, size = theme:px(48), radius = theme:radius("sm") }),
+						cover.view(app, { album = album, size = s.coverSize, radius = s.coverRadius }),
 						div()
-							:style(sty():column():w(content - (theme:px(mobile ? 80 : 190))))
+							:style(s.names)
 							:children(
 								{
-									text(album.title)
-										:style(theme:s():wrel(1.0):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-									text(album.artist .. (album.year and (" · " .. album.year) or ""))
-										:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+									text(album.title):style(s.title),
+									text(album.artist .. (album.year and (" · " .. album.year) or "")):style(s.artist)
 								}
 							),
-						(not mobile) and text(format.count(#album.tracks, "track"))
-							:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))) or div():style(sty():w(0):h(0)),
-						(not mobile) and text(format.duration(album.duration))
-							:style(theme:s():text(theme:type("sm")):fg(theme:color("faint"))) or div():style(sty():w(0):h(0))
+						(not mobile) and text(format.count(#album.tracks, "track")):style(s.count) or div():style(s.none),
+						(not mobile) and text(format.duration(album.duration)):style(s.duration) or div():style(s.none)
 					}
 				)
 		end
@@ -222,8 +235,6 @@ function libraryPage.view(app, page, window)
 				{
 					album = album,
 					width = cardWidth,
-					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-					onPlay = { type = "playAlbum", id = album.id },
 					ui = ctx
 				}
 			)

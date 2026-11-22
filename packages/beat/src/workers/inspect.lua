@@ -6,6 +6,7 @@
 -- the shard's paths in the environment.
 local env = require("env")
 local fs = require("fs")
+local parent = require("beat.workers.parent")
 local json = require("json")
 local names = require("beat.music.names")
 local artwork = require("beat.music.artwork")
@@ -19,9 +20,14 @@ local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local cacheRoot = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 
 local file = assert(io.open(outputPath, "wb"))
+
+-- A track line is the JSON the app reads: the coordinator forwards it untouched, so the only thing
+-- written for one is the encoded event and a newline. Everything else this shard has to say --
+-- progress, done, an error -- is a status line, marked with a leading 1, a byte JSON never starts
+-- with, so the two need no second file and no second pipe.
 ---@param value beat.MessageFields
-local function emit(value)
-	file:write(json.encode(value), "\n")
+local function emitStatus(value)
+	file:write("\1", json.encode(value), "\n")
 	file:flush()
 end
 
@@ -51,6 +57,7 @@ local PROGRESS_SECONDS = 0.25
 
 local cached = {}
 local triedFolder = {}
+local usedCovers = {}
 local inspected = 0
 local tracks = 0
 local skipped = 0
@@ -110,6 +117,7 @@ local function inspect(entry)
 
 		if coverCache ~= nil then cached[key] = coverCache end
 	end
+	if coverCache ~= nil then usedCovers[coverCache] = true end
 
 	dropUnsendableTags(info)
 	local sent, encoded = pcall(
@@ -129,10 +137,19 @@ end
 local started = time.now()
 local lastProgress = started
 
+local orphaned = false
+
 local ok, err = pcall(function()
 	for line in assert(io.lines(manifestPath)) do
+		-- The coordinator is gone -- the window closed or was killed -- so no reader wants this
+		-- shard and its parent cannot stop it any more. The cancel file is what a cancel asks for;
+		-- this is what the process ending looks like from here.
+		if parent.gone() then
+			orphaned = true
+			break
+		end
 		if fs.isfile(cancelFile) then
-			emit({ type = "cancelled" })
+			emitStatus({ type = "cancelled" })
 			return
 		end
 
@@ -148,17 +165,21 @@ local ok, err = pcall(function()
 
 		local now = time.now()
 		if inspected % PROGRESS_EVERY == 0 or now - lastProgress >= PROGRESS_SECONDS then
-			emit({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped, current = current ~= nil ? clean(current) : nil })
+			emitStatus({ type = "progress", inspected = inspected, tracks = tracks, skipped = skipped, current = current ~= nil ? clean(current) : nil })
 			lastProgress = now
 		end
 	end
 end)
 
-if not ok then
+if orphaned then
+	-- Nothing to say: the process that would read it is gone.
+elseif not ok then
 	Log.write("error", "scan inspector failed on " .. tostring(current) .. ": " .. tostring(err))
-	emit({ type = "error", message = "Could not read " .. clean(current or "a track") .. ": " .. clean(err) })
+	emitStatus({ type = "error", message = "Could not read " .. clean(current or "a track") .. ": " .. clean(err) })
 else
-	emit({ type = "done", inspected = inspected, tracks = tracks, skipped = skipped, errors = errors })
+	local covers = {}
+	for cover in pairs(usedCovers) do covers[#covers + 1] = cover end
+	emitStatus({ type = "done", inspected = inspected, tracks = tracks, skipped = skipped, errors = errors, covers = covers })
 end
 
 file:close()

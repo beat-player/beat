@@ -187,7 +187,10 @@ local Log = require("beat.log")
 ---@field services table<string, beat.Registration>
 ---@field pages table<string, beat.Registration>
 ---@field overlays table<string, beat.Registration>
----@field mods table<string, beat.Mod[]> # By `page:home`, `overlay:queue`, `service:playback`
+---@field modsByField table<string, table<string, beat.Mod[]>> # By `page:home`, `overlay:queue`, `service:playback`
+---@field navCache beat.NavEntry[]? # The sidebar's entries, sorted, until a registration or a plugin changes
+---@field settingsCache beat.PluginSettings[]? # The settings cards, until a registration or a plugin changes
+---@field disableFn fun(plugin: beat.Plugin, reason: any) # What `applyMod` is handed, made once
 ---@field handled table<string, beat.Registration> # The service that answers each message type
 ---@field actionsList beat.ActionEntry[] # In registration order; sorted when a menu asks
 ---@field navList table[] # Sidebar entries in registration order; sorted when a sidebar asks
@@ -206,26 +209,28 @@ local KINDS = { service = "services", page = "pages", overlay = "overlays" }
 ---@param app beat.App
 ---@return beat.Registry
 function Registry.new(app)
-	return setmetatable(
-		{
-			app = app,
-			plugins = {},
-			services = {},
-			pages = {},
-			overlays = {},
-			mods = {},
-			handled = {},
-			actionsList = {},
-			navList = {},
-			settingsList = {},
-			settingsByName = {},
-			listeners = {},
-			interceptors = {},
-			reports = {},
-			toasts = nil
-		},
-		Registry
-	)
+	local registry
+	registry = setmetatable({
+		app = app,
+		plugins = {},
+		services = {},
+		pages = {},
+		overlays = {},
+		modsByField = { services = {}, pages = {}, overlays = {} },
+		handled = {},
+		actionsList = {},
+		navList = {},
+		settingsList = {},
+		settingsByName = {},
+		listeners = {},
+		interceptors = {},
+		reports = {},
+		toasts = nil
+	}, Registry)
+	-- The one closure a resolve hands `applyMod`, made here rather than per stored mod of every
+	-- frame: a page or an overlay is looked up while the frame is being built.
+	registry.disableFn = function(plugin, reason) registry:disable(plugin, reason) end
+	return registry
 end
 
 ---@param text string
@@ -263,6 +268,8 @@ function Registry:disable(plugin, err)
 	plugin.disabled = true
 	plugin.state = "switched off"
 	plugin.reason = tostring(err)
+	-- A destination or a settings card of a plugin that is off is not there any more.
+	self.navCache, self.settingsCache = nil, nil
 	self:report("Plugin " .. plugin.name .. " was switched off: " .. tostring(err))
 end
 
@@ -375,7 +382,9 @@ function Registry:addService(name, module, plugin)
 	-- above has made sure every key is a string.
 	---@type string[]
 	local handles = {}
-	for kind in pairs(module.on or {}) do handles[#handles + 1] = kind --[[@as string]] end
+	for kind in pairs(module.on or {}) do
+		handles[#handles + 1] = kind --[[@as string]]
+	end
 	table.sort(handles)
 	for _, kind in ipairs(handles) do
 		namespace(plugin, "message type", kind)
@@ -494,11 +503,13 @@ function Registry:addNav(entry, plugin)
 		index = #self.navList + 1
 	}
 	self.navList[#self.navList + 1] = registration
+	self.navCache = nil
 
 	return function()
 		for at, candidate in ipairs(self.navList) do
 			if candidate == registration then
 				table.remove(self.navList, at)
+				self.navCache = nil
 				return
 			end
 		end
@@ -534,12 +545,14 @@ function Registry:addSettings(definition, plugin)
 	}
 	self.settingsList[#self.settingsList + 1] = entry
 	self.settingsByName[plugin.name] = entry
+	self.settingsCache = nil
 
 	return function()
 		if self.settingsByName[plugin.name] == entry then self.settingsByName[plugin.name] = nil end
 		for at, candidate in ipairs(self.settingsList) do
 			if candidate == entry then
 				table.remove(self.settingsList, at)
+				self.settingsCache = nil
 				return
 			end
 		end
@@ -550,10 +563,14 @@ end
 --- that has been switched off is not there: its hooks are not called any more.
 ---@return beat.PluginSettings[]
 function Registry:settings()
+	local cached = self.settingsCache
+	if cached ~= nil then return cached end
+
 	local list = {}
 	for _, entry in ipairs(self.settingsList) do
 		if not entry.plugin.disabled then list[#list + 1] = entry end
 	end
+	self.settingsCache = list
 	return list
 end
 
@@ -623,10 +640,11 @@ function Registry:addWrap(name, fn, plugin)
 	if self[field][target] == nil then error("nothing is registered as " .. name, 0) end
 
 	local mod = { kind = "wrap", fn = fn, plugin = plugin }
-	local list = self.mods[name]
+	local byName = self.modsByField[field]
+	local list = byName[target]
 	if list == nil then
 		list = {}
-		self.mods[name] = list
+		byName[target] = list
 	end
 	list[#list + 1] = mod
 
@@ -650,10 +668,11 @@ function Registry:addReplace(name, value, plugin)
 	if self[field][target] == nil then error("nothing is registered as " .. name, 0) end
 
 	local mod = { kind = "replace", value = value, plugin = plugin }
-	local list = self.mods[name]
+	local byName = self.modsByField[field]
+	local list = byName[target]
 	if list == nil then
 		list = {}
-		self.mods[name] = list
+		byName[target] = list
 	end
 	list[#list + 1] = mod
 
@@ -694,11 +713,14 @@ local function resolve(self, field, name)
 	local registration = self[field][name]
 	if registration == nil then return nil end
 	local value = registration.value
-	local list = self.mods[field == "services" and ("service:" .. name) or field == "pages" and ("page:" .. name) or ("overlay:" .. name)]
+	-- The mods are kept by field and target, so a lookup a frame makes does not build `page:home`
+	-- from a string every time.
+	local list = self.modsByField[field][name]
 	if list ~= nil then
+		local disable = self.disableFn
 		for _, mod in ipairs(list) do
 			if not mod.plugin.disabled then
-				value = applyMod(mod, value, function(plugin, reason) self:disable(plugin, reason) end, name)
+				value = applyMod(mod, value, disable, name)
 			end
 		end
 	end
@@ -726,6 +748,16 @@ function Registry:serviceModules()
 	local services = {}
 	for name in pairs(self.services) do services[name] = resolve(self, "services", name) end
 	return services
+end
+
+--- One entry ahead of another: by the order it asked for, then by when it was registered. It is
+--- one function for every list a registry sorts, so a menu opening does not make a comparator.
+---@param a { order: number, index: number }
+---@param b { order: number, index: number }
+---@return boolean
+local function byOrder(a, b)
+	if a.order ~= b.order then return a.order < b.order end
+	return a.index < b.index
 end
 
 --- The entries a menu shows, in order. An entry whose plugin has been switched off, or whose
@@ -768,16 +800,13 @@ function Registry:actions(menu, ctx)
 					end
 				end
 				if type(message) == "table" then
-					shown[#shown + 1] = { entry = entry, message = message }
+					shown[#shown + 1] = { entry = entry, message = message, order = entry.order, index = entry.index }
 				end
 			end
 		end
 	end
 
-	table.sort(shown, function(a, b)
-		if a.entry.order ~= b.entry.order then return a.entry.order < b.entry.order end
-		return a.entry.index < b.entry.index
-	end)
+	table.sort(shown, byOrder)
 
 	local actions = {}
 	for at, item in ipairs(shown) do
@@ -790,15 +819,64 @@ end
 --- entry whose plugin has been switched off is not there.
 ---@return beat.NavEntry[]
 function Registry:nav()
+	local cached = self.navCache
+	if cached ~= nil then return cached end
+
 	local entries = {}
 	for _, entry in ipairs(self.navList) do
 		if not entry.plugin.disabled then entries[#entries + 1] = entry end
 	end
-	table.sort(entries, function(a, b)
-		if a.order ~= b.order then return a.order < b.order end
-		return a.index < b.index
-	end)
+	table.sort(entries, byOrder)
+	self.navCache = entries
 	return entries
+end
+
+--- The runners for a message's interceptors, from `at` down the list. It is a module-level function
+--- rather than one made per message, so a message with no interceptors costs a table lookup and no
+--- closure of its own.
+---@param self beat.Registry
+---@param list beat.InterceptorEntry[]
+---@param message beat.Message
+---@param app beat.App
+---@param at number
+---@param current beat.Message
+---@return boolean proceed
+---@return beat.Message message
+local function runInterceptors(self, list, message, app, at, current)
+	while at <= #list do
+		local entry = list[at]
+		if entry.plugin.disabled then
+			at += 1
+		else
+			local proceeded, result, delivered = false, true, current
+			---@param next beat.Message?
+			---@return boolean proceed
+			---@return beat.Message message
+			local function proceed(next)
+				if proceeded then return result end
+				proceeded = true
+				result, delivered = runInterceptors(self, list, message, app, at + 1, next or current)
+				return result
+			end
+
+			if entry.plugin.builtin then
+				entry.fn(current, app, proceed)
+			else
+				local ok, err = pcall(entry.fn, current, app, proceed)
+				if not ok then
+					self:disable(entry.plugin, err)
+					if not proceeded then
+						proceeded = true
+						result, delivered = runInterceptors(self, list, message, app, at + 1, current)
+					end
+				end
+			end
+
+			if not proceeded then return false, current end
+			return result, delivered
+		end
+	end
+	return true, current
 end
 
 --- Runs the interceptors for a message before it is delivered. `continue` is how one passes the
@@ -810,49 +888,7 @@ end
 function Registry:intercept(message, app)
 	local list = self.interceptors[message.type]
 	if list == nil then return true, message end
-
-	---@param at number
-	---@param current beat.Message
-	---@return boolean proceed
-	---@return beat.Message message
-	local function run(at, current)
-		while at <= #list do
-			local entry = list[at]
-			if entry.plugin.disabled then
-				at += 1
-			else
-				local proceeded, result, delivered = false, true, current
-				---@param next beat.Message?
-				---@return boolean proceed
-				---@return beat.Message message
-				local function proceed(next)
-					if proceeded then return result end
-					proceeded = true
-					result, delivered = run(at + 1, next or current)
-					return result
-				end
-
-				if entry.plugin.builtin then
-					entry.fn(current, app, proceed)
-				else
-					local ok, err = pcall(entry.fn, current, app, proceed)
-					if not ok then
-						self:disable(entry.plugin, err)
-						if not proceeded then
-							proceeded = true
-							result, delivered = run(at + 1, current)
-						end
-					end
-				end
-
-				if not proceeded then return false, current end
-				return result, delivered
-			end
-		end
-		return true, current
-	end
-
-	return run(1, message)
+	return runInterceptors(self, list, message, app, 1, message)
 end
 
 --- Calls the listeners for a message after it has been delivered.

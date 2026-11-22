@@ -28,20 +28,17 @@ function Spectrum.new()
 	local levels, display, peaks = {}, {}, {}
 	for at = 1, BANDS do levels[at], display[at], peaks[at] = 0, 0, 0 end
 
-	return setmetatable(
-		{
-			real = {},
-			imag = {},
-			window = window,
-			levels = levels,
-			display = display,
-			shown = false,
-			peaks = peaks,
-			top = 0,
-			dirty = false
-		},
-		Spectrum
-	)
+	return setmetatable({
+		real = {},
+		imag = {},
+		window = window,
+		levels = levels,
+		display = display,
+		shown = false,
+		peaks = peaks,
+		top = 0,
+		dirty = false
+	}, Spectrum)
 end
 
 local function reverseBits(value)
@@ -157,17 +154,22 @@ local function bandsInto(real, imag, levels, peaks, spectrum)
 	end
 end
 
---- Computes once per new PCM chunk. Returns whether the levels changed.
+--- Computes once per new PCM chunk. Returns whether the levels changed, and whether the meter is
+--- still easing toward them -- which is what says a frame is worth drawing every tick even after
+--- the audio it was following has stopped.
 ---@param _now number
----@return boolean
+---@return boolean changed
+---@return boolean easing
 function Spectrum:step(_now)
 	local changed = false
+	local easing = false
 
 	if self.dirty then
 		self.dirty = false
 		fft(self.real, self.imag)
 		bandsInto(self.real, self.imag, self.levels, self.peaks, self)
 		changed = true
+		easing = true
 	end
 
 	-- Audio is decoded in the player's staging buffer, which is deliberately larger than a
@@ -183,12 +185,15 @@ function Spectrum:step(_now)
 			shown += (target - shown) * 0.3
 		end
 
-		if math.abs(shown - self.display[band]) > 0.0005 then changed = true end
+		if math.abs(shown - self.display[band]) > 0.0005 then
+			changed = true
+			easing = true
+		end
 		self.display[band] = shown
 	end
 	self.shown = true
 
-	return changed
+	return changed, easing
 end
 
 --- The smoothed levels, low frequency first.

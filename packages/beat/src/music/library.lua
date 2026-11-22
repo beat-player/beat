@@ -27,8 +27,8 @@ local names = require("beat.music.names")
 ---@field coverPath string? # A picture beside the tracks, when the file holds none
 ---@field coverCache string? # The local downscaled copy the scan worker made
 ---@field modified number # The file's last modification time, in seconds
----@field hash string
 ---@field fingerprint string? # A fingerprint of the audio itself, when the scan can compute one
+---@field searchText string? # Folded title, artist and album, made on the first search
 
 ---@class beat.Album
 ---@field id number
@@ -44,14 +44,23 @@ local names = require("beat.music.names")
 ---@field coverCache string?
 ---@field coverTrack beat.Track?
 ---@field modified number # The newest file in the album, in seconds
----@field hash string
+---@field searchText string? # Folded title and artist, made on the first search
 
 ---@class beat.Artist
 ---@field id number
 ---@field name string
 ---@field albums beat.Album[]
 ---@field tracks beat.Track[]
----@field hash string
+---@field searchText string? # The folded name, made on the first search
+
+--- What one search answered, kept so a query that only adds characters can look in it instead of
+--- the whole library.
+---@class beat.SearchSweep
+---@field needle string # The folded query this answers
+---@field version number # The library version it was computed for
+---@field albums beat.Album[]
+---@field artists beat.Artist[]
+---@field tracks beat.Track[]
 
 ---@class beat.Library
 ---@field root string
@@ -65,6 +74,10 @@ local names = require("beat.music.names")
 ---@field albumByKey table<string, beat.Album>
 ---@field artistByName table<string, beat.Artist>
 ---@field strings table<string, string> # Repeated tag values, one copy each
+---@field sweep beat.SearchSweep? # The last search, for a longer query to narrow
+---@field nextTrackId number # The id the next track is given; ids are never reused
+---@field nextAlbumId number
+---@field nextArtistId number
 ---@field version number
 ---@field ready boolean
 local Library = {}
@@ -85,6 +98,7 @@ function Library.new(root)
 		albumByKey = {},
 		artistByName = {},
 		strings = {},
+		sweep = nil,
 		version = 0,
 		ready = false,
 		-- Ids are handed out from counters rather than from the list length: removing the tracks of
@@ -115,6 +129,99 @@ local function intern(self, value)
 	return value
 end
 
+--- Files one track under its album and artist, and puts it in the indexes. What a track is called
+--- is already decided by the caller: `add` from a scan's tags, `addCached` from what a cache wrote
+--- down. Both meet here, because an album and an artist are made the same way however the track
+--- arrived.
+---@param self beat.Library
+---@param track beat.Track
+---@param key string # The album the scan put it in
+---@return beat.Track
+---@return boolean gainedCover # Whether this was the album's first cached cover
+local function place(self, track, key)
+	local album = self.albumByKey[key]
+	local gainedCover = false
+	if album == nil then
+		local albumId = self.nextAlbumId
+		self.nextAlbumId = albumId + 1
+		album = {
+			id = albumId,
+			key = key,
+			title = track.album,
+			artist = track.albumArtist,
+			year = track.year,
+			tracks = {},
+			duration = 0,
+			trackCount = 0,
+			coverPath = track.coverPath,
+			coverCache = track.coverCache,
+			coverTrack = track.hasPicture and track or nil,
+			modified = track.modified
+		}
+
+		self.albums[#self.albums + 1] = album
+		self.albumById[albumId] = album
+		self.albumByKey[key] = album
+		self.recent[#self.recent + 1] = album
+		if album.coverCache ~= nil then gainedCover = true end
+	else
+		if album.coverPath == nil then album.coverPath = track.coverPath end
+		if album.coverCache == nil then
+			album.coverCache = track.coverCache
+			if album.coverCache ~= nil then gainedCover = true end
+		end
+		if album.coverTrack == nil and track.hasPicture then album.coverTrack = track end
+		if album.year == nil then album.year = track.year end
+		if track.modified > album.modified then album.modified = track.modified end
+	end
+
+	album.tracks[#album.tracks + 1] = track
+	track.albumId = album.id
+	album.trackCount += 1
+	album.duration += track.duration
+
+	local artistKey = track.albumArtist
+	local profile = self.artistByName[artistKey]
+	if profile == nil then
+		local artistId = self.nextArtistId
+		self.nextArtistId = artistId + 1
+		profile = { id = artistId, name = artistKey, albums = {}, tracks = {} }
+
+		self.artists[#self.artists + 1] = profile
+		self.artistById[artistId] = profile
+		self.artistByName[artistKey] = profile
+	end
+
+	profile.tracks[#profile.tracks + 1] = track
+	track.artistId = profile.id
+	album.artistId = profile.id
+	if not profile.albums[album.id] then
+		profile.albums[album.id] = album
+	end
+
+	self.tracks[#self.tracks + 1] = track
+	self.trackById[track.id] = track
+	-- A search answered for the tracks as they were, and a new track can only lengthen that answer.
+	self.sweep = nil
+	self.version += 1
+
+	return track, gainedCover
+end
+
+--- The album key is the album artist when the files agree on one, and the album's directory
+--- when they do not: a folder of tracks by different artists is still one compilation. A scan
+--- that already decided which album a file belongs to hands that key over: what a file was
+--- grouped into is not always something its own tags say twice, and a cache replaying the tags
+--- alone would group it again into an album of its own.
+---@param tags table<string, any>?
+---@param dir string
+---@param key string?
+---@return string
+local function albumKeyOf(tags, dir, key)
+	if key ~= nil then return key end
+	return names.albumKey(tags, dir)
+end
+
 --- Adds one inspected file. `entry` is what the scanner found; `cover` is the folder picture, if
 --- one was beside the file.
 ---@param info treble.audio.Inspect
@@ -140,11 +247,8 @@ function Library:add(info, entry, cover, coverCache)
 		number = tonumber(entry.name:match("^%s*(%d+)"))
 	end
 
-	local date = tags.date
-	local disc = tags.disc or 1
 	local id = self.nextTrackId
 	self.nextTrackId = id + 1
-	local duration = info.duration or 0
 
 	---@type beat.Track
 	local track = {
@@ -156,11 +260,11 @@ function Library:add(info, entry, cover, coverCache)
 		albumId = 0,
 		artistId = 0,
 		albumArtist = albumArtist,
-		disc = disc,
+		disc = tags.disc or 1,
 		number = number,
-		year = names.yearOf(date),
+		year = names.yearOf(tags.date),
 		genre = intern(self, tags.genre),
-		duration = duration,
+		duration = info.duration or 0,
 		format = intern(self, info.format) or "",
 		sampleRate = info.sampleRate,
 		channels = info.channels,
@@ -168,83 +272,100 @@ function Library:add(info, entry, cover, coverCache)
 		coverPath = intern(self, cover),
 		coverCache = intern(self, coverCache),
 		modified = entry.modifyTime or 0,
-		hash = names.fold(title .. "\0" .. artist .. "\0" .. albumTitle),
 		fingerprint = info.fingerprint
 	}
 
-	-- The album key is the album artist when the files agree on one, and the album's directory
-	-- when they do not: a folder of tracks by different artists is still one compilation. A scan
-	-- that already decided which album a file belongs to hands that key over: what a file was
-	-- grouped into is not always something its own tags say twice, and a cache replaying the tags
-	-- alone would group it again into an album of its own.
-	local key = entry.key or names.albumKey(tags, entry.dir)
+	return place(self, track, albumKeyOf(tags, entry.dir, entry.key))
+end
 
-	local album = self.albumByKey[key]
-	local gainedCover = false
-	if album == nil then
-		local albumId = self.nextAlbumId
-		self.nextAlbumId = albumId + 1
-		album = {
-			id = albumId,
-			key = key,
-			title = albumTitle,
-			artist = albumArtist,
-			year = track.year,
-			tracks = {},
-			duration = 0,
-			trackCount = 0,
-			coverPath = intern(self, cover),
-			coverCache = intern(self, coverCache),
-			coverTrack = info.hasPicture and track or nil,
-			modified = track.modified,
-			hash = names.fold(albumTitle .. "\0" .. albumArtist)
-		}
+---@param value any
+---@return string?
+local function textOf(value)
+	if type(value) ~= "string" then return nil end
+	return value
+end
 
-		self.albums[#self.albums + 1] = album
-		self.albumById[albumId] = album
-		self.albumByKey[key] = album
-		self.recent[#self.recent + 1] = album
-		if album.coverCache ~= nil then gainedCover = true end
-	else
-		if album.coverPath == nil then album.coverPath = cover end
-		if album.coverCache == nil then
-			album.coverCache = intern(self, coverCache)
-			if album.coverCache ~= nil then gainedCover = true end
+---@param value any
+---@param fallback number?
+---@return number?
+local function numberOf(value, fallback)
+	if type(value) ~= "number" then return fallback end
+	return value
+end
+
+---@param value any
+---@param fallback number
+---@return number
+local function numberOr(value, fallback)
+	if type(value) ~= "number" then return fallback end
+	return value
+end
+
+--- Adds one track a cache wrote down: the values `add` derives from a scan's tags and folder are
+--- already there, so nothing here re-derives a title from a file name or a folder from a path. A
+--- launch reads thousands of these before it draws anything, and the tables and the folded strings
+--- a derivation would make for each were most of the garbage and a third of the time.
+---@param record table # One `packed` record from the cache
+---@return beat.Track
+---@return boolean gainedCover # Whether this was the album's first cached cover
+function Library:addCached(record)
+	local file = record.path
+	assert(type(file) == "string", "a cached track needs its path")
+	local title = textOf(record.title)
+	local artist = intern(self, textOf(record.artist)) or ""
+	local albumTitle = intern(self, textOf(record.album)) or ""
+	local albumArtist = intern(self, textOf(record.albumArtist)) or ""
+	local key = textOf(record.key)
+
+	if title == nil or title == "" or artist == "" or albumTitle == "" or albumArtist == "" or key == nil then
+		-- A record that does not say everything is filled in the way a scan would fill it in, from
+		-- the file's path. What the cache does say is kept; interning a value twice hands back the
+		-- copy already in the library.
+		local dir = path.dirname(file)
+		if title == nil or title == "" then
+			title = names.stripTrackPrefix(names.stripExtension(path.basename(file)))
 		end
-		if album.coverTrack == nil and info.hasPicture then album.coverTrack = track end
-		if album.year == nil then album.year = track.year end
-		if track.modified > album.modified then album.modified = track.modified end
+		local albumFallback = names.parentName(dir)
+		local artistFallback = names.parentName(path.dirname(dir))
+		if artistFallback == "Unknown Album" then artistFallback = "Unknown Artist" end
+		if artist == "" then artist = intern(self, artistFallback) or "" end
+		if albumTitle == "" then albumTitle = intern(self, albumFallback) or "" end
+		if albumArtist == "" then albumArtist = artist end
+		if key == nil then
+			key = names.albumKey({ album = albumTitle, albumArtist = albumArtist }, dir)
+		end
 	end
 
-	album.tracks[#album.tracks + 1] = track
-	track.albumId = album.id
-	album.trackCount += 1
-	album.duration += duration
+	local id = self.nextTrackId
+	self.nextTrackId = id + 1
 
-	local artistKey = albumArtist
-	local profile = self.artistByName[artistKey]
-	if profile == nil then
-		local artistId = self.nextArtistId
-		self.nextArtistId = artistId + 1
-		profile = { id = artistId, name = artistKey, albums = {}, tracks = {}, hash = names.fold(artistKey) }
+	---@type beat.Track
+	local track = {
+		id = id,
+		path = file,
+		title = title,
+		artist = artist,
+		album = albumTitle,
+		albumId = 0,
+		artistId = 0,
+		albumArtist = albumArtist,
+		disc = numberOr(record.disc, 1),
+		number = numberOf(record.number),
+		year = numberOf(record.year),
+		genre = intern(self, textOf(record.genre)),
+		duration = numberOr(record.duration, 0),
+		format = intern(self, textOf(record.format)) or "",
+		sampleRate = numberOr(record.sampleRate, 0),
+		channels = numberOr(record.channels, 0),
+		hasPicture = record.hasPicture == true,
+		coverPath = intern(self, textOf(record.coverPath)),
+		coverCache = intern(self, textOf(record.coverCache)),
+		modified = numberOr(record.modified, 0),
+		fingerprint = textOf(record.fingerprint)
+	}
 
-		self.artists[#self.artists + 1] = profile
-		self.artistById[artistId] = profile
-		self.artistByName[artistKey] = profile
-	end
-
-	profile.tracks[#profile.tracks + 1] = track
-	track.artistId = profile.id
-	album.artistId = profile.id
-	if not profile.albums[album.id] then
-		profile.albums[album.id] = album
-	end
-
-	self.tracks[#self.tracks + 1] = track
-	self.trackById[id] = track
-	self.version += 1
-
-	return track, gainedCover
+	---@cast key string
+	return place(self, track, key)
 end
 
 --- Whether a track's file is inside a folder. Paths from the scan and from a plugin's dialog can
@@ -352,12 +473,19 @@ local function trackOrder(a, b)
 	return a.path < b.path
 end
 
----@param a beat.Album
----@param b beat.Album
-local function albumOrder(a, b)
-	local an, bn = names.fold(a.title), names.fold(b.title)
-	if an ~= bn then return an < bn end
-	return names.fold(a.artist) < names.fold(b.artist)
+--- Folded titles and artists, one entry per album, for a sort to compare instead of folding the
+--- same two names on every comparison. A comparator is called some thousands of times for the
+--- albums of a library, and folding inside it lowers both names each time.
+---@param albums beat.Album[]
+---@return table<beat.Album, string> titles
+---@return table<beat.Album, string> artists
+local function foldedAlbums(albums)
+	local titles, artists = {}, {}
+	for _, album in ipairs(albums) do
+		titles[album] = names.fold(album.title)
+		artists[album] = names.fold(album.artist)
+	end
+	return titles, artists
 end
 
 --- Closes the scan: sorts what was found and computes the values a screen reads in a loop.
@@ -373,24 +501,33 @@ function Library:finish()
 		end
 	end
 
+	local titles, artists = foldedAlbums(self.albums)
+	local function byName(a, b)
+		local at, bt = titles[a], titles[b]
+		if at ~= bt then return at < bt end
+		return artists[a] < artists[b]
+	end
 	local orderedAlbums = {}
 	for _, album in ipairs(self.albums) do orderedAlbums[#orderedAlbums + 1] = album end
-	table.sort(orderedAlbums, albumOrder)
+	table.sort(orderedAlbums, byName)
 	self.albums = orderedAlbums
 
 	local orderedArtists = {}
 	for _, artist in ipairs(self.artists) do
 		local albums = {}
 		for _, album in pairs(artist.albums) do albums[#albums + 1] = album end
-		table.sort(albums, albumOrder)
+		table.sort(albums, byName)
 		artist.albums = albums
 		table.sort(artist.tracks, trackOrder)
 		orderedArtists[#orderedArtists + 1] = artist
 	end
-	table.sort(orderedArtists, |a, b| -> a.hash < b.hash)
+	local namesFolded = {}
+	for _, artist in ipairs(orderedArtists) do namesFolded[artist] = names.fold(artist.name) end
+	table.sort(orderedArtists, |a, b| -> namesFolded[a] < namesFolded[b])
 	self.artists = orderedArtists
 
 	self.ready = true
+	self.sweep = nil
 	self.version += 1
 end
 
@@ -423,25 +560,86 @@ function Library:recentlyAdded(limit)
 	return list
 end
 
+--- The folded text of everything a search looks in, made where it is missing. Only the first
+--- search of a library writes them; every later one finds the fields already there. They are kept
+--- on the album, artist and track because a title, an artist and an album do not change once the
+--- item is in the library, so the text cannot go stale.
+---@param self beat.Library
+local function prepareSearch(self)
+	for _, album in ipairs(self.albums) do
+		if album.searchText == nil then
+			album.searchText = names.fold(album.title .. "\0" .. album.artist)
+		end
+	end
+	for _, artist in ipairs(self.artists) do
+		if artist.searchText == nil then artist.searchText = names.fold(artist.name) end
+	end
+	for _, track in ipairs(self.tracks) do
+		if track.searchText == nil then
+			track.searchText = names.fold(track.title .. "\0" .. track.artist .. "\0" .. track.album)
+		end
+	end
+end
+
+--- Every album, artist and track whose text holds `needle`, and the sweep to narrow from if the
+--- query grows. The sweep names the library version it answers: a track added or a scan closed
+--- makes the previous answer incomplete, and then there is nothing to narrow.
+---@param self beat.Library
+---@param needle string
+---@return beat.SearchSweep
+local function sweepLibrary(self, needle)
+	prepareSearch(self)
+	local albums, artists, tracks = {}, {}, {}
+	for _, album in ipairs(self.albums) do
+		local text = album.searchText
+		if text ~= nil and text:find(needle, 1, true) then albums[#albums + 1] = album end
+	end
+	for _, artist in ipairs(self.artists) do
+		local text = artist.searchText
+		if text ~= nil and text:find(needle, 1, true) then artists[#artists + 1] = artist end
+	end
+	for _, track in ipairs(self.tracks) do
+		local text = track.searchText
+		if text ~= nil and text:find(needle, 1, true) then tracks[#tracks + 1] = track end
+	end
+	return { needle = needle, version = self.version, albums = albums, artists = artists, tracks = tracks }
+end
+
 ---@param query string
 ---@return beat.Album[] albums, beat.Artist[] artists, beat.Track[] tracks
 function Library:search(query)
 	local needle = names.fold(query:gsub("^%s+", ""):gsub("%s+$", ""))
 	if needle == "" then return {}, {}, {} end
 
-	local albums, artists, tracks = {}, {}, {}
+	local known = self.sweep
+	if known ~= nil and known.version == self.version then
+		if known.needle == needle then return known.albums, known.artists, known.tracks end
+		-- A query that only adds characters cannot match anything the shorter one did not: the
+		-- text is searched for a substring, and the longer needle holds the shorter one. So a
+		-- keystroke looks in what the last one answered rather than in the whole library.
+		if needle:sub(1, #known.needle) == known.needle then
+			local albums, artists, tracks = {}, {}, {}
+			for _, album in ipairs(known.albums) do
+				local text = album.searchText
+				if text ~= nil and text:find(needle, 1, true) then albums[#albums + 1] = album end
+			end
+			for _, artist in ipairs(known.artists) do
+				local text = artist.searchText
+				if text ~= nil and text:find(needle, 1, true) then artists[#artists + 1] = artist end
+			end
+			for _, track in ipairs(known.tracks) do
+				local text = track.searchText
+				if text ~= nil and text:find(needle, 1, true) then tracks[#tracks + 1] = track end
+			end
+			local sweep = { needle = needle, version = self.version, albums = albums, artists = artists, tracks = tracks }
+			self.sweep = sweep
+			return albums, artists, tracks
+		end
+	end
 
-	for _, album in ipairs(self.albums) do
-		if album.hash:find(needle, 1, true) then albums[#albums + 1] = album end
-	end
-	for _, artist in ipairs(self.artists) do
-		if artist.hash:find(needle, 1, true) then artists[#artists + 1] = artist end
-	end
-	for _, track in ipairs(self.tracks) do
-		if track.hash:find(needle, 1, true) then tracks[#tracks + 1] = track end
-	end
-
-	return albums, artists, tracks
+	local sweep = sweepLibrary(self, needle)
+	self.sweep = sweep
+	return sweep.albums, sweep.artists, sweep.tracks
 end
 
 return Library

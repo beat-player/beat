@@ -12,22 +12,39 @@ local Signal = require("beat.app.signal")
 ---@field library beat.LibraryService
 ---@field toasts beat.ToastsService
 ---@field changed beat.Signal # Fired after tags or playlists changed and were written
+---@field playlistTracksCache table<number, beat.CollectionsService.PlaylistTracksEntry>
+---@field recentPlaylistsCache beat.CollectionsService.RecentPlaylistsEntry?
 local Collections = {}
 Collections.__index = Collections
 Collections.needs = { "library", "toasts" }
 
+--- One playlist's tracks as they were when the taxonomy and library last changed. The array is
+--- the cache's own and every caller gets the same one, so a caller only reads it: playback's
+--- queue copies what it is started with.
+---@class beat.CollectionsService.PlaylistTracksEntry
+---@field tracks beat.Track[]
+---@field taxonomy beat.Taxonomy
+---@field revision number
+---@field library beat.Library
+---@field version number
+
+--- The recent order as it was at one taxonomy revision.
+---@class beat.CollectionsService.RecentPlaylistsEntry
+---@field list beat.Playlist[]
+---@field taxonomy beat.Taxonomy
+---@field revision number
+
 ---@param deps { library: beat.LibraryService, toasts: beat.ToastsService }
 ---@return beat.CollectionsService
 function Collections.new(deps)
-	local self = setmetatable(
-		{
-			taxonomy = TagStore.load(),
-			library = deps.library,
-			toasts = deps.toasts,
-			changed = Signal.new()
-		},
-		Collections
-	)
+	local self = setmetatable({
+		taxonomy = TagStore.load(),
+		library = deps.library,
+		toasts = deps.toasts,
+		changed = Signal.new(),
+		playlistTracksCache = {},
+		recentPlaylistsCache = nil
+	}, Collections)
 
 	-- The cache loaded at start is a library the tags from a version-1 file can be claimed against
 	-- before anything draws. A scan starts from an empty library and its tracks arrive one at a
@@ -45,7 +62,12 @@ end
 --- next launch.
 ---@param library beat.Library?
 function Collections:adopt(library)
-	if library ~= nil and self.taxonomy:adopt(library) then self:save() end
+	if library == nil then return end
+	-- A library being replaced drops what was derived from the old one even where the taxonomy did
+	-- not move: the cached arrays would otherwise keep its tracks alive until each playlist's row
+	-- was drawn again.
+	self.playlistTracksCache = {}
+	if self.taxonomy:adopt(library) then self:save() end
 end
 
 --- Writes the taxonomy. A read-only config directory must not take the screen, so the failure is
@@ -88,7 +110,6 @@ Collections.on = {
 	---@param self beat.CollectionsService
 	---@param message beat.DeletePlaylistMessage
 	deletePlaylist = function(self, message) self:deletePlaylist(message.id) end,
-
 	---@param self beat.CollectionsService
 	---@param message beat.RateTrackMessage
 	rateTrack = function(self, message)
@@ -99,7 +120,6 @@ Collections.on = {
 			self:save()
 		end
 	end,
-
 	---@param self beat.CollectionsService
 	---@param message beat.RateAlbumMessage
 	rateAlbum = function(self, message)
@@ -113,39 +133,77 @@ Collections.on = {
 }
 
 --- The tracks a playlist holds, in library order. Built from the library showing: a track it does
---- not hold cannot be played, so it is not here either.
+--- not hold cannot be played, so it is not here either. The walk is kept until the taxonomy or the
+--- library changes (the sidebar asks on every frame); the array is shared, so callers only read it.
 ---@param playlist beat.Playlist
 ---@return beat.Track[]
 function Collections:playlistTracks(playlist)
 	local library = self.library.current
 	if library == nil then return {} end
-	return self.taxonomy:playlistTracks(playlist, library)
+
+	local taxonomy = self.taxonomy
+	local entry = self.playlistTracksCache[playlist.id]
+	if entry == nil or entry.taxonomy ~= taxonomy or entry.revision ~= taxonomy.revision or entry.library ~= library or entry.version ~= library.version then
+		entry = {
+			tracks = taxonomy:playlistTracks(playlist, library),
+			taxonomy = taxonomy,
+			revision = taxonomy.revision,
+			library = library,
+			version = library.version
+		}
+		self.playlistTracksCache[playlist.id] = entry
+	end
+
+	return entry.tracks
+end
+
+--- A playlist and the numbers its order is made of, so the sort never folds a name again.
+---@class beat.CollectionsService.RecentPlaylistOrder
+---@field playlist beat.Playlist
+---@field last number
+---@field edited number
+---@field name string
+
+---@param a beat.CollectionsService.RecentPlaylistOrder
+---@param b beat.CollectionsService.RecentPlaylistOrder
+local function recentPlaylistOrder(a, b)
+	if a.last ~= b.last then return a.last > b.last end
+	if a.edited ~= b.edited then return a.edited > b.edited end
+	return a.name < b.name
 end
 
 --- Playlists a sidebar shortcut can show, most recently played first. Plays are what order
 --- them; a playlist never played but recently edited still beats an older one, and the name
---- breaks the remaining ties so the order does not wander between frames.
+--- breaks the remaining ties so the order does not wander between frames. Sorted once per
+--- taxonomy revision rather than once per frame.
 ---@param limit number?
 ---@return beat.Playlist[]
 function Collections:recentPlaylists(limit)
-	local list = {}
-	if self.taxonomy == nil then return list end
-	for _, playlist in ipairs(self.taxonomy.playlists) do list[#list + 1] = playlist end
-	local plays = self.taxonomy.metrics.playlists
-	table.sort(list, function(a, b)
-		local aMetric = plays[a.id]
-		local bMetric = plays[b.id]
-		local aLast = aMetric?.last or 0
-		local bLast = bMetric?.last or 0
-		if aLast ~= bLast then return aLast > bLast end
-		local aEdited = a.updatedAt or 0
-		local bEdited = b.updatedAt or 0
-		if aEdited ~= bEdited then return aEdited > bEdited end
-		return a.name:lower() < b.name:lower()
-	end)
-	if limit ~= nil and #list > limit then
-		for at = #list, limit + 1, -1 do list[at] = nil end
+	local taxonomy = self.taxonomy
+	local cache = self.recentPlaylistsCache
+	if cache == nil or cache.taxonomy ~= taxonomy or cache.revision ~= taxonomy.revision then
+		local plays = taxonomy.metrics.playlists
+		local entries = {}
+		for _, playlist in ipairs(taxonomy.playlists) do
+			local metric = plays[playlist.id]
+			entries[#entries + 1] = {
+				playlist = playlist,
+				last = metric?.last or 0,
+				edited = playlist.updatedAt or 0,
+				name = names.fold(playlist.name)
+			}
+		end
+		table.sort(entries, recentPlaylistOrder)
+		local list = {}
+		for at = 1, #entries do list[at] = entries[at].playlist end
+		cache = { list = list, taxonomy = taxonomy, revision = taxonomy.revision }
+		self.recentPlaylistsCache = cache
 	end
+
+	local sorted = cache.list
+	local count = limit ~= nil and math.min(limit, #sorted) or #sorted
+	local list = {}
+	for at = 1, count do list[at] = sorted[at] end
 	return list
 end
 

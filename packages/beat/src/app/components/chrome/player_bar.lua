@@ -15,6 +15,66 @@ local playerBar = {}
 ---@field width number # The window's width
 ---@field ui beat.ui.Context
 
+--- The styles the desktop bar is built from, which depend on the theme and on the window's width
+--- and on nothing else: they are kept on the theme for the width they were built for rather than
+--- made again every frame the bar is in, which is every frame.
+---@class beat.components.chrome.PlayerBarStyles
+---@field width number
+---@field progressWidth number
+---@field volumeTrackWidth number
+---@field empty wonderland.StyleBuilder
+---@field controls wonderland.StyleBuilder
+---@field play wonderland.StyleBuilder
+---@field cards wonderland.StyleBuilder
+---@field left wonderland.StyleBuilder
+---@field info wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field artist wonderland.StyleBuilder
+---@field right wonderland.StyleBuilder
+---@field clocks wonderland.StyleBuilder
+---@field bar wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder
+
+---@param theme beat.Theme
+---@param width number
+---@return beat.components.chrome.PlayerBarStyles
+local function barStyles(theme, width)
+	---@type table<string, any>
+	local cache = theme:cache()
+	local styles = cache.playerBar --[[@as beat.components.chrome.PlayerBarStyles?]]
+	if styles ~= nil and styles.width == width then return styles end
+
+	local wide = width > 1180
+	local progressWidth = wide ? (theme:px(240)) : (theme:px(160))
+	local sideWidth = math.max(theme:px(280), progressWidth + theme:px(44))
+
+	styles = {
+		width = width,
+		progressWidth = progressWidth,
+		volumeTrackWidth = progressWidth - theme:px(34) * 2 - theme:px(8) * 2,
+		empty = cache.playerBarEmpty or sty():h(0),
+		controls = sty():row():align("center"):justify("center"):gap(theme:px(10)),
+		play = sty()
+			:size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
+			:justify("center"),
+		cards = sty():row():w(wide and theme:px(300) or theme:px(220)):h("auto"):align("center"):justify("center"),
+		left = sty():row():w(sideWidth):h("auto"):gap(theme:px(14)):align("center"),
+		info = sty():w(210):h("auto"):column():justify("center"):gap(2),
+		title = theme:s():w(210):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis(),
+		artist = theme:s():w(210):text(theme:type("sm")):fg(theme:color("muted")):ellipsis(),
+		right = sty():row():w(sideWidth):h("auto"):gap(theme:px(14)):align("center"):justify("end"),
+		clocks = sty():column():w(progressWidth):h("auto"):justify("center"):align("end"):gap(theme:px(6)),
+		bar = sty():row():wrel(1.0):h(theme:px(88)):bg(theme:color("surface")),
+		row = sty()
+			:row():wrel(1.0):hrel(1.0):pad(0, theme:px(16), 0, theme:px(16)):gap(theme:px(14)):align("center")
+			:justify("space-between")
+	}
+	cache.playerBarEmpty = styles.empty
+	cache.playerBar = styles
+
+	return styles
+end
+
 ---@param app beat.App
 ---@param props beat.components.chrome.PlayerBarProps
 ---@return wonderland.Element
@@ -22,10 +82,10 @@ function playerBar.view(app, props)
 	local width = props.width
 	local ctx = props.ui
 	local theme = app.services.appearance.theme
+	local styles = barStyles(theme, width)
 	local track = app.services.playback:current()
 	local player = app.services.playback.player
-	local height = theme:px(88)
-	if track == nil then return div():style(sty():h(0)) end
+	if track == nil then return div():style(styles.empty) end
 
 	local album = app.services.library.current and app.services.library.current:album(track.albumId)
 	if album == nil then
@@ -41,101 +101,113 @@ function playerBar.view(app, props)
 	local art = cover.view(app, { album = album, size = theme:px(56), radius = theme:radius("sm") })
 	if album.id ~= 0 then
 		art:onClick({ type = "navigate", page = { kind = "album", id = album.id } })
-		art:onContextMenu(
-			|_, _, _, _, _, windowX, windowY| -> {
-				type = "open",
-				overlay = "menu",
-				menu = "album",
-				id = album.id,
-				x = windowX,
-				y = windowY
-			}
-		)
+		art:onContextMenu(|_, _, _, _, _, windowX, windowY| -> {
+			type = "open",
+			overlay = "menu",
+			menu = "album",
+			id = album.id,
+			x = windowX,
+			y = windowY
+		})
 	end
 
 	local isPlaying = player:isPlaying()
-	local controls = div()
-		:style(sty():row():align("center"):justify("center"):gap(theme:px(10)))
-		:children(
-			{
-				ui.iconButton(
-					ctx,
-					{ name = "shuffle", size = theme:px(28), onClick = { type = "shuffle" }, active = player.queue?.shuffle ?? false }
-				),
-				ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = { type = "previous" } }),
-				div()
-					:style(
-						sty()
-							:size(theme:px(38), theme:px(38)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
-							:justify("center")
-					):onClick({ type = "togglePlay" })
-					:children(ui.icon(ctx, { name = isPlaying ? "pause" : "play", size = (theme:px(20)), colour = theme.accentInk })),
-				ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = { type = "next" } }),
-				ui.iconButton(
-					ctx,
-					{
-						name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
-						size = theme:px(28),
-						onClick = { type = "repeat" },
-						active = player.queue and player.queue.repeatMode ~= "off"
-					}
-				)
-			}
-		)
+	local controls = div():style(styles.controls):children({
+		ui.iconButton(ctx, {
+			name = "shuffle",
+			size = theme:px(28),
+			onClick = { type = "shuffle" },
+			active = player.queue?.shuffle ?? false
+		}),
+		ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = { type = "previous" } }),
+		div():style(styles.play):onClick({ type = "togglePlay" }):children(ui.icon(ctx, {
+			name = isPlaying ? "pause" : "play",
+			size = (theme:px(20)),
+			colour = theme.accentInk
+		})),
+		ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = { type = "next" } }),
+		ui.iconButton(ctx, {
+			name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
+			size = theme:px(28),
+			onClick = { type = "repeat" },
+			active = player.queue and player.queue.repeatMode ~= "off"
+		})
+	})
 
-	local cards = div()
-		:style(sty():row():w(width > 1180 ? (theme:px(300)) : (theme:px(220))):h("auto"):align("center"):justify("center"))
-		:children(controls)
-	local progressWidth = width > 1180 ? (theme:px(240)) : (theme:px(160))
+	local cards = div():style(styles.cards):children(controls)
+	local progressWidth = styles.progressWidth
 
-	local sideWidth = math.max(theme:px(280), progressWidth + theme:px(44))
-	local left = div()
-		:style(sty():row():w(sideWidth):h("auto"):gap(theme:px(14)):align("center"))
-		:children(
-			{
-				art,
-				div()
-					:style(sty():w(210):h("auto"):column():justify("center"):gap(2))
-					:onClick(album.id ~= 0 ? { type = "navigate", page = { kind = "album", id = album.id } } : nil)
-					:children(
-						{
-							text(track.title)
-								:style(theme:s():w(210):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()),
-							text(track.artist):style(theme:s():w(210):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
-						}
-					)
-			}
-		)
-	local right = div()
-		:style(sty():row():w(sideWidth):h("auto"):gap(theme:px(14)):align("center"):justify("end"))
-		:children(
-			{
-				div()
-					:style(sty():column():w(progressWidth):h("auto"):justify("center"):align("end"):gap(theme:px(6)))
-					:children(
-						{
-							progress.view(app, { track = track, player = player, width = progressWidth }),
-							volume.view(
-								app,
-								{
-									width = progressWidth,
-									trackWidth = progressWidth - theme:px(34) * 2 - theme:px(8) * 2,
-									ui = ctx
-								}
-							)
-						}
-					),
-				ui.iconButton(
-					ctx,
-					{ name = "chevronUp", size = theme:px(30), onClick = { type = "open", overlay = "now_playing" } }
-				)
-			}
-		)
+	local left = div():style(styles.left):children({
+		art,
+		div():style(styles.info):onClick(album.id ~= 0 ? { type = "navigate", page = { kind = "album", id = album.id } } : nil):children({
+			text(track.title):style(styles.title),
+			text(track.artist):style(styles.artist)
+		})
+	})
+	local right = div():style(styles.right):children({
+		div():style(styles.clocks):children({
+			progress.view(app, { track = track, player = player, width = progressWidth }),
+			volume.view(app, { width = progressWidth, trackWidth = styles.volumeTrackWidth, ui = ctx })
+		}),
+		ui.iconButton(ctx, { name = "chevronUp", size = theme:px(30), onClick = { type = "open", overlay = "now_playing" } })
+	})
 
-	return div():style(sty():row():wrel(1.0):h(height):bg(theme:color("surface"))):onMouseMove(function()
+	return div():style(styles.bar):onMouseMove(function()
 		if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil } end
 		return nil
-	end):children({ spectrumBackground.view(app, {}), div():style(sty():row():wrel(1.0):hrel(1.0):pad(0, theme:px(16), 0, theme:px(16)):gap(theme:px(14)):align("center"):justify("space-between")):children({ left, cards, right }) })
+	end):children({ spectrumBackground.view(app, {}), div():style(styles.row):children({ left, cards, right }) })
+end
+
+--- The phone bar's styles, kept for the same reason the desktop bar's are.
+---@class beat.components.chrome.PlayerBarMobileStyles
+---@field width number
+---@field artSize number
+---@field nextSize number
+---@field empty wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder
+---@field info wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field artist wonderland.StyleBuilder
+---@field play wonderland.StyleBuilder
+---@field lineHeight number
+---@field line string
+---@field played string
+
+---@param theme beat.Theme
+---@param width number
+---@return beat.components.chrome.PlayerBarMobileStyles
+local function mobileStyles(theme, width)
+	---@type table<string, any>
+	local cache = theme:cache()
+	local styles = cache.playerBarMobile --[[@as beat.components.chrome.PlayerBarMobileStyles?]]
+	if styles ~= nil and styles.width == width then return styles end
+
+	local pad = theme:space(12)
+	local artSize = theme:px(42)
+	local playSize = theme:px(40)
+	local nextSize = theme:px(32)
+	local gap = theme:space(10)
+	local textWidth = math.max(theme:px(70), width - pad * 2 - artSize - playSize - nextSize - gap * 3)
+
+	styles = {
+		width = width,
+		artSize = artSize,
+		nextSize = nextSize,
+		empty = cache.playerBarEmpty or sty():h(0),
+		row = sty():row():wrel(1.0):h(theme:px(64)):pad(0, pad, 0, pad):gap(gap):align("center"):bg(theme:color("surface")),
+		info = sty():column():w(textWidth):hrel(1.0):justify("center"):gap(1),
+		title = theme:s():w(textWidth):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis(),
+		artist = theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color("muted")):ellipsis(),
+		play = sty()
+			:size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center"),
+		-- The two colours of the strip of playhead at the bottom, and the height of it.
+		lineHeight = math.max(2, theme:px(2)),
+		line = theme:color("text", 0.1),
+		played = theme:color("accent")
+	}
+	cache.playerBarEmpty = styles.empty
+
+	return styles
 end
 
 --- The phone mini player: one row above the bottom tabs. The whole row opens the individual
@@ -147,9 +219,10 @@ function playerBar.mobile(app, props)
 	local width = props.width
 	local ctx = props.ui
 	local theme = app.services.appearance.theme
+	local styles = mobileStyles(theme, width)
 	local track = app.services.playback:current()
-	local height = theme:px(64)
-	if track == nil then return div():style(sty():h(0)) end
+	local playing = app.services.playback.player:isPlaying()
+	if track == nil then return div():style(styles.empty) end
 
 	local album = app.services.library.current and app.services.library.current:album(track.albumId)
 	if album == nil then
@@ -163,24 +236,30 @@ function playerBar.mobile(app, props)
 		}
 	end
 
-	local pad = theme:space(12)
-	local artSize = theme:px(42)
-	local playSize = theme:px(40)
-	local nextSize = theme:px(32)
-	local gap = theme:space(10)
-	local textWidth = width - pad * 2 - artSize - playSize - nextSize - gap * 3
-	local playing = app.services.playback.player:isPlaying()
-	local duration = track.duration > 0 and track.duration or app.services.playback.player:duration()
-	local position = app.services.playback.player:position()
-	local fraction = duration > 0 ? math.max(0, math.min(1, position / duration)) : 0
+	local playback = app.services.playback
 
-	return div():style(sty():row():wrel(1.0):h(height):pad(0, pad, 0, pad):gap(gap):align("center"):bg(theme:color("surface"))):onClick({ type = "open", overlay = "now_playing" }):canvas(function(canvas)
-		local line = math.max(2, theme:px(2))
-		canvas:rect(0, canvas.height - line, canvas.width, line, theme:color("text", 0.1))
+	return div():style(styles.row):onClick({ type = "open", overlay = "now_playing" }):canvas(function(canvas)
+		-- The place in the track is read when the strip is drawn, not when the view was built: a
+		-- repaint moves it without the row being laid out again.
+		local duration = track.duration > 0 and track.duration or playback.player:duration()
+		local position = playback.player:position()
+		local fraction = duration > 0 ? math.max(0, math.min(1, position / duration)) : 0
+		local line = styles.lineHeight
+
+		canvas:rect(0, canvas.height - line, canvas.width, line, styles.line)
 		if fraction > 0 then
-			canvas:rect(0, canvas.height - line, math.floor(canvas.width * fraction), line, theme:color("accent"))
+			canvas:rect(0, canvas.height - line, math.floor(canvas.width * fraction), line, styles.played)
 		end
-	end):children({ cover.view(app, { album = album, size = artSize, radius = theme:radius("sm") }), div():style(sty():column():w(math.max(theme:px(70), textWidth)):hrel(1.0):justify("center"):gap(1)):children({ text(track.title):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()), text(track.artist):style(theme:s():w(math.max(theme:px(70), textWidth)):text(theme:type("xs")):fg(theme:color("muted")):ellipsis()) }), div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({ type = "togglePlay" }):children(ui.icon(ctx, { name = playing ? "pause" : "play", size = (theme:px(19)), colour = theme.accentInk })), ui.iconButton(ctx, { name = "next", size = nextSize, onClick = { type = "next" } }) })
+	end):children({
+		cover.view(app, { album = album, size = styles.artSize, radius = theme:radius("sm") }),
+		div():style(styles.info):children({ text(track.title):style(styles.title), text(track.artist):style(styles.artist) }),
+		div():style(styles.play):onClick({ type = "togglePlay" }):children(ui.icon(ctx, {
+			name = playing ? "pause" : "play",
+			size = (theme:px(19)),
+			colour = theme.accentInk
+		})),
+		ui.iconButton(ctx, { name = "next", size = styles.nextSize, onClick = { type = "next" } })
+	})
 end
 
 return playerBar

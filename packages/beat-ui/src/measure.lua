@@ -7,11 +7,36 @@ local utf8 = require("utf8")
 
 local measure = {}
 
+-- Widths already walked, by the string and then the size and the advance. A screen asks for the
+-- same labels every frame -- a button's own width, a row's -- and each one is walked once. The
+-- walk is what a trace cannot make sense of, so a lookup in front of it is also what keeps frames
+-- out of the interpreter.
+---@type table<string, table<number, table<number, number>>>
+local estimates = {}
+local estimated = 0
+local ESTIMATE_LIMIT = 1024
+
 ---@param value string
 ---@param size number # The font size the text is drawn at
 ---@param latin number # What an average Latin glyph is worth, as a fraction of an em
 ---@return number
 function measure.estimate(value, size, latin)
+	local bySize = estimates[value]
+	if bySize == nil then
+		if estimated >= ESTIMATE_LIMIT then
+			estimates, estimated = {}, 0
+		end
+		bySize = {}
+		estimates[value] = bySize
+		estimated += 1
+	end
+	local byLatin = bySize[size] or {}
+	bySize[size] = byLatin
+	local known = byLatin[latin]
+	if known ~= nil then
+		return known --[[@as number]]
+	end
+
 	local width, at = 0, 1
 	local joined = false
 	local previous = 0
@@ -41,7 +66,9 @@ function measure.estimate(value, size, latin)
 		previous = codepoint
 	end
 
-	return math.max(1, math.floor(width + 0.5))
+	width = math.max(1, math.floor(width + 0.5))
+	byLatin[latin] = width
+	return width
 end
 
 return measure

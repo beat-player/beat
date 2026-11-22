@@ -36,29 +36,26 @@ Player.__index = Player
 ---@return beat.Player
 function Player.new()
 	---@type beat.Player
-	return setmetatable(
-		{
-			queue = nil,
-			player = nil,
-			volume = 1,
-			lastVolume = 1,
-			isMuted = false,
-			error = nil,
-			pending = nil,
-			pendingNextAt = nil,
-			loaded = false,
-			lastPosition = 0,
-			orderDirty = false,
-			loadedRepeatMode = "off",
-			fadeGain = 1,
-			fadeStart = nil,
-			fadeActive = false,
-			fadeDuration = 0.12,
-			equalizerBands = nil,
-			playingTrack = nil
-		},
-		Player
-	)
+	return setmetatable({
+		queue = nil,
+		player = nil,
+		volume = 1,
+		lastVolume = 1,
+		isMuted = false,
+		error = nil,
+		pending = nil,
+		pendingNextAt = nil,
+		loaded = false,
+		lastPosition = 0,
+		orderDirty = false,
+		loadedRepeatMode = "off",
+		fadeGain = 1,
+		fadeStart = nil,
+		fadeActive = false,
+		fadeDuration = 0.12,
+		equalizerBands = nil,
+		playingTrack = nil
+	}, Player)
 end
 
 ---@param value number
@@ -461,11 +458,14 @@ function Player:takeError()
 	return err
 end
 
---- One step of the audio device. Returns whether a frame is worth drawing.
+--- One step of the audio device. Returns whether the playhead moved -- a frame to draw, though not
+--- one the view has to be built for -- and whether what the bar is laid out from changed instead:
+--- a track that ended or advanced, an error to show.
 ---@param now number?
----@return boolean
+---@return boolean moved
+---@return boolean structural
 function Player:update(now)
-	if self.player == nil then return false end
+	if self.player == nil then return false, false end
 
 	self.player:update()
 
@@ -490,14 +490,14 @@ function Player:update(now)
 	self.pending = nil
 
 	if pending == "error" then
-		return true
+		return false, true
 	end
 
 	if pending == "ended" then
 		local queue = self.queue
 		if queue == nil then
 			endTrack(self, true)
-			return true
+			return false, true
 		end
 
 		if self.pendingNextAt ~= nil then
@@ -505,7 +505,7 @@ function Player:update(now)
 			queue.position = math.max(1, math.min(self.pendingNextAt, #queue.order))
 			self.pendingNextAt = nil
 			self:reload(true, false)
-			return true
+			return false, true
 		end
 
 		local action = queue:onEnded()
@@ -538,16 +538,16 @@ function Player:update(now)
 			self.fadeGain = 1
 			self.fadeActive = false
 		end
-		return true
+		return false, true
 	end
 
-	if not self:isPlaying() then return false end
+	if not self:isPlaying() then return false, false end
 
 	local position = self.player:position()
-	local changed = math.abs(position - self.lastPosition) >= 0.05
+	if position == self.lastPosition then return false, false end
 	self.lastPosition = position
 
-	return changed or true
+	return true, false
 end
 
 function Player:close()

@@ -25,6 +25,9 @@ local SESSION_STRIDE = 10
 ---@field emit fun(message: table) # Sends an event to whoever is listening; delivered after this message
 ---@field sessionKey string # What the session file holds, as `sessionKeyOf` puts it
 ---@field sessionDueAt number? # When a changed session is to be written
+---@field shownSecond number? # The second of the track the bar's clock was last laid out for
+---@field shownTrackId number? # And the track and whether it played, which the bar is laid out from
+---@field shownPlaying boolean?
 local Playback = {}
 Playback.__index = Playback
 Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
@@ -38,19 +41,16 @@ Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
 --- }
 ---@return beat.PlaybackService
 function Playback.new(deps)
-	local self = setmetatable(
-		{
-			settings = deps.settings,
-			library = deps.library,
-			collections = deps.collections,
-			toasts = deps.toasts,
-			emit = deps.emit,
-			player = Player.new(),
-			spectrum = Spectrum.new(),
-			lastListenedTrackId = nil
-		},
-		Playback
-	)
+	local self = setmetatable({
+		settings = deps.settings,
+		library = deps.library,
+		collections = deps.collections,
+		toasts = deps.toasts,
+		emit = deps.emit,
+		player = Player.new(),
+		spectrum = Spectrum.new(),
+		lastListenedTrackId = nil
+	}, Playback)
 
 	-- The samples the audio device hands back are what the spectrum is made of; the player has no
 	-- other reason to know the spectrum exists.
@@ -71,12 +71,16 @@ function Playback.new(deps)
 
 	-- The player knows when a track actually starts or stops; everything listening to playback
 	-- -- the tag store, Last.fm, a plugin -- hears it as a message rather than watching the queue.
-	self.player.onTrackStarted = |track, position| -> self.emit(
-		{ type = "trackStarted", track = track, position = position }
-	)
-	self.player.onTrackEnded = |track, completed| -> self.emit(
-		{ type = "trackEnded", track = track, completed = completed }
-	)
+	self.player.onTrackStarted = |track, position| -> self.emit({
+		type = "trackStarted",
+		track = track,
+		position = position
+	})
+	self.player.onTrackEnded = |track, completed| -> self.emit({
+		type = "trackEnded",
+		track = track,
+		completed = completed
+	})
 	self.player.onQueueChanged = || -> self.emit({ type = "queueChanged" })
 	return self
 end
@@ -104,20 +108,17 @@ end
 function Playback:sessionKeyOf()
 	local queue = self.player.queue
 	if queue == nil then return "" end
-	return table.concat(
-		{
-			tostring(queue),
-			tostring(queue.tracks),
-			tostring(queue.order),
-			#queue.order,
-			queue.position,
-			queue.repeatMode,
-			tostring(queue.shuffle),
-			queue.source,
-			math.floor(self.player:position() / SESSION_STRIDE)
-		},
-		"|"
-	)
+	return table.concat({
+		tostring(queue),
+		tostring(queue.tracks),
+		tostring(queue.order),
+		#queue.order,
+		queue.position,
+		queue.repeatMode,
+		tostring(queue.shuffle),
+		queue.source,
+		math.floor(self.player:position() / SESSION_STRIDE)
+	}, "|")
 end
 
 --- Writes where listening is now. The window closing asks for it at once. A launch that never had
@@ -304,15 +305,12 @@ Playback.on = {
 	---@param self beat.PlaybackService
 	---@param message beat.TogglePlayMessage
 	togglePlay = function(self, message) self:toggle() end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.NextMessage
 	next = function(self, message) self.player:next() end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PreviousMessage
 	previous = function(self, message) self.player:previous() end,
-
 	--- The progress bar asks for an absolute place; the keys step by `by`.
 	---@param self beat.PlaybackService
 	---@param message beat.SeekMessage
@@ -321,38 +319,30 @@ Playback.on = {
 		if message.by ~= nil then seconds = self.player:position() + message.by end
 		self.player:seek(math.max(0, seconds or 0))
 	end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.VolumeMessage
 	volume = function(self, message) self:setVolume(message.value) end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.MuteMessage
 	mute = function(self, message) self:toggleMute() end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.ShuffleMessage
 	shuffle = function(self, message)
 		local queue = self.player.queue
 		if queue ~= nil then self.player:setShuffle(not queue.shuffle) end
 	end,
-
 	["repeat"] = cycleRepeat,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayAlbumMessage
 	playAlbum = function(self, message)
 		self:playAlbum(message.id, message.shuffle == true, message.restart == true)
 	end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.QueueAlbumMessage
 	queueAlbum = function(self, message) self:queueAlbum(message.id, message.next == true) end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayTrackMessage
 	playTrack = function(self, message) self:playTrack(message) end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayArtistMessage
 	playArtist = function(self, message)
@@ -360,43 +350,53 @@ Playback.on = {
 		local artist = library ~= nil ? (library:artist(message.id)) : nil
 		if artist ~= nil then self.player:playArtist(artist, message.trackId) end
 	end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayPlaylistMessage
 	playPlaylist = function(self, message) self:playPlaylist(message.id, message.shuffle == true) end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayPlaylistTrackMessage
 	playPlaylistTrack = function(self, message)
 		self:playPlaylistTrack(message.playlistId, message.trackId)
 	end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.JumpTrackMessage
 	jumpTrack = function(self, message) self.player:jump(message.trackId) end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PlayMessage
 	play = function(self, message) self:play() end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.PauseMessage
 	pause = function(self, message) self:pause() end,
-
 	---@param self beat.PlaybackService
 	---@param message beat.StopMessage
 	stop = function(self, message) self:stop() end
 }
 
---- A listen is counted once per track, when playback has actually started it: that is what the
---- playlist it came from, its album and its tags remember. Whether the same track is scrobbled is
---- the Last.fm service's question; it reads the player for itself.
+--- A tick of the player and of the meter. Returns whether the view has to be built again, whether
+--- there is still a frame worth drawing every tick (a track playing), and whether what only the
+--- canvases draw moved -- the playhead and the spectrum -- which a repaint of the screen already
+--- built shows.
+---
+--- What playing moves every frame is a canvas: the bar's fill and nub, and the meter behind it.
+--- What it moves once a second is text -- the elapsed clock -- and a track that changes or starts
+--- or stops is the whole bar laid out again, so those are the rebuilds.
+---@param now number
+---@return boolean changed
+---@return boolean busy
+---@return boolean repaint
 function Playback:step(now)
 	local changed = false
+	local repaint = false
 
-	if self.player:update(now) then changed = true end
+	local moved, structural = self.player:update(now)
+	if moved then repaint = true end
+	if structural then changed = true end
+
 	local current = self.player:current()
 	local playing = self.player:isPlaying()
+	-- A listen is counted once per track, when playback has actually started it: that is what the
+	-- playlist it came from, its album and its tags remember. Whether the same track is scrobbled
+	-- is the Last.fm service's question; it reads the player for itself.
 	if playing and current ~= nil and self.library.current ~= nil and current.id ~= self.lastListenedTrackId then
 		self.lastListenedTrackId = current.id
 		local playlistId = nil
@@ -409,7 +409,23 @@ function Playback:step(now)
 		changed = true
 	end
 
-	if self.spectrum:step(now) then changed = true end
+	-- What the bar is laid out from: the clocks beside it, which are text, the track, and whether
+	-- it plays. The elapsed clock only reads differently once the second it shows is another --
+	-- `format.clock` rounds to the nearest second, so this is the same rounding, advanced from the
+	-- same position the view reads. A track and a play button are what the rest of the bar is.
+	local second = math.floor(self.player:position() + 0.5)
+	local trackId = current?.id
+	if self.shownSecond == nil then
+		-- The first step records what the frame just drawn is from rather than asking for the same
+		-- frame again: nothing has changed since it was drawn.
+		self.shownSecond, self.shownTrackId, self.shownPlaying = second, trackId, playing
+	elseif second ~= self.shownSecond or trackId ~= self.shownTrackId or playing ~= self.shownPlaying then
+		self.shownSecond, self.shownTrackId, self.shownPlaying = second, trackId, playing
+		changed = true
+	end
+
+	local meterChanged, meterEasing = self.spectrum:step(now)
+	if meterChanged then repaint = true end
 
 	local err = self.player:takeError()
 	if err ~= nil then
@@ -423,7 +439,9 @@ function Playback:step(now)
 	end
 	if self.sessionDueAt ~= nil and now >= self.sessionDueAt then self:flush() end
 
-	return changed, playing
+	-- The meter falling back to rest after the music stops is as much a reason to come back next
+	-- frame as a track that is playing is.
+	return changed, playing or meterEasing, repaint
 end
 
 --- The old player goes when the app is set up again, so a test that makes many apps does not keep

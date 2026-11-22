@@ -54,7 +54,6 @@ Toasts.on = {
 	---@param self beat.ToastsService
 	---@param message beat.ToastMessage
 	toast = function(self, message) self:show(message.text or "", message.tone) end,
-
 	---@param self beat.ToastsService
 	---@param message beat.DismissToastMessage
 	dismissToast = function(self, message)
@@ -68,6 +67,7 @@ function Toasts:step(now)
 	local pointer = self.pointer()
 	local kept = {}
 	local changed = false
+	local animating = false
 
 	-- A toast under the pointer stays there. Its box is recorded by the view that drew it, so the
 	-- expiry clock can be moved before the next frame removes it; moving the pointer off starts the
@@ -86,13 +86,18 @@ function Toasts:step(now)
 		if now < expires then
 			kept[#kept + 1] = toast
 			if now - toast.at < 0.18 or expires - now < 0.3 then changed = true end
+			-- The frame a toast is drawn in moves it in and out, but between those it is a line of
+			-- text sitting still: the ticker is only held at the rate of a frame while one of them
+			-- is moving, and the second before the last of it is followed at that rate so the fade
+			-- is not missed between two idle ticks.
+			if now - toast.at < 0.18 or expires - now < 1 then animating = true end
 		else
 			changed = true
 		end
 	end
 	self.list = kept
 
-	return changed, #self.list > 0
+	return changed, animating
 end
 
 return Toasts

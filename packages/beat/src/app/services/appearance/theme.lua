@@ -148,12 +148,15 @@ end
 ---@field accentInk string
 ---@field fontFamily string
 ---@field scale number
+---@field styleCache table<any, any>? # What `cache` hands out, for the `mix` it was made at
+---@field styleCacheMix number?
 ---@field color fun(self: beat.Theme, token: string, alpha: number?): string
 ---@field space fun(self: beat.Theme, value: number): number
 ---@field px fun(self: beat.Theme, value: number): number
 ---@field type fun(self: beat.Theme, name: string): number
 ---@field radius fun(self: beat.Theme, name: string): number
 ---@field s fun(self: beat.Theme): wonderland.StyleBuilder
+---@field cache fun(self: beat.Theme): table<any, any>
 local Theme = {}
 Theme.__index = Theme
 
@@ -171,21 +174,18 @@ function theme.new(name, accent, scale, fontFamily)
 	colours.accent = chosen.colour
 	colours.accentInk = chosen.ink
 
-	return setmetatable(
-		{
-			name = THEMES[name] ~= nil and name or "night",
-			accent = custom and chosen.colour or (ACCENTS[accent] ~= nil and accent or "lime"),
-			isDark = (THEMES[name] or THEMES.night) == THEMES.night or name == "amoled",
-			colors = colours,
-			fromColors = nil,
-			mix = 1,
-			accentColour = chosen.colour,
-			accentInk = chosen.ink,
-			fontFamily = fontFamily or "Inter",
-			scale = scale or 1
-		},
-		Theme
-	)
+	return setmetatable({
+		name = THEMES[name] ~= nil and name or "night",
+		accent = custom and chosen.colour or (ACCENTS[accent] ~= nil and accent or "lime"),
+		isDark = (THEMES[name] or THEMES.night) == THEMES.night or name == "amoled",
+		colors = colours,
+		fromColors = nil,
+		mix = 1,
+		accentColour = chosen.colour,
+		accentInk = chosen.ink,
+		fontFamily = fontFamily or "Inter",
+		scale = scale or 1
+	}, Theme)
 end
 
 ---@param token string
@@ -194,6 +194,29 @@ end
 function Theme:color(token, alpha)
 	local value = self.colors[token] or token
 	if self.fromColors == nil and (alpha == nil or alpha >= 1) then return value end
+
+	-- A screen asks for the same few dozen token-and-transparency pairs every frame, and each one
+	-- is a hex parse and a format away. They are strings of this theme at this crossfade step, so
+	-- the theme's cache is where they belong: a new theme, or a step of the fade, starts empty.
+	local cache = self:cache()
+	---@type table<string, table<number, string>>
+	local tokens = cache.themeColors --[[@as table<string, table<number, string>>]]
+	if tokens == nil then
+		tokens = {}
+		cache.themeColors = tokens
+	end
+	---@type table<number, string>
+	local shades = tokens[token]
+	if shades == nil then
+		shades = {}
+		tokens[token] = shades
+	end
+	local key = alpha or -1
+	local mixed = shades[key]
+	if mixed ~= nil then
+		return mixed --[[@as string]]
+	end
+
 	local r, g, b, a = parse(value)
 
 	if self.fromColors ~= nil and self.mix < 1 then
@@ -206,8 +229,15 @@ function Theme:color(token, alpha)
 		a = fa + (a - fa) * t
 	end
 
-	if alpha == nil or alpha >= 1 then return hex(r, g, b, a) end
-	return hex(r, g, b, a * math.max(0, alpha))
+	local shade = 1
+	if alpha ~= nil then shade = alpha end
+	if shade >= 1 then
+		mixed = hex(r, g, b, a)
+	else
+		mixed = hex(r, g, b, a * math.max(0, shade))
+	end
+	shades[key] = mixed
+	return mixed --[[@as string]]
 end
 
 ---@param value number
@@ -238,6 +268,22 @@ end
 ---@return wonderland.StyleBuilder
 function Theme:s()
 	return sty():font(self.fontFamily)
+end
+
+--- A table a view keeps what it builds from this theme in -- style builders above all -- so a frame
+--- reuses them instead of making and interning the same ones again. It belongs to the theme as it
+--- draws now: a new theme is a new table, and so is each step of a crossfade, whose colours differ.
+--- Keys are the caller's; a value that depends on more than the theme (a width, a state) is keyed
+--- by that too.
+---@return table<any, any>
+function Theme:cache()
+	local cache = self.styleCache
+	if cache == nil or self.styleCacheMix ~= self.mix then
+		cache = {}
+		self.styleCache = cache
+		self.styleCacheMix = self.mix
+	end
+	return cache or {}
 end
 
 ---@return string[]

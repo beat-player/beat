@@ -2,6 +2,7 @@
 -- the summary that replaces it once the scan is done.
 local wonderland = require("wonderland")
 local path = require("path")
+local cache = require("beat-ui.cache")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -141,6 +142,103 @@ local function bottomBar(canvas, opts)
 	if #clipped >= 6 then canvas:polygon(clipped, opts.fillColour) end
 end
 
+-- The card's canvas draws the progress its last frame was told, so the draw is made once per app
+-- and per card rather than captured anew: what the canvas reads is the state below, not a closure
+-- of the numbers of the frame that built it.
+---@class beat.components.chrome.ScanDrawing
+---@field draw fun(canvas: wonderland.Canvas)
+---@field opts beat.components.chrome.BottomBarProps?
+
+---@type table<beat.App, table<string, beat.components.chrome.ScanDrawing>>
+local drawings = setmetatable({}, { __mode = "k" })
+
+--- One card's draw, reading the progress the latest frame left in it.
+---@return beat.components.chrome.ScanDrawing
+local function newDrawing()
+	---@type beat.components.chrome.ScanDrawing
+	local entry
+	---@param canvas wonderland.Canvas
+	local function draw(canvas)
+		local opts = entry.opts
+		if opts ~= nil then bottomBar(canvas, opts) end
+	end
+	entry = { draw = draw, opts = nil }
+	return entry
+end
+
+---@param app beat.App
+---@param which string
+---@return beat.components.chrome.ScanDrawing
+local function drawingOf(app, which)
+	local set = drawings[app]
+	if set == nil then
+		set = {}
+		drawings[app] = set
+	end
+	local entry = set[which]
+	if entry == nil then
+		entry = newDrawing()
+		set[which] = entry
+	end
+	return entry
+end
+
+---@class beat.components.chrome.IslandStyles
+---@field head wonderland.StyleBuilder
+---@field titleRow wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field detailRow wonderland.StyleBuilder
+---@field detail wonderland.StyleBuilder
+---@field current wonderland.StyleBuilder
+---@field empty wonderland.StyleBuilder
+
+---@param ctx beat.ui.Context
+---@return beat.components.chrome.IslandStyles
+local function islandStyles(ctx)
+	return {
+		head = sty():row():wrel(1.0):h(ctx:px(22)):align("center"):justify("space-between"),
+		titleRow = sty():row():h(ctx:px(22)):gap(ctx:px(8)):align("center"),
+		title = ctx:s():text(ctx:type("sm")):weight("semibold"):fg(ctx:color("text")),
+		detailRow = sty():row():wrel(1.0):h(ctx:px(16)):align("center"):justify("space-between"),
+		detail = ctx:s():text(ctx:type("xs")):fg(ctx:color("muted")),
+		current = ctx:s():wrel(1.0):text(ctx:type("xs")):fg(ctx:color("faint")):ellipsis(),
+		empty = sty():h(ctx:px(0))
+	}
+end
+
+---@class beat.components.chrome.SummaryStyles
+---@field row wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field counts wonderland.StyleBuilder
+---@field danger wonderland.StyleBuilder
+---@field muted wonderland.StyleBuilder
+
+---@param ctx beat.ui.Context
+---@return beat.components.chrome.SummaryStyles
+local function summaryStyles(ctx)
+	return {
+		row = sty():row():h(ctx:px(22)):gap(ctx:px(8)):align("center"),
+		title = ctx:s():text(ctx:type("sm")):weight("semibold"):fg(ctx:color("text")),
+		counts = ctx:s():text(ctx:type("base")):weight("semibold"):fg(ctx:color("text")),
+		danger = ctx:s():text(ctx:type("xs")):fg(ctx:color("danger")),
+		muted = ctx:s():text(ctx:type("xs")):fg(ctx:color("muted"))
+	}
+end
+
+---@param ctx beat.ui.Context
+---@param islandWidth number
+---@param islandHeight number
+---@param pad number
+---@param radius number
+---@param offsetX number
+---@param offsetY number
+---@return wonderland.StyleBuilder
+local function cardBoxStyle(ctx, islandWidth, islandHeight, pad, radius, offsetX, offsetY)
+	return sty()
+		:w(islandWidth):h(islandHeight):offset(offsetX, offsetY):z(60):column():pad(pad, pad, 0, pad):gap(ctx:px(8))
+		:radius(radius):bg(ctx:color("elevated")):shadow(0, ctx:px(12), ctx:px(32), "#00000070")
+end
+
 ---@class beat.components.chrome.ScanStatusProps
 ---@field width number # The window's width, which the card is placed against
 ---@field ui beat.ui.Context
@@ -172,9 +270,42 @@ function scanStatus.island(app, props)
 	if type(progress.current) == "string" then current = path.basename(progress.current) end
 	local label = progress.phase == "enumerate" ? "Finding music" : "Reading metadata"
 
-	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):canvas(function(canvas)
-		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = fraction, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
-	end):children({ div():style(sty():row():wrel(1.0):h(theme:px(22)):align("center"):justify("space-between")):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ playingBars.view(app, { playing = true }), text("Scanning music"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), ui.iconButton(ctx, { name = "chevronUp", size = theme:px(22), onClick = { type = "hideScanIsland" } }) }), div():style(sty():row():wrel(1.0):h(theme:px(16)):align("center"):justify("space-between")):children({ text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))), ui.button(ctx, { label = "Cancel", onClick = { type = "cancelScan" }, height = theme:px(26), width = theme:px(66) }) }), current ~= nil and text(tostring(current)):style(theme:s():wrel(1.0):text(theme:type("xs")):fg(theme:color("faint")):ellipsis()) or text(""):style(sty():h(theme:px(0))) })
+	-- One island, one width: the card's own box and rows are values of the theme and the window,
+	-- and only the progress it draws and the text under it change.
+	local card = cache.of(ctx, islandStyles, "scanIsland") --[[@as beat.components.chrome.IslandStyles]]
+
+	-- Where the card floats is the window's width against the card's, so its box is made once for
+	-- each place it is put: a kept builder is never moved afterwards.
+	local offsetX = width - islandWidth - margin
+	local offsetY = metrics.topbarHeight(app, width) + theme:space(8)
+	local box = cache.of(ctx, cardBoxStyle, "scanIslandOffset", islandWidth, islandHeight, pad, radius, offsetX, offsetY) --[[@as wonderland.StyleBuilder]]
+
+	local drawing = drawingOf(app, "island")
+	drawing.opts = {
+		x = -pad,
+		y = islandHeight - pad - barHeight,
+		width = islandWidth,
+		height = barHeight,
+		radius = radius,
+		fraction = fraction,
+		trackColour = theme:color("text", 0.1),
+		fillColour = theme:color("accent")
+	}
+
+	return div():style(box):canvas(drawing.draw):children({
+		div():style(card.head):children({
+			div():style(card.titleRow):children({
+				playingBars.view(app, { playing = true }),
+				text("Scanning music"):style(card.title)
+			}),
+			ui.iconButton(ctx, { name = "chevronUp", size = theme:px(22), onClick = { type = "hideScanIsland" } })
+		}),
+		div():style(card.detailRow):children({
+			text(label .. " · " .. progress.inspected .. " / " .. progress.files):style(card.detail),
+			ui.button(ctx, { label = "Cancel", onClick = { type = "cancelScan" }, height = theme:px(26), width = theme:px(66) })
+		}),
+		current ~= nil and text(tostring(current)):style(card.current) or text(""):style(card.empty)
+	})
 end
 
 --- The card that replaces the scanning island once the scan is done: same place, size and
@@ -196,12 +327,34 @@ function scanStatus.summary(app, props)
 	local radius = theme:radius("md")
 	local margin = metrics.mobile(app, width) ? metrics.pad(app, width) : (theme:space(24))
 
-	local detail = summary.skipped > 0 and format.count(summary.skipped, "file") .. " skipped" or "Saved to your library"
-	local detailColour = summary.skipped > 0 ? (theme:color("danger")) : (theme:color("muted"))
+	local skipped = summary.skipped > 0
+	local detail = skipped and format.count(summary.skipped, "file") .. " skipped" or "Saved to your library"
 
-	return div():style(sty():w(islandWidth):h(islandHeight):offset(width - islandWidth - margin, metrics.topbarHeight(app, width) + theme:space(8)):z(60):column():pad(pad, pad, 0, pad):gap(theme:px(8)):radius(radius):bg(theme:color("elevated")):shadow(0, theme:px(12), theme:px(32), "#00000070")):onClick({ type = "dismissScanSummary" }):canvas(function(canvas)
-		bottomBar(canvas, { x = -pad, y = islandHeight - pad - barHeight, width = islandWidth, height = barHeight, radius = radius, fraction = 1, trackColour = theme:color("text", 0.1), fillColour = theme:color("accent") })
-	end):children({ div():style(sty():row():h(theme:px(22)):gap(theme:px(8)):align("center")):children({ ui.icon(ctx, { name = "check", size = theme:px(18), colour = theme:color("accent") }), text("Scan complete"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))) }), text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))), text(detail):style(theme:s():text(theme:type("xs")):fg(detailColour)) })
+	local card = cache.of(ctx, summaryStyles, "scanSummary") --[[@as beat.components.chrome.SummaryStyles]]
+	local offsetX = width - islandWidth - margin
+	local offsetY = metrics.topbarHeight(app, width) + theme:space(8)
+	local box = cache.of(ctx, cardBoxStyle, "scanSummaryOffset", islandWidth, islandHeight, pad, radius, offsetX, offsetY) --[[@as wonderland.StyleBuilder]]
+
+	local drawing = drawingOf(app, "summary")
+	drawing.opts = {
+		x = -pad,
+		y = islandHeight - pad - barHeight,
+		width = islandWidth,
+		height = barHeight,
+		radius = radius,
+		fraction = 1,
+		trackColour = theme:color("text", 0.1),
+		fillColour = theme:color("accent")
+	}
+
+	return div():style(box):onClick({ type = "dismissScanSummary" }):canvas(drawing.draw):children({
+		div():style(card.row):children({
+			ui.icon(ctx, { name = "check", size = theme:px(18), colour = theme:color("accent") }),
+			text("Scan complete"):style(card.title)
+		}),
+		text(format.count(summary.tracks, "track") .. " · " .. format.count(summary.albums, "album")):style(card.counts),
+		text(detail):style(skipped and card.danger or card.muted)
+	})
 end
 
 return scanStatus

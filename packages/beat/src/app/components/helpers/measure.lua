@@ -3,8 +3,16 @@
 local wonderland = require("wonderland")
 local utf8 = require("utf8")
 local wonderlandElement = require("wonderland.element")
+local wonderlandStyle = require("wonderland.style")
 
 local measure = {}
+
+-- Widths already walked, by the string and then the size and the advance. A row asks for the same
+-- names every frame, and each name is only worth counting once.
+---@type table<string, table<number, table<number, number>>>
+local estimates = {}
+local estimated = 0
+local ESTIMATE_LIMIT = 1024
 
 --- How wide a string is, in the units this app sizes a text box from. A Lua length is bytes, not
 --- characters: an emoji is four of them and a flag or a family is several codepoints that draw as
@@ -16,6 +24,22 @@ local measure = {}
 ---@param latin number # What an average Latin glyph is worth, as a fraction of an em
 ---@return number
 function measure.estimate(value, size, latin)
+	local bySize = estimates[value]
+	if bySize == nil then
+		if estimated >= ESTIMATE_LIMIT then
+			estimates, estimated = {}, 0
+		end
+		bySize = {}
+		estimates[value] = bySize
+		estimated += 1
+	end
+	local byLatin = bySize[size] or {}
+	bySize[size] = byLatin
+	local known = byLatin[latin]
+	if known ~= nil then
+		return known --[[@as number]]
+	end
+
 	local width, at = 0, 1
 	local joined = false
 	local previous = 0
@@ -45,7 +69,9 @@ function measure.estimate(value, size, latin)
 		previous = codepoint
 	end
 
-	return math.max(1, math.floor(width + 0.5))
+	width = math.max(1, math.floor(width + 0.5))
+	byLatin[latin] = width
+	return width
 end
 
 --- The run Wonderland measures for a string, through the same text plugin that will draw it: its
@@ -63,6 +89,14 @@ function measure.run(app, value, style)
 	return wonderlandElement.runOf(line)
 end
 
+-- What a line came to, by the style's own slot and then the string: a style is interned by its
+-- values, so the same text at the same size is one answer however the builder was written. The
+-- sidebar asks for the name of the row under the pointer on every frame of a hover.
+---@type table<number, table<string, number>>
+local widths = {}
+local widthCount = 0
+local WIDTH_LIMIT = 512
+
 --- The width Wonderland measures for a line. A style's automatic width means "fill the room I am
 --- given", not "shrink to this text", so the app asks for the measured run and puts that width on
 --- the box. The codepoint estimate above is only a fallback for a page built before a window's
@@ -72,8 +106,29 @@ end
 ---@param style wonderland.StyleBuilder
 ---@return number?
 function measure.width(app, value, style)
+	local slot = wonderlandStyle.intern(style)
+	local known = widths[slot]
+	if known ~= nil then
+		local width = known[value]
+		if width ~= nil then
+			return width --[[@as number]]
+		end
+	end
+
 	local run = measure.run(app, value, style)
-	return run?.width
+	if run == nil then return nil end
+
+	if known == nil then
+		if widthCount >= WIDTH_LIMIT then
+			widths, widthCount = {}, 0
+		end
+		known = {}
+		widths[slot] = known
+		widthCount += 1
+	end
+	local measured = run.width --[[@as number]]
+	known[value] = measured
+	return measured
 end
 
 -- Wrapped strings by width, size and text. A toast is drawn every frame while it fades, and its

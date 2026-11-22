@@ -4,6 +4,7 @@
 -- the app saved can never disagree.
 local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -15,29 +16,44 @@ local checkbox = {}
 ---@field size number? # The box itself; default px(20)
 ---@field target number? # The clickable square around it; default px(32)
 
+---@class beat.ui.CheckboxStyles
+---@field box wonderland.StyleBuilder
+---@field target wonderland.StyleBuilder
+
+--- A row of switches is one box size drawn on or off, and one hit area around it.
+---@param ctx beat.ui.Context
+---@param size number
+---@param target number
+---@param checked boolean
+---@return beat.ui.CheckboxStyles
+local function checkboxStyles(ctx, size, target, checked)
+	local box = sty():size(size, size):radius(ctx:radius("sm")):align("center"):justify("center")
+	if checked then
+		box:bg(ctx:color("accent")):border(ctx:px(1), ctx:color("accent"))
+	else
+		box:border(ctx:px(1.5), ctx:color("muted"))
+	end
+	return { box = box, target = sty():size(target, target):align("center"):justify("center") }
+end
+
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.CheckboxProps
 ---@return wonderland.Element
 function checkbox.view(ctx, props)
 	local size = props.size or ctx:px(20)
-	local target = props.target or ctx:px(32)
-	local box = sty():size(size, size):radius(ctx:radius("sm")):align("center"):justify("center")
+	local checked = props.checked == true
+	local styles = cache.of(ctx, checkboxStyles, "checkbox", size, props.target or ctx:px(32), checked) --[[@as beat.ui.CheckboxStyles]]
+
 	local content = {}
-	if props.checked then
-		box:bg(ctx:color("accent")):border(ctx:px(1), ctx:color("accent"))
+	if checked then
 		content[1] = icon.view(ctx, {
 			name = "check",
 			size = math.max(ctx:px(14), math.floor(size * 0.7 + 0.5)),
 			colour = ctx.accentInk
 		})
-	else
-		box:border(ctx:px(1.5), ctx:color("muted"))
 	end
 
-	return div()
-		:style(sty():size(target, target):align("center"):justify("center"))
-		:onClick(props.onClick)
-		:children({ div():style(box):children(content) })
+	return div():style(styles.target):onClick(props.onClick):children({ div():style(styles.box):children(content) })
 end
 
 return { view = checkbox.view }

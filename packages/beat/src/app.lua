@@ -1,3 +1,18 @@
+-- The screen is a lot of Lua -- beat's views, and wonderland's layout, text and quad walks -- and a
+-- session compiles thousands of traces. LuaJIT's defaults (1000 traces, 512 KiB of machine code)
+-- are run through within seconds of browsing, and running out flushes every compiled trace at once:
+-- the layout then ran interpreted for whole stretches, and a frame took ten times as long, on and
+-- off, depending on when the flush landed. Room for everything the app compiles keeps it compiled;
+-- what that keeps is the traces themselves, a few MiB of heap that a flush would only build again.
+jit.opt.start("maxtrace=4000", "maxmcode=8192")
+
+-- What the collector lets the heap grow to before it runs again: 120% of what was live, rather than
+-- the default 200%. Memory LuaJIT has handed out is kept by the process once it has been, so a
+-- heap allowed to double between collections -- while a library loads, while a page of covers and
+-- glyphs is first drawn -- is resident memory for the rest of the run. Browsing grew it 11 MiB less
+-- at 120, and the frames that collect more often are ones that allocate little to begin with.
+collectgarbage("setpause", 120)
+
 local ffi = require("ffi")
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
@@ -426,6 +441,28 @@ function App:refresh()
 	if window ~= nil then self:present(window) end
 end
 
+--- Asks for a frame of the screen the app already built, without building it again: wonderland
+--- walks the tree the last view made and draws it, and nothing is measured or solved. It is what
+--- the things an element draws itself are updated by -- a spectrum, a playhead, a row's playing
+--- mark -- because what those draw reads the app's state when the frame is drawn rather than when
+--- the view was built, which is why they can move without a view.
+---
+--- Only worth asking for when nothing laid out changed: a service says so with the third value of
+--- its `step`, and `App:tick` asks through here for what is left once every one of them has been
+--- stepped.
+---@param window wonderland.RenderWindow
+function App:repaint(window)
+	local plugin = self.layoutPlugin
+	local ctx = plugin ~= nil ? (plugin.contexts[window]) : nil
+	if ctx == nil then return end
+
+	-- What the frame is for, and the only two things a repaint is: the walk that runs the draws,
+	-- which `UI:frame` makes when `mustDraw` is set and the screen is not owed a view, and the
+	-- loop, which is what sends the frame.
+	ctx.mustDraw = true
+	window.shouldRedraw = true
+end
+
 --- The UI context a component reads: the live theme, the window's box, the page's content box,
 --- the phone breakpoint and where keyboard focus is. It is cached per window and input, so every
 --- component in a frame shares one table rather than making its own.
@@ -794,18 +831,29 @@ function App:tick(now, window)
 		---@cast window wonderland.RenderWindow & beat.WindowCalls
 		self:bringForward(window)
 	end
-	local changed, serviceBusy = false, false
+	local changed, serviceBusy, repaint = false, false, false
 	-- Each service does what it does on its own -- a scan coming in, a toast fading -- in the
-	-- order they were made, so a service steps after everything it depends on.
+	-- order they were made, so a service steps after everything it depends on. `changed` is what
+	-- the view has to be built again for, and `repaint` what only what a canvas draws moved: a
+	-- track that is playing is a playhead and a spectrum, which a repaint of the screen already
+	-- built shows without the view and the solve a rebuild would cost on every frame of it.
 	for _, service in ipairs(self.serviceOrder) do
 		if service.step ~= nil then
-			local stepChanged, stepBusy = service:step(now)
-			if stepChanged then changed = true end
+			local stepChanged, stepBusy, stepRepaint = service:step(now)
+			if stepChanged then
+				changed = true
+			elseif stepRepaint then
+				repaint = true
+			end
 			if stepBusy then serviceBusy = true end
 		end
 	end
 
-	if changed then self:present(window) end
+	if changed then
+		self:present(window)
+	elseif repaint then
+		self:repaint(window)
+	end
 	return serviceBusy and (1 / 60) or 0.5
 end
 

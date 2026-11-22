@@ -49,14 +49,28 @@ function artwork.fit(source, maxSide)
 	local into = ffi.cast(u8, result.pixels)
 
 	if target == side and channels == 4 then
-		-- A cropped side is still a window of a wider source: copying it as one run would take
-		-- the row after the crop from wherever the previous row left off. Each row is copied
-		-- from its own start instead.
-		for row = 0, side - 1 do
-			ffi.copy(into + row * side * 4, from + ((top + row) * source.width + left) * 4, side * 4)
+		if left == 0 then
+			-- The scan worker's cached covers are square, so the crop is the whole picture and
+			-- every row is the picture one after another: one copy rather than one per row.
+			ffi.copy(into, from + top * source.width * 4, side * side * 4)
+		else
+			-- A cropped side is still a window of a wider source: copying it as one run would take
+			-- the row after the crop from wherever the previous row left off. Each row is copied
+			-- from its own start instead.
+			for row = 0, side - 1 do
+				ffi.copy(into + row * side * 4, from + ((top + row) * source.width + left) * 4, side * 4)
+			end
 		end
 		return result
 	end
+
+	-- Every cover the window decodes has four channels, so the sample loop below walks the
+	-- source with a four channel stride rather than multiplying every sample by a stride that
+	-- is the same for the whole picture. The generic loop stays for a caller handing over a
+	-- narrower picture.
+	local width = source.width
+	local width4 = width * 4
+	local four = channels == 4
 
 	for y = 0, target - 1 do
 		local y0 = top + math.floor(y * side / target)
@@ -76,15 +90,33 @@ function artwork.fit(source, maxSide)
 			local stepX = math.max(1, math.floor((x1 - x0) / 4))
 			local stepY = math.max(1, math.floor((y1 - y0) / 4))
 
-			for sy = y0, y1 - 1, stepY do
-				local row = sy * source.width
-				for sx = x0, x1 - 1, stepX do
-					local at = (row + sx) * channels
-					r += from[at]
-					g += from[at + 1]
-					b += from[at + 2]
-					a += (channels >= 4 and from[at + 3] or 255)
-					count += 1
+			if four then
+				local advance = stepX * 4
+				local sy = y0
+				while sy < y1 do
+					local row = sy * width4 + x0 * 4
+					local stop = sy * width4 + x1 * 4
+					while row < stop do
+						r += from[row]
+						g += from[row + 1]
+						b += from[row + 2]
+						a += from[row + 3]
+						count += 1
+						row += advance
+					end
+					sy += stepY
+				end
+			else
+				for sy = y0, y1 - 1, stepY do
+					local row = sy * width
+					for sx = x0, x1 - 1, stepX do
+						local at = (row + sx) * channels
+						r += from[at]
+						g += from[at + 1]
+						b += from[at + 2]
+						a += (channels >= 4 and from[at + 3] or 255)
+						count += 1
+					end
 				end
 			end
 
@@ -218,6 +250,15 @@ function artwork.forAlbum(album, maxSide)
 
 	local decoded, err = image.load(cache, { channels = 4 })
 	if decoded == nil then return nil, nil, err end
+
+	-- The scan worker writes the cover square, so when the screen asks for it at or above the
+	-- cached side the decode is already the picture: fitting it would only copy it into a buffer
+	-- of its own. Handing the decode back is the same pixels for one allocation less, and the
+	-- caller owns the result either way.
+	if decoded.width == decoded.height and decoded.width <= maxSide then
+		local r, g, b = artwork.dominant(decoded)
+		return decoded, { r = r, g = g, b = b }
+	end
 
 	local fitted = artwork.fit(decoded, maxSide)
 	local r, g, b = artwork.dominant(fitted)

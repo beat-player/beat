@@ -5,10 +5,64 @@ local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local playingBars = require("beat.app.components.playing_bars")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local trackRow = {}
+
+-- What a click on the current track's row sends.
+local TOGGLE_PLAY = { type = "togglePlay" }
+
+-- A row's right-click menu and its stars' handler, one per track rather than one per row per frame.
+---@type table<beat.Track, fun(...): table>
+local menus = setmetatable({}, { __mode = "k" })
+---@type table<beat.Track, fun(stars: number): table>
+local rates = setmetatable({}, { __mode = "k" })
+
+---@param track beat.Track
+local function menuFor(track)
+	local menu = menus[track]
+	if menu == nil then
+		local id = track.id
+		menu = |_, _, _, _, _, windowX, windowY| -> {
+			type = "open",
+			overlay = "menu",
+			menu = "track",
+			id = id,
+			x = windowX,
+			y = windowY
+		}
+		menus[track] = menu
+	end
+	return menu
+end
+
+---@param track beat.Track
+local function rateFor(track)
+	local rate = rates[track]
+	if rate == nil then
+		local id = track.id
+		rate = |stars| -> { type = "rateTrack", id = id, stars = stars }
+		rates[track] = rate
+	end
+	return rate
+end
+
+---@class beat.components.TrackRowStyles
+---@field index wonderland.StyleBuilder
+---@field markerBox wonderland.StyleBuilder
+---@field info wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field artist wonderland.StyleBuilder
+---@field albumBox wonderland.StyleBuilder
+---@field album wonderland.StyleBuilder
+---@field timeBox wonderland.StyleBuilder
+---@field time wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder
+---@field rowHover wonderland.StyleBuilder
+---@field starSize number
+---@field starGap number
 
 ---@class beat.components.TrackRowProps
 ---@field track beat.Track
@@ -40,83 +94,78 @@ function trackRow.view(app, props)
 	local theme = app.services.appearance.theme
 	local track, index, current = props.track, props.index, props.current
 	local onClick = props.onClick
-	if current then onClick = { type = "togglePlay" } end
-	local titleColour = current ? (theme:color("accent")) : (theme:color("text"))
-	local muted = theme:color("muted")
-	local rowBg = current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))
-	local hoverBg = theme:color("hover")
-
-	local marker
-	if current then
-		marker = playingBars.view(app, { playing = props.playing })
-	else
-		marker = text(tostring(index)):style(theme:s():text(theme:type("sm")):fg(theme:color("faint")))
-	end
+	if current then onClick = TOGGLE_PLAY end
 
 	local width = props.width or theme:px(760)
 	-- The album column is the first thing a phone cannot afford. Keeping the title and time
 	-- legible is more useful than three columns squeezed into a narrow list.
 	local albumColumn = props.showAlbum ~= false and width >= theme:px(520)
 	local ratingWidth = props.rating ~= nil and props.ui ~= nil and trackRow.ratingWidth(app, width) or nil
-	local infoWidth = math.max(
-		theme:px(100),
-		width - (albumColumn and theme:px(324) or theme:px(122)) - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
-	)
-	local info = {
-		text(track.title):style(theme:s():w(infoWidth):text(theme:type("base")):weight("medium"):fg(titleColour):ellipsis())
-	}
+
+	-- One set per width, playing state and set of columns: everything below is a function of those.
+	local byWidth = styles.of(theme, current and "trackRowCurrent" or "trackRow", width)
+	local shape = (albumColumn and 1 or 0) + (ratingWidth ~= nil and 2 or 0)
+	local s = byWidth[shape] --[[@as beat.components.TrackRowStyles?]]
+	if s == nil then
+		local titleColour = current ? (theme:color("accent")) : (theme:color("text"))
+		local muted = theme:color("muted")
+		local infoWidth = math.max(
+			theme:px(100),
+			width - (albumColumn and theme:px(324) or theme:px(122)) - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
+		)
+		local function row()
+			return sty():row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
+				:radius(theme:radius("sm"))
+		end
+		s = {
+			index = theme:s():text(theme:type("sm")):fg(theme:color("faint")),
+			markerBox = sty():w(24):align("center"),
+			info = sty():w(infoWidth):h(48):column():justify("center"):gap(1),
+			title = theme:s():w(infoWidth):text(theme:type("base")):weight("medium"):fg(titleColour):ellipsis(),
+			artist = theme:s():w(infoWidth):text(theme:type("sm")):fg(muted):ellipsis(),
+			albumBox = sty():w(190):h(48):column():justify("center"),
+			album = theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis(),
+			timeBox = sty():w(54):h(48):column():align("start"):justify("center"),
+			time = theme:s():text(theme:type("sm")):fg(muted),
+			row = row():bg(current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))),
+			rowHover = row():bg(theme:color("hover")),
+			starSize = theme:px(14),
+			starGap = theme:px(2)
+		}
+		byWidth[shape] = s
+	end
+
+	local marker
+	if current then
+		marker = playingBars.view(app, { playing = props.playing })
+	else
+		marker = text(tostring(index)):style(s.index)
+	end
+
+	local info = { text(track.title):style(s.title) }
 	if not props.titleOnly then
-		info[#info + 1] = text(track.artist):style(theme:s():w(infoWidth):text(theme:type("sm")):fg(muted):ellipsis())
+		info[#info + 1] = text(track.artist):style(s.artist)
 	end
 	local children = {
-		div():style(sty():w(24):align("center")):children(marker),
-		div():style(sty():w(infoWidth):h(48):column():justify("center"):gap(1)):children(info)
+		div():style(s.markerBox):children(marker),
+		div():style(s.info):children(info)
 	}
 
 	if albumColumn then
-		children[#children + 1] = div()
-			:style(sty():w(190):h(48):column():justify("center"))
-			:children(text(track.album):style(theme:s():w(190):text(theme:type("sm")):fg(muted):ellipsis()))
+		children[#children + 1] = div():style(s.albumBox):children(text(track.album):style(s.album))
 	end
 
 	if ratingWidth ~= nil then
 		-- A star is its own target: setting a rating does not also play the track.
 		children[#children + 1] = ui.rating(
 			assert(props.ui),
-			{
-				value = props.rating or 0,
-				onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
-				size = theme:px(14),
-				gap = theme:px(2)
-			}
+			{ value = props.rating or 0, onRate = rateFor(track), size = s.starSize, gap = s.starGap }
 		)
 	end
 
-	children[#children + 1] = div()
-		:style(sty():w(54):h(48):column():align("start"):justify("center"))
-		:children(text(format.clock(track.duration)):style(theme:s():text(theme:type("sm")):fg(muted)))
+	children[#children + 1] = div():style(s.timeBox):children(text(format.clock(track.duration)):style(s.time))
 
-	return div()
-		:style(
-			sty()
-				:row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
-				:radius(theme:radius("sm")):bg(rowBg)
-		)
-		:hover(
-			sty()
-				:row():w(width):h(48):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align("center")
-				:radius(theme:radius("sm")):bg(hoverBg)
-		):onClick(onClick)
-		:onContextMenu(
-			|_, _, _, _, _, windowX, windowY| -> {
-				type = "open",
-				overlay = "menu",
-				menu = "track",
-				id = track.id,
-				x = windowX,
-				y = windowY
-			}
-		):children(children)
+	return div():style(s.row):hover(s.rowHover):onClick(onClick):onContextMenu(menuFor(track)):children(children)
 end
 
 return trackRow

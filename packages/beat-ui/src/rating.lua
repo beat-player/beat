@@ -4,6 +4,7 @@
 -- value it is given, and the message is the caller's.
 local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -18,6 +19,22 @@ local STARS = 5
 ---@field gap number? # Between stars; default px(2)
 ---@field colour string? # A set star; default the accent
 
+---@class beat.ui.RatingStyles
+---@field star wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder
+
+--- A rating is one star size and one gap, so the star box and the row are made once.
+---@param ctx beat.ui.Context
+---@param size number
+---@param gap number
+---@return beat.ui.RatingStyles
+local function ratingStyles(ctx, size, gap)
+	return {
+		star = sty():size(size, size):align("center"):justify("center"),
+		row = sty():row():h(size):w(size * STARS + gap * (STARS - 1)):gap(gap):align("center")
+	}
+end
+
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.RatingProps
 ---@return wonderland.Element
@@ -28,16 +45,17 @@ function rating.view(ctx, props)
 	local set = props.colour or ctx:color("accent")
 	local unset = ctx:color("faint")
 
+	local styles = cache.of(ctx, ratingStyles, "rating", size, gap) --[[@as beat.ui.RatingStyles]]
+
 	local stars = {}
 	for at = 1, STARS do
 		local on = at <= value
-		stars[at] = div()
-			:style(sty():size(size, size):align("center"):justify("center"))
-			:onClick(props.onRate(at == value and 0 or at))
-			:children({ icon.view(ctx, { name = on and "star" or "starOutline", size = size, colour = on and set or unset }) })
+		stars[at] = div():style(styles.star):onClick(props.onRate(at == value and 0 or at)):children({
+			icon.view(ctx, { name = on and "star" or "starOutline", size = size, colour = on and set or unset })
+		})
 	end
 
-	return div():style(sty():row():h(size):w(size * STARS + gap * (STARS - 1)):gap(gap):align("center")):children(stars)
+	return div():style(styles.row):children(stars)
 end
 
 return { view = rating.view }

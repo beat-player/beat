@@ -4,6 +4,7 @@
 -- `build.lua` from `src/assets` and written as a Lua module, so a compiled binary carries it too.
 local utf8 = require("utf8")
 local wonderland = require("wonderland")
+local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -54,14 +55,31 @@ for name, codepoint in pairs(GLYPHS) do UTF8_GLYPHS[name] = utf8.char(codepoint)
 -- executable: an lde-compiled binary bundles the module and starts with nothing unpacked.
 local ICON_FONT = wonderland.embedFont("beat-ui.icons", require("beat-ui.icon_font"))
 
+---@class beat.ui.IconStyles
+---@field box wonderland.StyleBuilder
+---@field glyph wonderland.StyleBuilder
+
+--- One glyph of one size in one colour: the same box and the same text style every frame, so a row
+--- of icons asks for two or three pairs of builders, not one pair per frame.
 ---@param _ctx beat.ui.Context
+---@param size number
+---@param colour string
+---@return beat.ui.IconStyles
+local function iconStyles(_ctx, size, colour)
+	return {
+		box = sty():size(size, size):row():align("center"):justify("center"),
+		glyph = sty():font(ICON_FONT):text(size):fg(colour)
+	}
+end
+
+---@param ctx beat.ui.Context
 ---@param props beat.ui.IconProps
 ---@return wonderland.Element
-function icon.view(_ctx, props)
+function icon.view(ctx, props)
 	local glyph = UTF8_GLYPHS[props.name] or UTF8_GLYPHS.github
-	local textElement = wonderland.text(glyph):style(sty():font(ICON_FONT):text(props.size):fg(props.colour))
+	local styles = cache.of(ctx, iconStyles, "icon", props.size, props.colour) --[[@as beat.ui.IconStyles]]
 
-	return div():style(sty():size(props.size, props.size):row():align("center"):justify("center")):children(textElement)
+	return div():style(styles.box):children(wonderland.text(glyph):style(styles.glyph))
 end
 
 return { view = icon.view }

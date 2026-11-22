@@ -26,6 +26,7 @@
 ---@field type fun(self: beat.ui.Theme, name: string): number
 ---@field radius fun(self: beat.ui.Theme, name: string): number
 ---@field s fun(self: beat.ui.Theme): wonderland.StyleBuilder
+---@field cache (fun(self: beat.ui.Theme): table<any, any>)? # A table of what is built from this theme; absent on a theme a test makes by hand
 
 --- What a context is made from. beat fills this in from the live app; a test may make one by hand.
 ---@class beat.ui.ContextValues
@@ -56,6 +57,9 @@
 ---@field type fun(self: beat.ui.Context, name: string): number
 ---@field radius fun(self: beat.ui.Context, name: string): number
 ---@field s fun(self: beat.ui.Context): wonderland.StyleBuilder
+---@field cache fun(self: beat.ui.Context): table<any, any>
+---@field styleCache table<any, any>? # What `cache` hands out when the theme has no cache of its own
+---@field cacheTheme beat.ui.Theme? # The theme `styleCache` was made for
 ---@field focused fun(self: beat.ui.Context, name: string): boolean
 ---@field panelWidth fun(self: beat.ui.Context, max: number): number
 local Context = {}
@@ -68,20 +72,17 @@ Context.__index = Context
 ---@return beat.ui.Context
 function Context.new(values)
 	assert(values ~= nil and values.theme ~= nil, "a UI context needs a theme")
-	return setmetatable(
-		{
-			theme = values.theme,
-			assets = values.assets,
-			width = values.width,
-			height = values.height,
-			contentWidth = values.contentWidth,
-			contentHeight = values.contentHeight,
-			mobile = values.mobile == true,
-			focusedId = values.focusedId,
-			accentInk = values.theme.accentInk
-		},
-		Context
-	)
+	return setmetatable({
+		theme = values.theme,
+		assets = values.assets,
+		width = values.width,
+		height = values.height,
+		contentWidth = values.contentWidth,
+		contentHeight = values.contentHeight,
+		mobile = values.mobile == true,
+		focusedId = values.focusedId,
+		accentInk = values.theme.accentInk
+	}, Context)
 end
 
 ---@param token string # A colour token, or a colour literal the theme passes through
@@ -119,6 +120,27 @@ end
 ---@return wonderland.StyleBuilder
 function Context:s()
 	return self.theme:s()
+end
+
+--- The table a component keeps what it builds from the theme in -- style builders above all -- so a
+--- frame reuses them instead of interning the same ones again. It is the theme's own cache, so a new
+--- theme, or a step of its crossfade, starts empty. A theme a test makes by hand need not have one;
+--- the context keeps its own for it then, and drops it when that theme is replaced.
+--- Keys are the component's own: a value that depends on more than the theme (a size, a state) is
+--- keyed by that too. What is stored must never be changed afterwards: it is shared by every frame.
+--- Components use this; a plugin only needs the documented context methods.
+---@return table<any, any>
+function Context:cache()
+	local theme = self.theme
+	local themeCache = theme.cache
+	if themeCache ~= nil then return themeCache(theme) end
+
+	local cache = self.styleCache
+	if cache == nil or self.cacheTheme ~= theme then
+		cache = {}
+		self.styleCache, self.cacheTheme = cache, theme
+	end
+	return cache or {}
 end
 
 --- Whether the layout has keyboard focus on the field with this id.

@@ -49,28 +49,35 @@ local names = require("beat.music.names")
 ---@field ratings table<string, number> # By track key
 ---@field metrics { tracks: table<string, beat.Metric>, albums: table<string, beat.Metric>, tags: table<number, beat.Metric>, playlists: table<number, beat.Metric> }
 ---@field legacy beat.LegacyTaxonomy # Path-keyed entries no library has claimed yet
+---@field revision number # Bumped by every mutation; derived results are cached against it
 local Taxonomy = {}
 Taxonomy.__index = Taxonomy
 
 ---@return beat.Taxonomy
 function Taxonomy.new()
-	return setmetatable(
-		{
-			tags = {},
-			tagById = {},
-			tagByName = {},
-			byKey = {},
-			playlists = {},
-			playlistById = {},
-			nextTagId = 1,
-			nextPlaylistId = 1,
-			albumRatings = {},
-			ratings = {},
-			metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} },
-			legacy = { byPath = {}, ratings = {}, metrics = {} }
-		},
-		Taxonomy
-	)
+	return setmetatable({
+		tags = {},
+		tagById = {},
+		tagByName = {},
+		byKey = {},
+		playlists = {},
+		playlistById = {},
+		nextTagId = 1,
+		nextPlaylistId = 1,
+		albumRatings = {},
+		ratings = {},
+		metrics = { tracks = {}, albums = {}, tags = {}, playlists = {} },
+		legacy = { byPath = {}, ratings = {}, metrics = {} },
+		revision = 0
+	}, Taxonomy)
+end
+
+--- Marks the taxonomy changed. A view keeps what it derived from tags and playlists -- a
+--- playlist's tracks, the sidebar's recent order -- and compares this number rather than being
+--- told: overlays call the mutators below directly, so a signal on the service would miss them.
+---@param self beat.Taxonomy
+local function touched(self)
+	self.revision += 1
 end
 
 ---@param value string?
@@ -112,6 +119,7 @@ function Taxonomy:addTag(name)
 	local key = nameKey(display)
 	if display == "" or self.tagByName[key] ~= nil then return nil end
 
+	touched(self)
 	local tag = { id = self.nextTagId, name = display, hidden = false, count = 0 }
 	self.nextTagId += 1
 	self.tags[#self.tags + 1] = tag
@@ -127,6 +135,7 @@ end
 ---@param playlistId number
 ---@return beat.Tag
 function Taxonomy:addHiddenPlaylistTag(playlistId)
+	touched(self)
 	local tag = {
 		id = self.nextTagId,
 		name = "__playlist_" .. tostring(playlistId),
@@ -162,6 +171,7 @@ end
 ---@param on boolean
 function Taxonomy:setTag(key, tagId, on)
 	if self.tagById[tagId] == nil then return end
+	touched(self)
 	local set = self.byKey[key]
 	if on then
 		if set == nil then
@@ -211,6 +221,7 @@ end
 function Taxonomy:setRating(key, value)
 	value = clampRating(value)
 	self.ratings[key] = value > 0 ? value : nil
+	touched(self)
 end
 
 ---@param key string
@@ -225,6 +236,7 @@ end
 function Taxonomy:setAlbumRating(key, value)
 	value = clampRating(value)
 	self.albumRatings[key] = value > 0 ? value : nil
+	touched(self)
 end
 
 ---@param key string # `names.trackKey(track)`
@@ -267,6 +279,7 @@ function Taxonomy:addPlaylist(name, smart, tagIds, match, opts)
 	if display == "" then return nil end
 	opts = opts or {}
 
+	touched(self)
 	local playlist = {
 		id = self.nextPlaylistId,
 		name = display,
@@ -312,10 +325,7 @@ function Taxonomy:playlistTracks(playlist, library)
 	for _, track in ipairs(library.tracks) do
 		local key = names.trackKey(track)
 		local smartMatch = playlist.smart and self:matches(key, playlist.tagIds, playlist.match)
-		local manualMatch = playlist.manual and playlist.hiddenTagId ~= nil and self:isTagged(
-			key,
-			playlist.hiddenTagId
-		)
+		local manualMatch = playlist.manual and playlist.hiddenTagId ~= nil and self:isTagged(key, playlist.hiddenTagId)
 		if smartMatch or manualMatch then tracks[#tracks + 1] = track end
 	end
 	return tracks
@@ -329,6 +339,7 @@ function Taxonomy:setPlaylistTrack(playlist, key, on)
 	if hidden == nil then return end
 	local was = self:isTagged(key, hidden)
 	if was ~= on then
+		touched(self)
 		playlist.updatedAt = os.time()
 		if on then playlist.manual = true end
 		self:setTag(key, hidden, on)
@@ -350,6 +361,7 @@ end
 function Taxonomy:removeTag(tagId)
 	local tag = self.tagById[tagId]
 	if tag == nil then return end
+	touched(self)
 	self.tagById[tagId] = nil
 	if not tag.hidden then self.tagByName[nameKey(tag.name)] = nil end
 	for at = #self.tags, 1, -1 do
@@ -398,6 +410,7 @@ function Taxonomy:renameTag(tagId, name)
 	local other = self.tagByName[key]
 	if other ~= nil and other.id ~= tag.id then return nil end
 
+	touched(self)
 	self.tagByName[nameKey(tag.name)] = nil
 	tag.name = display
 	self.tagByName[key] = tag
@@ -433,6 +446,7 @@ end
 function Taxonomy:removePlaylist(playlistId)
 	local playlist = self.playlistById[playlistId]
 	if playlist == nil then return end
+	touched(self)
 	self.playlistById[playlistId] = nil
 	for at = #self.playlists, 1, -1 do
 		if self.playlists[at].id == playlistId then table.remove(self.playlists, at) end
@@ -462,6 +476,7 @@ end
 ---@param now number?
 function Taxonomy:recordListen(track, library, playlistId, now)
 	now = now or os.time()
+	touched(self)
 	local key = names.trackKey(track)
 	bump(self.metrics.tracks, key, now)
 	local album = library:album(track.albumId)
@@ -488,6 +503,18 @@ function Taxonomy:albumMetric(album)
 	return self.metrics.albums[album.key]
 end
 
+---@class beat.Taxonomy.HeardEntry
+---@field album beat.Album
+---@field last number
+
+--- Newest first, then by album key, so the order never depends on the table walk.
+---@param a beat.Taxonomy.HeardEntry
+---@param b beat.Taxonomy.HeardEntry
+local function heardOrder(a, b)
+	if a.last ~= b.last then return a.last > b.last end
+	return a.album.key < b.album.key
+end
+
 --- Albums heard, newest last-heard first.
 ---@param library beat.Library
 ---@param limit number?
@@ -498,10 +525,7 @@ function Taxonomy:recentAlbums(library, limit)
 		local metric = self.metrics.albums[album.key]
 		if metric ~= nil then entries[#entries + 1] = { album = album, last = metric.last } end
 	end
-	table.sort(entries, function(a, b)
-		if a.last ~= b.last then return a.last > b.last end
-		return a.album.key < b.album.key
-	end)
+	table.sort(entries, heardOrder)
 	local albums = {}
 	for at = 1, #entries do
 		albums[#albums + 1] = entries[at].album
@@ -588,7 +612,10 @@ function Taxonomy:adopt(library)
 		end
 	end
 
-	if moved then useTags(self) end
+	if moved then
+		touched(self)
+		useTags(self)
+	end
 	return moved
 end
 

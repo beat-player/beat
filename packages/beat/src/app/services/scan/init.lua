@@ -4,6 +4,15 @@
 -- first launch asks -- everything a view needs to say "no folder yet" comes from here.
 local Picker = require("beat.app.services.scan.picker")
 local ScanJob = require("beat.app.services.scan.job")
+local time = require("wonderland.time")
+
+-- How much of a worker's output one tick takes into the library. A fast local scan can write a
+-- whole library in a fraction of a second: taking it a fixed handful of tracks a tick makes the
+-- scan last as many frames as the library has tracks, and taking all of it in one tick holds a
+-- frame for as long as the reading and adding take. A share of a frame per tick keeps both ends
+-- bounded, and the batch cap keeps one add loop from growing without limit on a slow machine.
+local INGEST_BUDGET = 0.004
+local INGEST_BATCH = 128
 
 ---@class beat.ScanSummary
 ---@field tracks number
@@ -171,6 +180,34 @@ function Scan:nextPick()
 	if request ~= nil then self:startPick(request) end
 end
 
+--- The tracks a job has produced, into the library, until the tick's share of a frame is spent.
+--- The worker may have written them long ago: what bounds a tick is the reading and the adding,
+--- not how much output is waiting.
+---@param job beat.ScanJob
+---@param errors { path: string, message: string }[]?
+---@return boolean changed
+function Scan:ingest(job, errors)
+	local library = self.library
+	local changed = false
+	local deadline = time.now() + INGEST_BUDGET
+
+	while true do
+		local events, progressed = job:poll(INGEST_BATCH)
+		if progressed then changed = true end
+		for _, event in ipairs(events) do
+			---@cast event table
+			if event.type == "track" and library.current ~= nil then
+				self:addTrack(event, errors)
+				changed = true
+			end
+		end
+
+		if #events == 0 or time.now() >= deadline then break end
+	end
+
+	return changed
+end
+
 --- One inspected file into the library. A full scan also keeps the failures for the settings
 --- screen; a folder added by a plugin only says so in a toast.
 ---@param event table
@@ -294,15 +331,7 @@ function Scan:step(now)
 	local job = self.job
 	if job ~= nil then
 		local library = self.library
-		local events, progressed = job:poll(32)
-		if progressed then changed = true end
-		for _, event in ipairs(events) do
-			---@cast event table
-			if event.type == "track" and library.current ~= nil then
-				self:addTrack(event, self.errors)
-				changed = true
-			end
-		end
+		if self:ingest(job, self.errors) then changed = true end
 
 		if job:isDone() and not job:hasPending() then
 			local progress = job:progress()
@@ -333,15 +362,7 @@ function Scan:step(now)
 	local addJob = self.addJob
 	if addJob ~= nil then
 		local library = self.library
-		local events, progressed = addJob:poll(32)
-		if progressed then changed = true end
-		for _, event in ipairs(events) do
-			---@cast event table
-			if event.type == "track" and library.current ~= nil then
-				self:addTrack(event, nil)
-				changed = true
-			end
-		end
+		if self:ingest(addJob, nil) then changed = true end
 
 		if addJob:isDone() and not addJob:hasPending() then
 			local progress = addJob:progress()

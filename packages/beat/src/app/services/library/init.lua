@@ -26,19 +26,16 @@ LibraryService.needs = { "settings", "options", "emit" }
 ---@param deps { settings: beat.SettingsService, options: { scan: boolean? }?, emit: fun(message: table) }
 ---@return beat.LibraryService
 function LibraryService.new(deps)
-	local self = setmetatable(
-		{
-			current = nil,
-			sortedAlbums = nil,
-			sortedFor = nil,
-			settings = deps.settings,
-			emit = deps.emit,
-			replaced = Signal.new(),
-			changed = Signal.new(),
-			finished = Signal.new()
-		},
-		LibraryService
-	)
+	local self = setmetatable({
+		current = nil,
+		sortedAlbums = nil,
+		sortedFor = nil,
+		settings = deps.settings,
+		emit = deps.emit,
+		replaced = Signal.new(),
+		changed = Signal.new(),
+		finished = Signal.new()
+	}, LibraryService)
 
 	local options = deps.options or {}
 	local root = deps.settings.values.root
@@ -108,6 +105,22 @@ function LibraryService:save()
 	return LibraryCache.save(assert(self.current))
 end
 
+--- The folded titles and artists of a list of albums, made once for a sort to read instead of
+--- folding both names inside every comparison. An order is computed once per library change, so
+--- these are made again each time rather than kept: a second copy of every title is not worth the
+--- heap a library holds for as long as it runs.
+---@param albums beat.Album[]
+---@return table<beat.Album, string> titles
+---@return table<beat.Album, string> artists
+local function folded(albums)
+	local titles, artists = {}, {}
+	for _, album in ipairs(albums) do
+		titles[album] = names.fold(album.title)
+		artists[album] = names.fold(album.artist)
+	end
+	return titles, artists
+end
+
 --- The albums in an order, computed once per order until the library changes. `recent` is the
 --- library's own list reversed, so it is copied rather than sorted.
 ---@param order string
@@ -118,27 +131,32 @@ function LibraryService:sorted(order)
 	if library == nil then return {} end
 
 	local albums = {}
+	if order == "recent" then
+		for at = #library.recent, 1, -1 do albums[#albums + 1] = library.recent[at] end
+		self.sortedAlbums = albums
+		self.sortedFor = order
+		return albums
+	end
+
 	for _, album in ipairs(library.albums) do albums[#albums + 1] = album end
 
+	local titles, artists = folded(albums)
 	if order == "artist" then
 		table.sort(albums, function(a, b)
-			local aa, ba = names.fold(a.artist), names.fold(b.artist)
+			local aa, ba = artists[a], artists[b]
 			if aa ~= ba then return aa < ba end
-			return names.fold(a.title) < names.fold(b.title)
+			return titles[a] < titles[b]
 		end)
 	elseif order == "year" then
 		table.sort(albums, function(a, b)
 			local ay, by = a.year or 0, b.year or 0
 			if ay ~= by then return ay > by end
-			return names.fold(a.title) < names.fold(b.title)
+			return titles[a] < titles[b]
 		end)
-	elseif order == "recent" then
-		albums = {}
-		for at = #library.recent, 1, -1 do albums[#albums + 1] = library.recent[at] end
 	elseif order == "modified" then
 		table.sort(albums, function(a, b)
 			if a.modified ~= b.modified then return a.modified > b.modified end
-			return names.fold(a.title) < names.fold(b.title)
+			return titles[a] < titles[b]
 		end)
 	end
 

@@ -7,6 +7,7 @@
 -- pointer is over it and is for a third, less important action.
 local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
+local cache = require("beat-ui.cache")
 local measure = require("beat-ui.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -21,13 +22,24 @@ local button = {}
 ---@field height number? # Default px(36)
 ---@field icon string? # An icon name drawn before the label
 
+---@class beat.ui.ButtonStyles
+---@field base wonderland.StyleBuilder
+---@field hover wonderland.StyleBuilder
+---@field label wonderland.StyleBuilder
+---@field colour string # What the label is drawn in, which the icon before it takes too
+
+--- The variant, the geometry and whether there is a glyph are the whole of what a button's styles
+--- say, so a button that says the same thing in every frame is one record of builders handed over
+--- again.
 ---@param ctx beat.ui.Context
----@param props beat.ui.ButtonProps
----@return wonderland.Element
-function button.view(ctx, props)
-	local height = props.height or ctx:px(36)
-	local variant = props.variant or "secondary"
-	---@type string?
+---@param variant "primary"|"secondary"|"quiet"
+---@param height number
+---@param width number
+---@param gap number
+---@param hasIcon boolean
+---@return beat.ui.ButtonStyles
+local function buttonStyles(ctx, variant, height, width, gap, hasIcon)
+	---@type string
 	local colour
 	---@type string?
 	local background
@@ -53,28 +65,48 @@ function button.view(ctx, props)
 		border = ctx:color("border")
 		hoverBorder = ctx:color("border")
 	end
+
+	local pad = ctx:px(16)
+	local stroke = ctx:px(1)
+	local radius = ctx:radius("sm")
+	local base = sty():h(height):pad(0, pad, 0, pad):row():align("center"):justify("center"):gap(gap):radius(radius)
+	local hoverStyle = sty():h(height):pad(0, pad, 0, pad):row():align("center"):justify("center"):gap(gap):radius(radius)
+	if background ~= nil then base:bg(background) end
+	if border ~= nil then base:border(stroke, border) end
+	if hover ~= nil then hoverStyle:bg(hover) end
+	if hoverBorder ~= nil then hoverStyle:border(stroke, hoverBorder) end
+	base:w(width)
+	hoverStyle:w(width)
+
+	return {
+		base = base,
+		hover = hoverStyle,
+		label = ctx:s():text(ctx:type("sm")):weight("semibold"):fg(colour),
+		colour = colour
+	}
+end
+
+---@param ctx beat.ui.Context
+---@param props beat.ui.ButtonProps
+---@return wonderland.Element
+function button.view(ctx, props)
+	local height = props.height or ctx:px(36)
+	local variant = props.variant
+	if variant ~= "primary" and variant ~= "quiet" then variant = "secondary" end
 	local gap = ctx:px(6)
 	local labelWidth = measure.estimate(props.label, ctx:type("sm"), 0.48)
 	local autoWidth = labelWidth + ctx:px(16) * 2 + (props.icon ~= nil and (ctx:px(16) + gap) or 0)
 	local width = props.width or autoWidth
 
-	local function base(fill, stroke)
-		local style = sty()
-			:h(height):pad(0, ctx:px(16), 0, ctx:px(16)):row():align("center"):justify("center"):gap(gap)
-			:radius(ctx:radius("sm"))
-		if fill ~= nil then style:bg(fill) end
-		if stroke ~= nil then style:border(ctx:px(1), stroke) end
-		style:w(width)
-		return style
-	end
+	local styles = cache.of(ctx, buttonStyles, "button", variant, height, width, gap, props.icon ~= nil) --[[@as beat.ui.ButtonStyles]]
 
 	local children = {}
 	if props.icon ~= nil then
-		children[#children + 1] = icon.view(ctx, { name = props.icon, size = ctx:px(16), colour = colour })
+		children[#children + 1] = icon.view(ctx, { name = props.icon, size = ctx:px(16), colour = styles.colour })
 	end
-	children[#children + 1] = text(props.label):style(ctx:s():text(ctx:type("sm")):weight("semibold"):fg(colour))
+	children[#children + 1] = text(props.label):style(styles.label)
 
-	return div():style(base(background, border)):hover(base(hover, hoverBorder)):onClick(props.onClick):children(children)
+	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children(children)
 end
 
 return { view = button.view }

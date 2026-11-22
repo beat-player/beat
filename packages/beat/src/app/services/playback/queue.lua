@@ -18,25 +18,27 @@ Queue.__index = Queue
 ---@return beat.Queue
 function Queue.new(tracks, index, opts)
 	opts = opts or {}
+	local own = {}
+	for at = 1, #tracks do own[at] = tracks[at] end
 	local order = {}
 	local naturalOrder = {}
-	for at = 1, #tracks do
+	for at = 1, #own do
 		order[at] = at
 		naturalOrder[at] = at
 	end
 
-	local queue = setmetatable(
-		{
-			tracks = tracks,
-			order = order,
-			naturalOrder = naturalOrder,
-			position = math.max(1, math.min(index or 1, #tracks)),
-			repeatMode = opts.repeatMode or "off",
-			shuffle = opts.shuffle ?? false,
-			source = opts.source or "library"
-		},
-		Queue
-	)
+	local queue = setmetatable({
+		-- The queue's own array rather than the caller's: what is queued is mostly an album's or
+		-- an artist's tracks, which are the library's, and a queue that appended to the array it
+		-- was handed would be adding tracks to the album itself.
+		tracks = own,
+		order = order,
+		naturalOrder = naturalOrder,
+		position = math.max(1, math.min(index or 1, #own)),
+		repeatMode = opts.repeatMode or "off",
+		shuffle = opts.shuffle ?? false,
+		source = opts.source or "library"
+	}, Queue)
 
 	if queue.shuffle then queue:shuffleOrder() end
 
@@ -219,16 +221,19 @@ end
 ---@param tracks beat.Track[]
 ---@param index number?
 function Queue:replace(tracks, index)
-	self.tracks = tracks
+	-- The queue's own array, for the reason `Queue.new` keeps one: `Queue:add` appends to it.
+	local own = {}
+	for at = 1, #tracks do own[at] = tracks[at] end
+	self.tracks = own
 	local order = {}
 	local naturalOrder = {}
-	for at = 1, #tracks do
+	for at = 1, #own do
 		order[at] = at
 		naturalOrder[at] = at
 	end
 	self.order = order
 	self.naturalOrder = naturalOrder
-	self.position = math.max(1, math.min(index or 1, #tracks))
+	self.position = math.max(1, math.min(index or 1, #own))
 	if self.shuffle then self:shuffleOrder() end
 end
 
@@ -291,18 +296,15 @@ function Queue.unpack(packed, find)
 		if moved[packed.order[at]] ~= nil then before += 1 end
 	end
 
-	local queue = setmetatable(
-		{
-			tracks = tracks,
-			order = order,
-			naturalOrder = remap(packed.naturalOrder),
-			position = math.min(before + 1, #order),
-			repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
-			shuffle = packed.shuffle == true,
-			source = type(packed.source) == "string" and packed.source or "library"
-		},
-		Queue
-	)
+	local queue = setmetatable({
+		tracks = tracks,
+		order = order,
+		naturalOrder = remap(packed.naturalOrder),
+		position = math.min(before + 1, #order),
+		repeatMode = REPEAT_MODES[packed.repeatMode] and packed.repeatMode or "off",
+		shuffle = packed.shuffle == true,
+		source = type(packed.source) == "string" and packed.source or "library"
+	}, Queue)
 
 	return queue, moved[packed.order[packed.position]] ~= nil
 end

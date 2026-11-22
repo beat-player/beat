@@ -48,27 +48,50 @@ for name in pairs(package.loaded) do HOST_LOADED[name] = true end
 ---@return boolean
 local function templateFinds(template, modulePath)
 	if template:find("?", 1, true) == nil then return false end
-	local candidate = template:gsub("%?", function() return modulePath end)
+	local candidate = template:gsub("%?", || -> modulePath)
 	local file = io.open(candidate, "rb")
 	if file == nil then return false end
 	file:close()
 	return true
 end
 
+-- What `hostProvides` has answered already. The host's modules are the ones that stood before any
+-- plugin file ran, and they never grow, so an answer cannot change from one plugin file to the
+-- next; a launch with several bundles otherwise asks the filesystem about every module they carry,
+-- once per bundle.
+---@type table<string, boolean>
+local hostProvided = {}
+
 --- Whether beat, or one of the packages it ships, already provides this module.
 ---@param name string
 ---@return boolean
 local function hostProvides(name)
-	if HOST_PRELOAD[name] or HOST_LOADED[name] then return true end
+	local answered = hostProvided[name]
+	if answered ~= nil then return answered end
+	answered = false
 
-	local modulePath = name:gsub("%.", "/")
-	for template in package.path:gmatch("[^;]+") do
-		if templateFinds(template, modulePath) then return true end
+	if HOST_PRELOAD[name] or HOST_LOADED[name] then
+		answered = true
+	else
+		local modulePath = name:gsub("%.", "/")
+		for template in package.path:gmatch("[^;]+") do
+			if templateFinds(template, modulePath) then
+				answered = true
+				break
+			end
+		end
+		if not answered then
+			for template in package.cpath:gmatch("[^;]+") do
+				if templateFinds(template, modulePath) then
+					answered = true
+					break
+				end
+			end
+		end
 	end
-	for template in package.cpath:gmatch("[^;]+") do
-		if templateFinds(template, modulePath) then return true end
-	end
-	return false
+
+	hostProvided[name] = answered
+	return answered
 end
 
 --- Drops the preload entries a file added, for a file that did not become a plugin. A module the
@@ -105,28 +128,31 @@ local function runIsolated(chunk, file)
 
 	local added = {}
 	local clashes = {}
-	local preload = setmetatable({}, { __index = function(_, name) return real.preload[name] end, __newindex = function(_, name, loader)
-		if type(name) ~= "string" or added[name] ~= nil then return end
-		-- A bundle's copy of something the app already has is dropped, not reported: every
-		-- bundle carries one, and an app built from source and a compiled one disagree about
-		-- where the copy came from.
-		if hostProvides(name) then return end
-		if before[name] or real.loaded[name] ~= nil then
-			-- Another plugin put its module here first. First one wins, and the person is
-			-- told rather than one plugin quietly changing the module another one uses.
-			clashes[#clashes + 1] = name
-			return
+	local preload = setmetatable({}, {
+		__index = |_, name| -> real.preload[name],
+		__newindex = function(_, name, loader)
+			if type(name) ~= "string" or added[name] ~= nil then return end
+			-- A bundle's copy of something the app already has is dropped, not reported: every
+			-- bundle carries one, and an app built from source and a compiled one disagree about
+			-- where the copy came from.
+			if hostProvides(name) then return end
+			if before[name] or real.loaded[name] ~= nil then
+				-- Another plugin put its module here first. First one wins, and the person is
+				-- told rather than one plugin quietly changing the module another one uses.
+				clashes[#clashes + 1] = name
+				return
+			end
+			added[name] = loader
+			real.preload[name] = loader
 		end
-		added[name] = loader
-		real.preload[name] = loader
-	end })
+	})
 
 	-- Only `preload` is the stand-in; everything else, including the `cpath` write a bundle makes
 	-- while extracting its native libraries, reaches the real package.
-	local standIn = setmetatable(
-		{ preload = preload },
-		{ __index = real, __newindex = function(_, key, value) real[key] = value end }
-	)
+	local standIn = setmetatable({ preload = preload }, {
+		__index = real,
+		__newindex = function(_, key, value) real[key] = value end
+	})
 
 	local previous = rawget(_G, "package")
 	_G.package = standIn

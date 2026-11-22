@@ -141,8 +141,6 @@ function searchPage.view(app, page, window)
 				{
 					album = album,
 					width = cardWidth,
-					onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-					onPlay = { type = "playAlbum", id = album.id },
 					ui = ctx
 				}
 			)
@@ -204,8 +202,6 @@ function searchPage.view(app, page, window)
 						{
 							album = album,
 							width = cardWidth,
-							onOpen = { type = "navigate", page = { kind = "album", id = album.id } },
-							onPlay = { type = "playAlbum", id = album.id },
 							ui = ctx
 						}
 					)

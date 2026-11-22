@@ -2,11 +2,28 @@
 -- just happened.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
+local cache = require("beat-ui.cache")
 local measure = require("beat.app.components.helpers.measure")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local toasts = {}
+
+---@class beat.components.chrome.ToastStyles
+---@field layer wonderland.StyleBuilder
+---@field text wonderland.StyleBuilder
+
+--- The layer and the style a toast's lines are measured in say nothing about a toast: they are the
+--- same while one is up and while none is.
+---@param ctx beat.ui.Context
+---@param size number
+---@return beat.components.chrome.ToastStyles
+local function toastStyles(ctx, size)
+	return {
+		layer = sty():fill():offset(0, 0):z(90),
+		text = ctx:s():text(size)
+	}
+end
 
 ---@class beat.components.chrome.ToastsProps
 ---@field window wonderland.RenderWindow
@@ -24,7 +41,8 @@ function toasts.view(app, props)
 	local children = {}
 	local width = math.min(320, window.width - theme:space(16))
 	local size = theme:type("sm")
-	local textStyle = theme:s():text(size)
+	local fixed = cache.of(ctx, toastStyles, "toasts", size) --[[@as beat.components.chrome.ToastStyles]]
+	local textStyle = fixed.text
 	-- The padding either side, the icon and the gap after it.
 	local lineWidth = width - theme:px(14) * 2 - theme:px(18) - theme:px(10)
 	local top = theme:px(76)
@@ -58,23 +76,17 @@ function toasts.view(app, props)
 
 		toast.rect = { x = x, y = y, width = width, height = height }
 
-		children[#children + 1] = div()
-			:style(
-				sty()
-					:w(width):h(height):row():pad(theme:px(12), theme:px(14), theme:px(12), theme:px(14)):gap(theme:px(10))
-					:align("center"):radius(theme:radius("sm")):bg(theme:color("elevated", alpha)):offset(x, y + lift)
-					:shadow(0, theme:px(8), theme:px(24), "#00000040")
-			):onClick({ type = "dismissToast", at = toast.at })
-			:children(
-				{
-					ui.icon(ctx, { name = toast.tone == "error" ? "close" : "check", size = (theme:px(18)), colour = tone }),
-					text(message):style(theme:s():w(lineWidth):h(textHeight):text(size):fg(theme:color("text", alpha)))
-				}
-			)
+		children[#children + 1] = div():style(sty():w(width):h(height):row():pad(theme:px(12), theme:px(14), theme:px(12), theme:px(14)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")):bg(theme:color("elevated", alpha)):offset(x, y + lift):shadow(0, theme:px(8), theme:px(24), "#00000040")):onClick({
+			type = "dismissToast",
+			at = toast.at
+		}):children({
+			ui.icon(ctx, { name = toast.tone == "error" ? "close" : "check", size = (theme:px(18)), colour = tone }),
+			text(message):style(theme:s():w(lineWidth):h(textHeight):text(size):fg(theme:color("text", alpha)))
+		})
 		y = y + height + theme:px(8)
 	end
 
-	return div():style(sty():fill():offset(0, 0):z(90)):children(children)
+	return div():style(fixed.layer):children(children)
 end
 
 return toasts

@@ -131,8 +131,6 @@ function artistPage.view(app, page, window)
 				{
 					album = release,
 					width = cardWidth,
-					onOpen = { type = "navigate", page = { kind = "album", id = release.id } },
-					onPlay = { type = "playAlbum", id = release.id },
 					ui = ctx
 				}
 			)

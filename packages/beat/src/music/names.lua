@@ -60,14 +60,23 @@ function names.pathKey(path)
 	return "path:" .. path
 end
 
+-- The key a track is filed under is computed once per track: its path and fingerprint are set
+-- when the track is built and never change, and every screen that rates or filters a row asks
+-- for it. The table holds the tracks weakly so a library replaced by a scan is not kept alive.
+---@type table<beat.Track, string>
+local trackKeys = setmetatable({}, { __mode = "k" })
+
 --- The key a track's own data is filed under. A fingerprint of the audio survives renaming, moving
 --- and retagging, so the listener's tags, rating and plays follow the file; a scan that cannot
 --- compute one keeps the path, which is all earlier versions had.
 ---@param track beat.Track
 ---@return string
 function names.trackKey(track)
-	if track.fingerprint ~= nil and track.fingerprint ~= "" then return track.fingerprint end
-	return names.pathKey(track.path)
+	local key = trackKeys[track]
+	if key ~= nil then return key end
+	key = track.fingerprint ~= nil and track.fingerprint ~= "" and track.fingerprint or names.pathKey(track.path)
+	trackKeys[track] = key
+	return key
 end
 
 --- The key a set of tags and a folder make for one album. The scanner's worker and the library

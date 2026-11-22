@@ -13,9 +13,9 @@ local json = require("json")
 local Scanner = require("beat.music.scan")
 local artworkCache = require("beat.music.artwork_cache")
 local Log = require("beat.log")
+local parent = require("beat.workers.parent")
 local workerProcess = require("beat.workers.process")
 local time = require("wonderland.time")
-local ffi = require("ffi")
 
 local root = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 local output = assert(env.var("BEAT_SCAN_OUTPUT"), "no scan output")
@@ -24,24 +24,9 @@ local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local WORKERS = tonumber(os.getenv("BEAT_SCAN_WORKERS") or "") or 4
 WORKERS = math.max(1, math.min(16, WORKERS))
 
----@type fun(milliseconds: number)
-local sleep
-if jit.os == "Windows" then
-	ffi.cdef[[void Sleep(unsigned int);]]
-	local kernel32 = ffi.load("kernel32")
-	---@param milliseconds number
-	local function windowsSleep(milliseconds)
-		kernel32.Sleep(ffi.cast("unsigned int", math.floor(milliseconds)))
-	end
-	sleep = windowsSleep
-else
-	ffi.cdef[[int usleep(unsigned int);]]
-	---@param milliseconds number
-	local function posixSleep(milliseconds)
-		ffi.C.usleep(math.floor(milliseconds * 1000))
-	end
-	sleep = posixSleep
-end
+--- Waits without spending the wait: the loop below asks its workers and its parent every few
+--- milliseconds, and a busy spin there would take a core from the inspectors it is reading.
+local sleep = workerProcess.sleep
 
 local file = assert(io.open(output, "wb"))
 ---@param value beat.MessageFields
@@ -165,6 +150,7 @@ end
 ---@class InspectWorker
 ---@field child process.Child
 ---@field output string
+---@field handle file? # The shard's output, open across passes so a fast scan is not an open a millisecond
 ---@field offset number
 ---@field buffer string
 ---@field done boolean
@@ -183,6 +169,7 @@ local function newWorker(child, outputPath)
 	return {
 		child = child,
 		output = outputPath,
+		handle = nil,
 		offset = 0,
 		buffer = "",
 		done = false,
@@ -199,54 +186,92 @@ end
 local usedCovers = {}
 local forwarded = 0
 
---- Read whatever this shard has written since the last read, forwarding each complete event.
----@param worker InspectWorker
-local function readWorker(worker)
-	-- Binary, so the offset is bytes: see `ScanJob:read`.
-	local input = io.open(worker.output, "rb")
-	if input == nil then return end
+-- One pass reads at most this much of a shard, and a line not finished yet is kept for the next
+-- pass. A scan that writes a whole library in a second arrives in a few passes rather than one
+-- allocation of the whole file.
+local READ_PASS = 512 * 1024
 
+--- A status line, without the byte that told the reader it was one. Track lines are the JSON the
+--- app reads already, so only these are decoded.
+---@param line string
+---@return table?
+local function decodeStatus(line)
+	return json.decode(line:sub(2)):unpack()
+end
+
+local function closeWorker(worker)
+	if worker.handle ~= nil then
+		worker.handle:close()
+		worker.handle = nil
+	end
+end
+
+--- Read whatever this shard has written since the last pass. A track line is copied through
+--- untouched: decoding and re-encoding every track was what made this process allocate as much as
+--- the inspectors it reads. Status lines -- progress, done, an error -- carry a leading 1, a byte
+--- JSON never starts with, and carry the cover list so the cache can be pruned without asking each
+--- track.
+---@param worker InspectWorker
+---@return boolean more # Whether the pass read anything, so an exited worker can be drained
+local function readWorker(worker)
+	local input = worker.handle
+	if input == nil then
+		input = io.open(worker.output, "rb")
+		if input == nil then return false end
+		worker.handle = input
+	end
+
+	-- Binary, so the offset counts bytes: see `ScanJob:read`. Seeking also clears a previous read's
+	-- end-of-file, so a pass after the inspector wrote more sees what it wrote.
 	input:seek("set", worker.offset)
-	local data = input:read("*a") or ""
-	input:close()
-	if data == "" then return end
+	local data = input:read(READ_PASS) or ""
+	if data == "" then return false end
 
 	worker.offset += #data
-	worker.buffer ..= data
+	local buffer = worker.buffer .. data
+	local cursor, moved = 1, false
 
 	while true do
-		local line, rest = worker.buffer:match("^(.-)\r?\n(.*)$")
-		if line == nil then break end
-		worker.buffer = rest
+		local stop = buffer:find("\n", cursor, true)
+		if stop == nil then break end
+		local line = buffer:sub(cursor, stop - 1)
+		cursor = stop + 1
 
-		if line ~= "" then
-			local ok, event = pcall(|| -> json.decode(line):unpack())
-			if not ok then
-				Log.write("error", "scan inspector output could not be read: " .. tostring(event))
-			elseif type(event) == "table" then
-				---@cast event table
-				if event.type == "track" then
-					forwarded += 1
-					if event.coverCache ~= nil then usedCovers[event.coverCache] = true end
-					emit(event)
-				elseif event.type == "progress" then
-					worker.inspected = event.inspected or worker.inspected
-					worker.skipped = event.skipped or worker.skipped
-					worker.current = event.current or worker.current
-				elseif event.type == "done" then
-					worker.done = true
-					worker.inspected = event.inspected or worker.inspected
-					worker.skipped = event.skipped or worker.skipped
-					worker.errors = event.errors or worker.errors
-				elseif event.type == "cancelled" then
-					worker.done = true
-				elseif event.type == "error" then
-					worker.error = event.message or "scan worker failed"
-					worker.done = true
+		if #line > 0 then
+			if line:byte(1) == 1 then
+				local ok, event = pcall(decodeStatus, line)
+				if not ok then
+					Log.write("error", "scan inspector status could not be read: " .. tostring(event))
+				elseif type(event) == "table" then
+					---@cast event table
+					if event.type == "progress" then
+						worker.inspected = event.inspected or worker.inspected
+						worker.skipped = event.skipped or worker.skipped
+						worker.current = event.current or worker.current
+					elseif event.type == "done" then
+						worker.done = true
+						worker.inspected = event.inspected or worker.inspected
+						worker.skipped = event.skipped or worker.skipped
+						worker.errors = event.errors or worker.errors
+						for _, cover in ipairs(event.covers or {}) do usedCovers[cover] = true end
+					elseif event.type == "cancelled" then
+						worker.done = true
+					elseif event.type == "error" then
+						worker.error = event.message or "scan worker failed"
+						worker.done = true
+					end
 				end
+			else
+				forwarded += 1
+				file:write(line, "\n")
+				moved = true
 			end
 		end
 	end
+
+	worker.buffer = cursor <= #buffer and buffer:sub(cursor) or ""
+	if moved then file:flush() end
+	return true
 end
 
 ---@param workers InspectWorker[]
@@ -269,6 +294,9 @@ local ok, err = pcall(function()
 	local scanner = Scanner.new(root, { library = false })
 	local lastProgress = time.now()
 	while scanner.phase == "enumerate" do
+		-- The window that started this scan is gone: its reader is gone with it, and the folder
+		-- walk is only ever done for that reader. The inspectors have not been started yet.
+		if parent.gone() then return end
 		if fs.isfile(cancelFile) then
 			emit({ type = "cancelled" })
 			return
@@ -322,6 +350,9 @@ local ok, err = pcall(function()
 
 	local lastReport = time.now()
 	while true do
+		-- The app is gone: nobody will read another event, and this process is the one that holds
+		-- the inspectors. Returning here runs `cleanup`, which stops them.
+		if parent.gone() then return end
 		if fs.isfile(cancelFile) then
 			for _, worker in ipairs(workers) do
 				if not worker.exited then worker.child:kill(true) end
@@ -342,12 +373,7 @@ local ok, err = pcall(function()
 			end
 
 			readWorker(worker)
-			if worker.exited then
-				readWorker(worker)
-				if #worker.buffer > 0 then worker.buffer = "" end
-			else
-				allDone = false
-			end
+			if not worker.exited then allDone = false end
 		end
 
 		local now = time.now()
@@ -361,9 +387,11 @@ local ok, err = pcall(function()
 		sleep(20)
 	end
 
+	-- An inspector can write more between the poll that reaped it and the read that follows, and a
+	-- pass above stops at `READ_PASS`: drain each shard to its end before asking what it reported.
 	for _, worker in ipairs(workers) do
-		readWorker(worker)
-		if #worker.buffer > 0 then worker.buffer = "" end
+		while readWorker(worker) do end
+		closeWorker(worker)
 	end
 
 	local errors = {}
