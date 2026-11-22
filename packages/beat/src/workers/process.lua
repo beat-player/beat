@@ -11,7 +11,6 @@
 -- four inspectors walking a music folder for a reader that no longer exists. See
 -- `beat.workers.parent`.
 local env = require("env")
-local process = require("process")
 local ffi = require("ffi")
 
 local workerProcess = {}
@@ -69,6 +68,14 @@ end
 ---@return process.Child? child
 ---@return string? err
 function workerProcess.spawn(vars)
+	-- Required here rather than at the top: `process` declares `struct pollfd` in the C namespace,
+	-- and winit-x11's wait declares it too without checking first. Loading both in the same
+	-- process is fine when winit goes first (process's second declaration is identical), but
+	-- when process goes first winit's `ffi.cdef` fails with "attempt to redefine 'pollfd'". A
+	-- module that only starts a worker should not pull in a declaration that can collide with a
+	-- window's, so it waits until a worker is actually started -- by then the window's winit is
+	-- already loaded.
+	local process = require("process")
 	vars.BEAT_PARENT_PID = tostring(workerProcess.pid())
 	return process.spawn(assert(env.execPath()), selfArgs(), { env = vars, stdout = "null", stderr = "null" })
 end

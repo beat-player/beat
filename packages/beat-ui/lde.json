@@ -3,9 +3,7 @@
 	"version": "0.1.1",
 	"dependencies": {
 		"utf8": { "version": "^0.1.0" },
-		"wonderland": {
-			"path": "../../../beat-deps/wonderland"
-		}
+		"wonderland": { "version": "^0.1.13" }
 	},
 	"devDependencies": {
 		"lde-test": {
