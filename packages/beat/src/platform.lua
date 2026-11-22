@@ -96,6 +96,28 @@ function platform.canReadMusic()
 	return granted == PERMISSION_GRANTED
 end
 
+-- AudioManager.STREAM_MUSIC: what music is played on, rather than the ringtone the hardware keys
+-- change by default when nothing is playing.
+local STREAM_MUSIC = 3
+
+--- Points the hardware volume keys at the stream beat plays on. Left alone, a phone changes its
+--- ringer volume whenever the keys are pressed and nothing is playing, which is most of a music
+--- player's life; the activity's choice stays for as long as it is in front, so this is asked for
+--- once at launch. Does nothing off Android.
+function platform.useMediaVolumeKeys()
+	if not platform.android then return end
+	local android = require("androidapi")
+	local jni = android.jni
+	local activity = assert(android.activity()).clazz
+
+	local _, err = jni.frame(
+		|| -> jni.call(activity, "android/app/Activity", "setVolumeControlStream", "(I)V", "void", STREAM_MUSIC)
+	)
+	if err ~= nil then
+		require("beat.log").write("warn", "could not point the volume keys at media: " .. tostring(err))
+	end
+end
+
 --- Shows the system's prompt for reading audio files. The answer is not reported back to a
 --- NativeActivity; `canReadMusic` says what it was once the app is resumed.
 function platform.requestMusicAccess()

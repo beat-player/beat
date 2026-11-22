@@ -1,5 +1,6 @@
 local env = require("env")
 local worker = env.var("BEAT_WORKER")
+local platform = require("beat.platform")
 
 -- The scan workers are this same program started again: the app starts a coordinator with
 -- BEAT_WORKER=scan, and that coordinator starts its inspectors with BEAT_WORKER=inspect. See
@@ -22,6 +23,10 @@ local function main()
 
 		local App = require("beat.app")
 		App.instance = claim
+		-- The hardware volume keys are the player's while it is in front, and a player's keys are
+		-- the media stream's. The scan workers above make no sound and leave the keys as they found
+		-- them.
+		platform.useMediaVolumeKeys()
 		App:run()
 	end
 end
