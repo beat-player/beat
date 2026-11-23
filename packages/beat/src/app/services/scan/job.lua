@@ -101,6 +101,7 @@ local function scanOnThread(root, output, cancelFile)
 		local names = require("beat.music.names")
 
 		local file = assert(io.open(output, "wb"))
+		---@param value beat.MessageFields
 		local function emit(value)
 			local ok, line = pcall(json.encode, value)
 			if ok then
@@ -111,14 +112,20 @@ local function scanOnThread(root, output, cancelFile)
 
 		local scanner = Scanner.new(root, { library = false })
 		local covers = {}
+		---@param info treble.audio.Inspect
+		---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number? }
+		---@param cover string?
 		scanner.onTrack = function(info, entry, cover)
-			local key = names.albumKey(info.tags, entry.dir)
+			local key = names.albumKey(info.tags, entry.dir, entry.path)
 			local coverCache = covers[key]
 			if coverCache == nil then
 				coverCache = false
-				if info.hasPicture or cover ~= nil then
+				-- A single is its own album, so the picture beside it belongs to no album of its own.
+				local beside = cover
+				if names.isSingleKey(key) then beside = nil end
+				if info.hasPicture or beside ~= nil then
 					coverCache = artwork.cacheCover(
-						{ path = entry.path, hasPicture = info.hasPicture, coverPath = cover, modified = entry.modifyTime },
+						{ path = entry.path, hasPicture = info.hasPicture, coverPath = beside, modified = entry.modifyTime },
 						512,
 						root
 					) or false

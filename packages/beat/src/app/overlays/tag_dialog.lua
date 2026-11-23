@@ -61,21 +61,21 @@ function tagDialog.view(app, overlay, window)
 	local state = overlay.state
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
-	local panelWidth = ctx:panelWidth(360)
-	local pad = theme:px(18)
-	local panelHeight = pad * 2 + theme:px(24) + theme:px(20) + theme:px(34) + theme:px(32) + theme:px(12) * 3
+	local panelWidth = ctx:panelWidth(380)
+	local pad = theme:px(20)
+	local gap = theme:px(14)
+	local named = state.draft:match("%S") ~= nil
+	local panelHeight = pad * 2 + theme:px(26) + theme:px(34) + theme:px(18) + theme:px(38) + gap * 3
 	local panel = div()
 		:style(
 			sty()
-				:w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12)):radius(theme:radius("lg"))
+				:w(panelWidth):h(panelHeight):column():pad(pad):gap(gap):radius(theme:radius("lg"))
 				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				:shadow(0, theme:px(16), theme:px(42), "#00000080")
 		):onClick({ type = "keep" })
 		:children(
 			{
-				text("New tag"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-				text("Tag tracks so playlists and search can find them.")
-					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+				text("New tag"):style(theme:s():h(theme:px(26)):text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
 				ui.field(
 					ctx,
 					{
@@ -86,22 +86,25 @@ function tagDialog.view(app, overlay, window)
 						onsubmit = || -> { type = "createTag" }
 					}
 				),
+				text("Each tag is also a smart playlist.")
+					:style(theme:s():wrel(1.0):h(theme:px(18)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
 				div()
-					:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
+					:style(sty():row():wrel(1.0):h(theme:px(38)):gap(theme:px(8)):align("center"):justify("end"))
 					:children(
 						{
 							ui.button(
 								ctx,
-								{ label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(30), width = theme:px(80) }
+								{ label = "Cancel", onClick = { type = "dismiss" }, variant = "quiet", height = theme:px(36), width = theme:px(84) }
 							),
+							-- Create is quiet until there is a name to create the tag with.
 							ui.button(
 								ctx,
 								{
 									label = "Create",
-									onClick = { type = "createTag" },
-									variant = "primary",
-									height = theme:px(30),
-									width = theme:px(86)
+									onClick = named and { type = "createTag" } or { type = "keep" },
+									variant = named and "primary" or "secondary",
+									height = theme:px(36),
+									width = theme:px(96)
 								}
 							)
 						}

@@ -57,7 +57,7 @@ function artistPage.view(app, page, window)
 	local albumStart = heroHeight + topHeight + theme:space(144)
 	local contentHeight = albumStart + albumsHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(), math.max(0, contentHeight - viewport))
+	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, contentHeight))
 	local scroll = app.services.scroll:offset(app:pageKey())
 	local first, last, sliceTop = app.services.scroll.slices(
 		#artist.albums,

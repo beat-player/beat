@@ -226,10 +226,9 @@ function collection.view(app, props)
 	end
 
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	-- The shell leaves the page's own top padding above the content, so the room the content can
-	-- actually use is that much smaller than the viewport: the last row still has to reach the
-	-- fold, and the extra scroll is that padding, not another row.
-	local limit = math.max(0, contentHeight + theme:space(20) - viewport)
+	-- The helper counts the shell's top padding above the content and a margin under it, so the
+	-- last row still reaches the fold and comes to rest clear of the bottom bar.
+	local limit = metrics.pageScrollLimit(app, window, contentHeight)
 	app.services.scroll:setLimit(app:pageKey(), limit)
 	-- An offset kept from a taller layout is clamped here too, so a page that grew shorter does
 	-- not open scrolled past its own list.

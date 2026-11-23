@@ -23,7 +23,7 @@ local Queue = require("beat.app.services.playback.queue")
 ---@field fadeStart number?
 ---@field fadeActive boolean
 ---@field fadeDuration number
----@field onSamples fun(samples: any, frames: number, channels: number)?
+---@field onSamples fun(samples: any, frames: number, channels: number, startFrame: number)? # startFrame: the device frame the chunk will be heard at
 ---@field onTrackStarted fun(track: beat.Track, position: number)?
 ---@field onTrackEnded fun(track: beat.Track, completed: boolean)?
 ---@field onQueueChanged fun()?
@@ -113,8 +113,15 @@ local function ensurePlayer(self)
 			self.error = err
 			self.pending = "error"
 		end
-		self.player.onSamples = function(samples, frames, channels)
-			if self.onSamples ~= nil then self.onSamples(samples, frames, channels) end
+		local tap = self.player
+		-- What the tap hands over is decoded ahead of the device: its first frame is heard after
+		-- everything written and staged before it. treble keeps that count private, so it is read
+		-- here, where the chunk is still the next thing staged.
+		local timeline = tap --[[@as { framesWritten: number, stagedFrames: number }]]
+		tap.onSamples = function(samples, frames, channels)
+			if self.onSamples ~= nil then
+				self.onSamples(samples, frames, channels, timeline.framesWritten + timeline.stagedFrames)
+			end
 		end
 		if self.equalizerBands ~= nil then self.player:setEqualizer(self.equalizerBands) end
 	end
@@ -449,6 +456,14 @@ end
 ---@return boolean
 function Player:isPlaying()
 	return self.player ~= nil and self.player:isPlaying()
+end
+
+--- The device frame being heard now, on the count `onSamples` numbers its chunks by; nil with no
+--- audio player.
+---@return number?
+function Player:heardFrame()
+	if self.player == nil then return nil end
+	return self.player:playedFrames()
 end
 
 ---@return string?

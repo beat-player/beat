@@ -3,6 +3,12 @@
 The SVG sources are from [Ionicons](https://ionic.io/ionicons) 7.4.0, under the MIT licence in
 `LICENSE`. `repeat-one.svg` is derived from `repeat.svg` by adding a `1` in the free centre.
 
+The three `material-*.svg` files are from Google's
+[Material Symbols](https://github.com/google/material-design-icons) (Rounded, filled), under the
+Apache License 2.0: `skip_previous` and `skip_next` for the transport buttons, and `library_music`
+for Playlists. The skip icons' view box is cropped to the glyph so they are drawn at the size of
+the Ionicons beside them.
+
 `packages/beat-ui/src/assets/fonts/Ionicons.ttf` is generated from these files: Inkscape converts
 the outline icons' strokes to filled paths, then the files are packed as a font. beat-ui's build
 script embeds the face as a Lua module, so a compiled binary carries it. To regenerate it, from the

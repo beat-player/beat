@@ -65,7 +65,7 @@ function albumPage.view(app, page, window)
 		app,
 		{
 			window = window,
-			label = "ALBUM",
+			label = album.single and "SINGLE" or "ALBUM",
 			cover = |size| -> cover.view(
 				app,
 				{ album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true, sheen = true }

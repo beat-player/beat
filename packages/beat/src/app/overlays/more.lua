@@ -4,6 +4,7 @@ local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local nowPlaying = require("beat.app.overlays.now_playing")
 local names = require("beat.music.names")
+local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -41,7 +42,9 @@ end
 ---@class beat.MoreOverlay: beat.OverlaySurface
 local more = { light = true, anchored = true }
 
-function more.new()
+---@param app beat.App
+function more.new(app)
+	popup.open(app, "moreMenu")
 	---@type beat.MoreState
 	return {}
 end
@@ -126,7 +129,7 @@ function more.view(app, overlay, window)
 				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099")
 		):onClick({ type = "keep" }):children(rows)
 
-	return nowPlaying.toolPanel(app, panel, x, width, height, room)
+	return nowPlaying.toolPanel(app, panel, x, width, height, room, "moreMenu")
 end
 
 return more

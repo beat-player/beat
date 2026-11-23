@@ -2,6 +2,7 @@
 local wonderland = require("wonderland")
 local format = require("beat.app.components.helpers.format")
 local nowPlaying = require("beat.app.overlays.now_playing")
+local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -19,6 +20,7 @@ local queuePanel = { light = true, anchored = true }
 function queuePanel.new(app)
 	-- A queue opens at its next track, not where it was last scrolled to.
 	app.services.scroll:reset("queue")
+	popup.open(app, "queuePanel")
 	---@type beat.QueueState
 	return {}
 end
@@ -145,7 +147,7 @@ function queuePanel.view(app, overlay, _window)
 				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(12), theme:px(30), "#00000099")
 		):onClick({ type = "keep" }):children(rows)
 
-	return nowPlaying.toolPanel(app, panel, 0, width, height, room)
+	return nowPlaying.toolPanel(app, panel, 0, width, height, room, "queuePanel")
 end
 
 return queuePanel

@@ -100,7 +100,7 @@ local function tasksButton(app, ctx, size)
 	local content = div():style(set.content)
 	content:children({
 		div():style(set.glyph):children(ui.icon(ctx, {
-			name = "playlists",
+			name = "queue",
 			size = glyphSize,
 			colour = runningCount > 0 and theme:color("text") or theme:color("muted")
 		})),

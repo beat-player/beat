@@ -1,11 +1,12 @@
--- A track in a table: its number or the playing mark, the title and artist, its album where there
--- is room for one, its rating where the table asks for one, and its time. The album page's table
--- sets titles only, because its header names the artist.
+-- A track in a table: its number, its album's cover or the playing mark, the title and artist, its
+-- album where there is room for one, its rating where the table asks for one, and its time. The
+-- album page's table sets titles only, because its header names the artist.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local playingBars = require("beat.app.components.playing_bars")
 local styles = require("beat.app.components.helpers.styles")
+local cover = require("beat.app.components.cover")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -92,6 +93,9 @@ end
 ---@class beat.components.TrackRowStyles
 ---@field index wonderland.StyleBuilder
 ---@field markerBox wonderland.StyleBuilder
+---@field coverSize number
+---@field coverShade wonderland.StyleBuilder
+---@field coverBox wonderland.StyleBuilder
 ---@field info wonderland.StyleBuilder
 ---@field title wonderland.StyleBuilder
 ---@field artist wonderland.StyleBuilder
@@ -116,6 +120,7 @@ end
 ---@field rating number? # The track's stars, drawn and set in a column of their own; none hides the column
 ---@field mobile boolean? # The phone's row: two lines, a taller target and its own menu button
 ---@field ui beat.ui.Context? # Needed with `rating` and on a phone's row
+---@field showCover boolean? # The album's cover leads the row instead of its number: a list of tracks from many albums, where a number says nothing
 
 --- The stars column: as wide as five stars at the table's size, and kept only while the row is
 --- wide enough for the title to stay readable beside it. A phone's row also spends room on its
@@ -156,7 +161,8 @@ function trackRow.view(app, props)
 		(current and "trackRowCurrent" or "trackRow") .. (mobile and "Phone" or ""),
 		width
 	)
-	local shape = (albumColumn and 1 or 0) + (ratingWidth ~= nil and 2 or 0)
+	local showCover = props.showCover == true
+	local shape = (albumColumn and 1 or 0) + (ratingWidth ~= nil and 2 or 0) + (showCover and 4 or 0)
 	local s = byWidth[shape] --[[@as beat.components.TrackRowStyles?]]
 	if s == nil then
 		local titleColour = current ? (theme:color("accent")) : (theme:color("text"))
@@ -169,6 +175,9 @@ function trackRow.view(app, props)
 		local rowHeight = mobile and theme:px(64) or theme:px(48)
 		local fixedWidth = albumColumn and theme:px(324) or theme:px(122)
 		if mobile then fixedWidth += moreWidth + theme:px(12) end
+		-- A cover is wider than the number it replaces, and the title gives up the difference.
+		local coverSize = theme:px(mobile and 44 or 36)
+		if showCover then fixedWidth += coverSize - theme:px(24) end
 		local infoWidth = math.max(
 			theme:px(100),
 			width - fixedWidth - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
@@ -180,7 +189,12 @@ function trackRow.view(app, props)
 		end
 		s = {
 			index = theme:s():text(theme:type("sm")):fg(theme:color("faint")),
-			markerBox = sty():w(theme:px(24)):align("center"),
+			markerBox = sty():w(showCover and coverSize or theme:px(24)):align("center"),
+			coverSize = coverSize,
+			coverBox = sty():size(coverSize, coverSize),
+			coverShade = sty()
+				:size(coverSize, coverSize):offset(0, 0):radius(theme:radius("sm")):bg("#00000099")
+				:align("center"):justify("center"),
 			info = sty():w(infoWidth):h(rowHeight):column():justify("center"):gap(mobile and theme:px(2) or theme:px(1)),
 			title = theme:s():w(infoWidth):text(theme:type("base")):weight(mobile and "semibold" or "medium")
 				:fg(titleColour):ellipsis(),
@@ -198,7 +212,16 @@ function trackRow.view(app, props)
 	end
 
 	local marker
-	if current then
+	local library = app.services.library.current
+	local album = nil
+	if showCover and library ~= nil then album = library:album(track.albumId) end
+	if album ~= nil then
+		marker = div():style(s.coverBox):children({ cover.view(app, { album = album, size = s.coverSize, radius = theme:radius("sm") }) })
+		-- The playing track keeps its cover, dimmed under the moving bars.
+		if current then
+			marker:children({ div():style(s.coverShade):children({ playingBars.view(app, { playing = props.playing }) }) })
+		end
+	elseif current then
 		marker = playingBars.view(app, { playing = props.playing })
 	else
 		marker = text(tostring(index)):style(s.index)

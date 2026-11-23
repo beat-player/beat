@@ -96,8 +96,8 @@ function mobileNav.view(app, props)
 	local items = {
 		{ kind = "home", icon = "home", label = "Home", route = HOME, message = GO_HOME },
 		{ kind = "library", icon = "library", label = "Library", route = LIBRARY, message = GO_LIBRARY },
-		{ kind = "search", icon = "search", label = "Search", route = SEARCH, message = GO_SEARCH },
 		{ kind = "playlists", icon = "playlists", label = "Playlists", route = PLAYLISTS, message = GO_PLAYLISTS },
+		{ kind = "search", icon = "search", label = "Search", route = SEARCH, message = GO_SEARCH },
 		{ kind = "more", icon = "more", label = "More", message = OPEN_MORE }
 	}
 	-- A plugin's destinations come after the app's own, in the order they asked for.

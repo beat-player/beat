@@ -34,6 +34,7 @@ local Log = require("beat.log")
 ---@field update (fun(app: beat.App, page: beat.PageInstance, message: beat.Message): boolean?)? # True when the message was this page's
 ---@field leave (fun(app: beat.App, page: beat.PageInstance))? # What the page drops when it is left
 ---@field view fun(app: beat.App, page: beat.PageInstance, window: wonderland.RenderWindow): wonderland.Element
+---@field header (fun(app: beat.App, page: beat.PageInstance, window: wonderland.RenderWindow): wonderland.Element?, number)? # What stays put above the page's scrolling body, and its height; nil scrolls the whole page
 
 --- What an overlay keeps while it is open. Each overlay declares its own state class and `new`
 --- returns it; the registry only carries it.

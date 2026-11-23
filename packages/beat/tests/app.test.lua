@@ -436,7 +436,7 @@ test.it("starts a playlist from its page with shuffle", function()
 
 	test.truthy(capturedTracks ~= nil, "the page starts the playlist")
 	test.equal(#assert(capturedTracks), #library.albums[1].tracks)
-	test.equal(capturedIndex, 1)
+	test.equal(capturedIndex, nil, "a shuffle picks its own first track")
 	test.equal(capturedShuffle, true, "the shuffle control reaches the queue")
 	test.equal(capturedSource, "playlist:" .. tostring(playlist.id))
 	real:close()
@@ -467,7 +467,7 @@ test.it("starts a built-in smart playlist through the playlist messages", functi
 
 	test.truthy(capturedTracks ~= nil, "a built-in list reaches the queue like a saved one")
 	test.equal(#assert(capturedTracks), 1, "it holds the one song that has been heard")
-	test.equal(capturedIndex, 1)
+	test.equal(capturedIndex, nil, "a shuffle picks its own first track")
 	test.equal(capturedShuffle, true)
 	test.equal(capturedSource, "playlist:-1", "the queue remembers which built-in list it is")
 	real:close()
@@ -493,8 +493,8 @@ test.skipIf(not canRender)("draws smart and own playlist tiles at phone width", 
 	end, { width = 390, height = 844 })
 	screen:draw()
 
-	-- A tile is a page-destination and its controls are the playback messages, so the scan looks
-	-- for each message it expects rather than trusting one guessed pixel.
+	-- A tile is a page-destination and nothing else: playing and shuffling are on the playlist's
+	-- page. The scan looks for each message rather than trusting one guessed pixel.
 	local function find(matches)
 		for y = 180, 830, 6 do
 			for x = 8, 382, 6 do
@@ -509,15 +509,9 @@ test.skipIf(not canRender)("draws smart and own playlist tiles at phone width", 
 	test.truthy(opened ~= nil, "a smart playlist tile opens its page on a phone")
 
 	test.falsy(
-		find(|message| -> message.type == "playPlaylist" and message.id == -1),
-		"an empty smart list hides its playback controls"
+		find(|message| -> message.type == "playPlaylist"),
+		"a tile has no playback controls of its own; the playlist's page does"
 	)
-
-	local shuffled = find(|message| -> message.type == "playPlaylist" and message.id == -4 and message.shuffle == true)
-	test.truthy(shuffled ~= nil, "a filled list's shuffle control sends the playlist playback message")
-
-	local played = find(|message| -> message.type == "playPlaylist" and message.id == -4 and message.shuffle ~= true)
-	test.truthy(played ~= nil, "its play control sends the same message unshuffled")
 
 	-- The own lists sit below the five smart tiles, so the page is taken to its end the way a
 	-- wheel does before the tile is looked for.
@@ -1023,8 +1017,8 @@ test.skipIf(not canRender)("draws the phone shell and switches tabs", function()
 	App.layoutPlugin = layout
 	screen:draw()
 
-	-- The second row of the phone shell is the tab bar; Search is the third of five tabs.
-	local message = screen:event({ name = "mousePress", window = screen.window, x = 195, y = 815, button = 1 })
+	-- The second row of the phone shell is the tab bar; Search is the fourth of five tabs.
+	local message = screen:event({ name = "mousePress", window = screen.window, x = 273, y = 815, button = 1 })
 	test.truthy(message ~= nil, "the bottom tab is a touch target")
 	App:act(message)
 	test.equal(App.page.kind, "search", "the tab switches the page")
@@ -1526,12 +1520,18 @@ test.it("opens and confirms a custom accent colour", function()
 	App:act({ type = "open", overlay = "accent_picker" })
 	test.truthy(App:overlay("accent_picker"), "the Custom button opens the picker")
 
-	App:act({ type = "pickAccent", value = "#FF7A66" })
-	test.equal(assert(App:overlay("accent_picker")).state.draft, "#ff7a66", "choosing a swatch only changes the draft")
+	App:act({ type = "pickHsv", h = 0.25 })
+	App:act({ type = "pickHsv", s = 0.5 })
+	App:act({ type = "pickHsv", v = 1 })
+	test.equal(
+		assert(App:overlay("accent_picker")).state.draft,
+		"#bfff80",
+		"choosing a hue, saturation and brightness only changes the draft"
+	)
 
 	App:act({ type = "confirmAccent" })
-	test.equal(App.services.settings.values.accent, "#ff7a66")
-	test.equal(App.services.appearance.theme.accentColour, "#ff7a66")
+	test.equal(App.services.settings.values.accent, "#bfff80")
+	test.equal(App.services.appearance.theme.accentColour, "#bfff80")
 	test.equal(App:overlay("accent_picker"), nil)
 	App.services.playback.player:close()
 end)

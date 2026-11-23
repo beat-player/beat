@@ -2,8 +2,6 @@
 -- name breaks into a title, and the key an album is grouped by. Nothing here writes for the
 -- screen -- a track time or a counted noun belongs to the components. A scan worker loads this
 -- file without the app, so it must stay free of anything that draws.
-local path = require("path")
-
 local names = {}
 
 --- A name folded for search. `string.lower` is ASCII-only, which is the right promise: a query
@@ -35,16 +33,6 @@ function names.yearOf(value)
 	local year = tonumber(value:match("%d%d%d%d"))
 
 	return year
-end
-
----@param value string
----@return string
-function names.parentName(value)
-	local name = path.basename(value)
-
-	if name == "" or name == "." or name == path.separator then return "Unknown Album" end
-
-	return name
 end
 
 ---@param value string?
@@ -79,22 +67,35 @@ function names.trackKey(track)
 	return key
 end
 
---- The key a set of tags and a folder make for one album. The scanner's worker and the library
---- both need it, and a cache keyed by one must be the same album the other groups.
+--- The key a set of tags makes for one album. The scanner's worker and the library both need it,
+--- and a cache keyed by one must be the same album the other groups. A file that names no album
+--- is a single: its own album of one, keyed by its path, because its tags say nothing that two
+--- files with the same title could share. A file that names an album keeps the album artist it
+--- groups by, or its folder when it names none.
 ---@param tags table<string, any>?
 ---@param dir string
+---@param file string # The track's full path, which names a single's album
 ---@return string
-function names.albumKey(tags, dir)
+function names.albumKey(tags, dir, file)
 	tags = tags or {}
 	---@type string?
 	local album = type(tags.album) == "string" and tags.album or nil
 	---@type string?
 	local albumArtist = type(tags.albumArtist) == "string" and tags.albumArtist or nil
-	local albumTitle = hasText(album) and album or names.parentName(dir)
 
+	if not hasText(album) then return "single\0" .. file end
+
+	local albumTitle = album
 	if hasText(albumArtist) then return albumArtist .. "\0" .. albumTitle end
 
 	return albumTitle .. "\0" .. dir
+end
+
+--- Whether an album key names a single: a file with no album tag, whose album is the file itself.
+---@param key string
+---@return boolean
+function names.isSingleKey(key)
+	return key:sub(1, 7) == "single\0"
 end
 
 return names

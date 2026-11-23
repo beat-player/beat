@@ -32,7 +32,7 @@ do
 	local json = require("json")
 	local file = path.join(config, "library.json")
 	local decoded = json.decode(assert(fs.read(file), "the bench needs a library cache in " .. source)):unpack()
-	decoded.version = 6
+	decoded.version = 7
 	fs.write(file, json.encode(decoded))
 	require("beat.app.services.scan.job").start = function() error("the bench does not scan") end
 end

@@ -113,50 +113,12 @@ function playlists.view(app, page, window)
 	local content = metrics.contentWidth(app, window.width)
 	local tags = taxonomy:visibleTags()
 
-	local buttonHeight = theme:px(mobile and 44 or 30)
-	local headerActions = {
-		ui.button(
-			ctx,
-			{
-				label = "New playlist",
-				onClick = { type = "open", overlay = "playlist_dialog", smart = false },
-				variant = "primary",
-				height = buttonHeight,
-				width = theme:px(128)
-			}
-		),
-		ui.button(
-			ctx,
-			{
-				label = "New tag",
-				onClick = { type = "open", overlay = "tag_dialog" },
-				height = buttonHeight,
-				width = theme:px(92)
-			}
-		)
-	}
+	-- No create buttons up here: a playlist is made from the + tile that opens its own grid, and a
+	-- tag from the + pill at the end of the tags, so each is made where it will appear.
 	local titleHeight = math.floor(theme:type("xxl") * 1.25)
-	local headerHeight = mobile and (titleHeight + theme:px(10) + buttonHeight) or theme:px(44)
-	local actionRow = div()
-		:style(sty():row():wrel(1.0):h(buttonHeight):gap(theme:px(8)):align("center"):justify(mobile ? "start" : "end"))
-		:children(headerActions)
-	local title = text("Playlists")
-		:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
-	local header
-	if mobile then
-		header = div():style(sty():column():wrel(1.0):h(headerHeight):gap(theme:px(10))):children({ title, actionRow })
-	else
-		header = div()
-			:style(sty():row():wrel(1.0):h(headerHeight):gap(theme:px(8)):align("center"):justify("space-between"))
-			:children(
-				{
-					title,
-					div()
-						:style(sty():row():w(theme:px(230)):h(buttonHeight):gap(theme:px(8)):align("center"):justify("end"))
-						:children(headerActions)
-				}
-			)
-	end
+	local headerHeight = titleHeight
+	local header = text("Playlists")
+		:style(theme:s():wrel(1.0):h(titleHeight):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
 
 	-- Two across on a phone and at least four on a desktop, which is the ladder the shelves use
 	-- widened to the promise this page makes: the smart lists read as a row, not a column.
@@ -215,8 +177,6 @@ function playlists.view(app, page, window)
 				mobile = mobile,
 				ui = ctx,
 				onOpen = { type = "navigate", page = { kind = "playlist", id = playlist.id } },
-				onPlay = { type = "playPlaylist", id = playlist.id },
-				onShuffle = { type = "playPlaylist", id = playlist.id, shuffle = true },
 				onMenu = menu
 			}
 		)
@@ -354,13 +314,40 @@ function playlists.view(app, page, window)
 		tagLine[#tagLine + 1] = pill
 		lineWidth = lineWidth + (lineWidth > 0 and pillGap or 0) + usedWidth
 	end
-	flushTagLine()
-	if #tagRows == 0 then
-		tagRows[#tagRows + 1] = text("No tags yet. A tag is also a smart playlist.")
-			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")))
-	end
 
-	local tagHeight = #tags == 0 and emptyTagHeight or (#tagRows * pillHeight + math.max(0, #tagRows - 1) * pillGap)
+	-- The last pill makes a new tag: accent-edged like the New playlist tile, so the two ways to
+	-- make something look alike, and placed where the tag it makes will appear.
+	local newLabel = "New tag"
+	local newLabelStyle = theme:s():text(nameSize):weight("semibold")
+	local newLabelWidth = math.ceil(math.max(measure.width(app, newLabel, newLabelStyle) or 0, measure.estimate(newLabel, nameSize, 0.54))) + 1
+	local newIconSize = theme:px(mobile and 18 or 15)
+	local newWidth = pillPadLeft + newIconSize + theme:px(6) + newLabelWidth + theme:px(14)
+	local function newPillStyle(alpha)
+		return sty()
+			:row():w(newWidth):h(pillHeight):gap(theme:px(6)):pad(0, theme:px(14), 0, pillPadLeft):align("center")
+			:radius(theme:radius("full")):bg(theme:color("accent", alpha)):border(theme:px(1), theme:color("accent", 0.45))
+	end
+	local newPill = div()
+		:style(newPillStyle(0.06)):hover(newPillStyle(0.14))
+		:onClick({ type = "open", overlay = "tag_dialog" })
+		:children(
+			{
+				ui.icon(ctx, { name = "add", size = newIconSize, colour = theme:color("accent") }),
+				text(newLabel):style(newLabelStyle:w(newLabelWidth):fg(theme:color("accent")))
+			}
+		)
+	if lineWidth > 0 and lineWidth + pillGap + newWidth > content then flushTagLine() end
+	tagLine[#tagLine + 1] = newPill
+	lineWidth = lineWidth + (lineWidth > 0 and pillGap or 0) + newWidth
+	flushTagLine()
+
+	local tagHeight = #tagRows * pillHeight + math.max(0, #tagRows - 1) * pillGap
+	if #tags == 0 then
+		-- With no tags yet the pill alone does not say what a tag is for.
+		tagRows[#tagRows + 1] = text("A tag is also a smart playlist.")
+			:style(theme:s():wrel(1.0):h(emptyTagHeight):text(theme:type("sm")):fg(theme:color("muted")))
+		tagHeight = tagHeight + pillGap + emptyTagHeight
+	end
 	local sectionHeight = theme:px(24)
 	local sectionGap = theme:space(18)
 	local smartHeight = gridHeight(#smartTiles)
@@ -385,8 +372,7 @@ function playlists.view(app, page, window)
 	add(ui.section(ctx, { title = "Tags" }), sectionHeight)
 	add(div():style(sty():column():wrel(1.0):h(tagHeight):gap(pillGap)):children(tagRows), tagHeight)
 
-	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(), math.max(0, height - viewport))
+	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, height))
 
 	return div():style(sty():column():wrel(1.0):h(height):gap(sectionGap)):children(children)
 end

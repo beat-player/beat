@@ -10,6 +10,7 @@ local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local App = require("beat.app")
 local beat = require("beat")
+local pluginsPage = require("beat.app.pages.plugins")
 local Picker = require("beat.app.services.scan.picker")
 local settingsModel = require("beat.app.services.settings.model")
 
@@ -565,6 +566,34 @@ test.it("turns ratings back on and keeps that switch in a settings file", functi
 	App:init({ scan = false })
 	test.equal(assert(entry("ratings")).state, "loaded", "the next start honours the empty list")
 	test.equal(App.registry:hasPlugin("ratings"), true, "and the stars come back")
+end)
+
+test.it("builds the app again in this process when a plugin switch is applied", function()
+	fs.write(paths.file("settings.json"), '{"disabledPlugins":[]}')
+	App:init({ scan = false })
+	test.equal(App.registry:hasPlugin("ratings"), true, "ratings starts loaded")
+
+	App:act({ type = "pluginEnabled", file = "ratings", enabled = false })
+	local disabled = false
+	for _, name in ipairs(App.services.settings.values.disabledPlugins) do
+		if name == "ratings" then disabled = true end
+	end
+	test.equal(disabled, true, "the switch is recorded")
+	test.equal(assert(entry("ratings")).state, "loaded", "but the running app still has the plugin")
+
+	-- The page says a restart is pending rather than pretending the switch already happened.
+	local view = pluginsPage.view(App, App:pageFor({ kind = "plugins" }), { width = 1200, height = 720 })
+	test.truthy(view ~= nil, "the plugins page still draws with a switch waiting")
+
+	App:act({ type = "restartApp" })
+	test.equal(assert(entry("ratings")).state, "off", "the rebuilt app read the switch")
+	test.equal(App.registry:hasPlugin("ratings"), false, "and the plugin is gone from it")
+
+	-- Put the switch back so the tests after this one see the app as they expect.
+	App:act({ type = "pluginEnabled", file = "ratings", enabled = true })
+	App:act({ type = "restartApp" })
+	test.equal(assert(entry("ratings")).state, "loaded")
+	test.equal(App.registry:hasPlugin("ratings"), true)
 end)
 
 test.it("only fills in the fresh-install switches when the file has no disabledPlugins key", function()

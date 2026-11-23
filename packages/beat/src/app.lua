@@ -475,6 +475,19 @@ function App:flush()
 	end
 end
 
+--- Plugins are part of the app from its first frame, so applying a switch means building the app
+--- again in this process: every service is closed and made again, the plugin files are read
+--- again, and the window stays where it is. The ticker belongs to the app that is going away, so
+--- it is cancelled before the new one is made.
+function App:restart()
+	self:flush()
+	if self.ticker ~= nil then self.ticker.cancel() end
+	local window = self.window
+	self:init({})
+	self.window = window
+	self:refresh()
+end
+
 ---@param opts { scan: boolean?, plugins: table[]? }?
 function App:init(opts)
 	opts = opts or {}
@@ -833,10 +846,13 @@ end
 ---   focus     { field = name, at? }         give a named field the keyboard
 ---   escape                                  nothing was open and the page did not want it: back
 ---   systemBack                              the phone's back gesture: back, or ask to leave from the first page
+---   restartApp                              build the app again in this process, applying plugin switches
 ---@param message table
 function App:route(message)
 	if message.type == "navigate" then
 		self:go(message.page, message.keepFocus == true)
+	elseif message.type == "restartApp" then
+		self:restart()
 	elseif message.type == "back" or message.type == "escape" then
 		self:back()
 	elseif message.type == "systemBack" then

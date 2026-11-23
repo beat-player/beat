@@ -14,18 +14,38 @@ local time = wonderland.time
 
 local FADE_TIME = 0.22
 
+-- How often an automatic theme looks at the clock. The hour turns once, so a check every few
+-- seconds would only be arithmetic; half a minute also lets the turn land soon after it happens.
+local AUTO_CHECK = 30
+
+local DAY_START = 7
+local NIGHT_START = 19
+
+--- The palette a theme setting means. `auto` follows the clock, so it is resolved here rather
+--- than in the file: a launch at noon and the same launch at midnight read the same setting and
+--- still get the light or the dark screen they should.
+---@param name string
+---@return string
+local function resolveName(name)
+	if name ~= "auto" then return name end
+	local hour = os.date("*t") --[[@as osdate]].hour
+	return hour >= DAY_START and hour < NIGHT_START and "day" or "night"
+end
+
 --- The theme for the settings: the listener's UI scale, times the screen's density, so a phone at
 --- 2.6 pixels a point draws the same physical sizes a desktop draws at 1.
 ---@param values beat.Settings
 ---@return beat.Theme
 local function themeFor(values)
-	return theme.new(values.theme, values.accent, values.uiScale * platform.screen().density)
+	return theme.new(resolveName(values.theme), values.accent, values.uiScale * platform.screen().density)
 end
 
 ---@class beat.AppearanceService: beat.Service
 ---@field settings beat.SettingsService
 ---@field motion beat.MotionService
 ---@field theme beat.Theme
+---@field autoResolved string # the palette `auto` resolved to, so a turn of the clock can be noticed
+---@field checkedAt number? # when an automatic theme last looked at the clock
 ---@field fade { start: number }?
 local Appearance = {}
 Appearance.__index = Appearance
@@ -35,21 +55,27 @@ Appearance.needs = { "settings", "motion" }
 ---@return beat.AppearanceService
 function Appearance.new(deps)
 	local values = deps.settings.values
+	local current = themeFor(values)
 	return setmetatable(
 		{
 			settings = deps.settings,
 			motion = deps.motion,
-			theme = themeFor(values),
+			theme = current,
+			autoResolved = current.name,
+			checkedAt = nil,
 			fade = nil
 		},
 		Appearance
 	)
 end
 
--- The theme names the settings screen offers, in the order it shows them.
+-- The theme names the settings screen offers, in the order it shows them. `auto` is a choice
+-- rather than a palette, so it is put in front here and never reaches the palette module.
 ---@return string[]
 function Appearance:names()
-	return theme.names()
+	local list = { "auto" }
+	for _, name in ipairs(theme.names()) do list[#list + 1] = name end
+	return list
 end
 
 -- The preset accents, before a custom colour is added to the picker by hand.
@@ -78,6 +104,7 @@ function Appearance:change(animate)
 	local previous = self.theme
 	local values = self.settings.values
 	self.theme = themeFor(values)
+	self.autoResolved = self.theme.name
 
 	if animate ~= false and previous ~= nil and not self.motion.clock.reduce then
 		self.theme.fromColors = previous.colors
@@ -116,7 +143,18 @@ Appearance.on = {
 }
 
 function Appearance:step(now)
-	if self.fade == nil then return false, false end
+	-- An automatic theme is remade when the clock reaches the other side of the day, and checked
+	-- at an interval rather than every tick: the hour is not something to read sixty times a second.
+	local changed = false
+	if self.settings.values.theme == "auto" and (self.checkedAt == nil or now - self.checkedAt >= AUTO_CHECK) then
+		self.checkedAt = now
+		if resolveName("auto") ~= self.autoResolved then
+			self:change()
+			changed = true
+		end
+	end
+
+	if self.fade == nil then return changed, false end
 	local progress = self.motion:progress(self.fade.start, FADE_TIME, now, self.motion.ease.inOutCubic)
 	-- Quantised so the crossfade reuses styles rather than interning a colour a frame.
 	self.theme.mix = math.floor(progress * 32 + 0.5) / 32

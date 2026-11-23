@@ -118,6 +118,35 @@ function platform.useMediaVolumeKeys()
 	end
 end
 
+-- ActivityInfo.SCREEN_ORIENTATION_FULL_USER: every rotation, under the system's own rule for it.
+local SCREEN_ORIENTATION_FULL_USER = 13
+
+--- Says the screen works in any orientation the person holding the phone allows. The APK's
+--- manifest asks for the sensor's orientation, which a phone that keeps rotation to the person's
+--- choice ignores -- and then it neither turns the app nor offers the rotate button it shows for
+--- other apps. Full-user is the request that does both: auto-rotate turns the app, and with
+--- rotation locked the button appears. Does nothing off Android.
+function platform.followUserRotation()
+	if not platform.android then return end
+	local android = require("androidapi")
+	local jni = android.jni
+	local activity = assert(android.activity()).clazz
+
+	local _, err = jni.frame(
+		|| -> jni.call(
+			activity,
+			"android/app/Activity",
+			"setRequestedOrientation",
+			"(I)V",
+			"void",
+			SCREEN_ORIENTATION_FULL_USER
+		)
+	)
+	if err ~= nil then
+		require("beat.log").write("warn", "could not allow rotation: " .. tostring(err))
+	end
+end
+
 --- Shows the system's prompt for reading audio files. The answer is not reported back to a
 --- NativeActivity; `canReadMusic` says what it was once the app is resumed.
 function platform.requestMusicAccess()

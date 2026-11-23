@@ -6,24 +6,14 @@ local wonderland = require("wonderland")
 local path = require("path")
 local ui = require("beat-ui")
 local metrics = require("beat.app.components.helpers.metrics")
+local measure = require("beat.app.components.helpers.measure")
+local settingsList = require("beat.app.components.settings_list")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
--- The card's padding, and the gap between its rows, in unscaled pixels: the row widths and the
--- card's height are worked out from them, so that a switch sits inside the card's edge.
+-- A plugin's settings card padding, and the space between its title and the plugin's own view: the
+-- card's height is worked out from them.
 local PAD = 18
-local GAP = 8
--- A row has a name and version, who made it and what state it is in, and its one-line description.
--- A phone gets the taller row so a finger has something to hit.
-local ROW = 56
-local ROW_PHONE = 64
--- The line under the section title.
-local INTRO = 20
--- The check box, and the larger square around it a click lands in.
-local CHECK = 20
-local CHECK_TARGET = 32
-local CHECK_TARGET_PHONE = 44
--- A settings card's title, and the space between it and the plugin's own view.
 local SETTINGS_TITLE = 24
 
 local STATE = {
@@ -71,144 +61,141 @@ local function pending(entry, values)
 	return nil
 end
 
---- The line under the name: who made it, what state it is in, and anything else worth knowing.
+--- The line under the name: what state it is in, and anything else worth knowing. Who made it
+--- sits next to the name as the row's badge instead, and a pending switch has its own note beside
+--- the switch, so neither is repeated here.
 ---@param entry beat.PluginStatus
----@param values beat.Settings
 ---@return string
-local function meta(entry, values)
+local function meta(entry)
 	local state = STATE[entry.state] or STATE.failed
 	local parts = {}
-	if entry.author ~= nil then parts[#parts + 1] = "by " .. entry.author end
 	parts[#parts + 1] = state.label
 	local key = keyOf(entry)
 	if key ~= nil and not entry.builtin then parts[#parts + 1] = key end
 	if entry.reason ~= nil then parts[#parts + 1] = entry.reason end
-	local waiting = pending(entry, values)
-	if waiting ~= nil then parts[#parts + 1] = waiting end
 	return table.concat(parts, " · ")
 end
 
----@param app beat.App
----@param ctx beat.ui.Context
+--- The one line under a plugin's name: what state it is in, and what it adds.
 ---@param entry beat.PluginStatus
----@param width number # The card's inner width, which the name and the switch share
----@param phone boolean
-local function row(app, ctx, entry, width, phone)
+---@return string
+local function describe(entry)
+	local line = meta(entry)
+	if entry.description ~= nil then line = line .. " · " .. entry.description end
+	return line
+end
+
+--- The small badge a row shows after its name: its version and who made it, in faint small text.
+--- A plugin that says neither has no badge.
+---@param app beat.App
+---@param entry beat.PluginStatus
+---@return wonderland.Element?
+---@return number?
+local function pluginBadge(app, entry)
+	local parts = {}
+	if entry.version ~= nil then parts[#parts + 1] = "v" .. entry.version end
+	if entry.author ~= nil then parts[#parts + 1] = "by " .. entry.author end
+	if #parts == 0 then return nil, nil end
+	local theme = app.services.appearance.theme
+	local label = table.concat(parts, " · ")
+	local element = text(label):style(theme:s():text(theme:type("xs")):fg(theme:color("faint")))
+	local measured = measure.width(app, label, theme:s():text(theme:type("xs")):fg(theme:color("faint")))
+	return element, (measured ~= nil and (measured + 1)) or theme:px(40)
+end
+
+--- A plugin's row: its name with its version and maker after it, what it is and does underneath,
+--- and on the right either the switch that turns it off or a badge saying it cannot be switched.
+---@param app beat.App
+---@param entry beat.PluginStatus
+---@param width number # The settings column's width
+---@param core boolean? # Drawn quieter, with the badge that says why it has no switch
+---@return beat.components.SettingsItem
+local function entryRow(app, entry, width, core)
 	local theme = app.services.appearance.theme
 	local values = app.services.settings.values
-	local state = STATE[entry.state] or STATE.failed
 	local key = keyOf(entry)
-	-- A built-in the rest of the app asks for by name has no switch: there is no app to come back
-	-- to if it is off.
-	local switchable = key ~= nil and not entry.required
-	local target = theme:px(phone and CHECK_TARGET_PHONE or CHECK_TARGET)
-	local textWidth = math.max(theme:px(80), width - (switchable and target + theme:px(10) or 0))
-
-	local nameRow = {
-		text(entry.name):style(
-			theme:s():wrel(1.0):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis()
-		)
+	---@type beat.components.SettingsRowProps
+	local props = {
+		label = entry.name,
+		description = describe(entry),
+		width = width,
+		dim = core
 	}
-	if entry.version ~= nil then
-		nameRow[#nameRow + 1] = text("v" .. entry.version):style(
-			theme:s():text(theme:type("xs")):fg(theme:color("faint"))
-		)
+	local badge, badgeWidth = pluginBadge(app, entry)
+	if badge ~= nil then
+		props.badge = badge
+		props.badgeWidth = badgeWidth
 	end
-
-	local lines = {
-		div():style(sty():row():w(textWidth):h(theme:px(20)):gap(theme:px(6)):align("center")):children(nameRow),
-		text(meta(entry, values)):style(
-			theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color(state.tone)):ellipsis()
-		)
-	}
-	if entry.description ~= nil then
-		lines[#lines + 1] = text(entry.description):style(
-			theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color("muted")):ellipsis()
-		)
+	if core then
+		local coreBadge, coreBadgeWidth = settingsList.badge(app, "Core")
+		props.control = coreBadge
+		props.controlWidth = coreBadgeWidth
+		props.controlHeight = theme:px(20)
+	elseif key ~= nil and not entry.required then
+		local toggle, toggleWidth = settingsList.toggle(app, {
+			on = not isOff(values, entry),
+			onClick = { type = "pluginEnabled", file = key, enabled = isOff(values, entry) }
+		})
+		if pending(entry, values) ~= nil then
+			-- The switch has already been recorded, but this app was built before it: say so where
+			-- the switch is, since that is what someone looking at it just pressed.
+			local label = "Needs restart"
+			local gap = theme:px(10)
+			local noteWidth = math.ceil(measure.width(app, label, theme:s():text(theme:type("xs")):weight("semibold")) or theme:px(72)) + 1
+			local controlWidth = noteWidth + gap + toggleWidth
+			props.control = div()
+				:style(sty():row():w(controlWidth):h(theme:px(32)):gap(gap):align("center"))
+				:children({
+					text(label):style(
+						theme:s():w(noteWidth):text(theme:type("xs")):weight("semibold"):fg(theme:color("warning"))
+					),
+					toggle
+				})
+			props.controlWidth = controlWidth
+		else
+			props.control = toggle
+			props.controlWidth = toggleWidth
+		end
 	end
-
-	local children = {
-		div():style(sty():column():w(textWidth):hrel(1.0):justify("center"):gap(theme:px(2))):children(lines)
-	}
-	if switchable then
-		local on = not isOff(values, entry)
-		children[#children + 1] = ui.checkbox(
-			ctx,
-			{
-				checked = on,
-				onClick = { type = "pluginEnabled", file = key, enabled = not on },
-				size = theme:px(CHECK),
-				target = target
-			}
-		)
-	end
-
-	return div()
-		:style(sty():row():wrel(1.0):h(theme:px(phone and ROW_PHONE or ROW)):gap(theme:px(10)):align("center"))
-		:children(children)
+	return settingsList.row(app, props)
 end
 
---- One section: its title, the line under it, and a row for every plugin it holds -- or the
---- caller's message when it holds none.
+--- The installed list's row when there is nothing in the plugins folder.
+---@param app beat.App
+---@param width number
+---@return beat.components.SettingsItem
+local function noPluginsRow(app, width)
+	return settingsList.row(app, {
+		label = "No plugins installed",
+		description = "Put a plugin file in the plugins folder, then restart beat.",
+		width = width
+	})
+end
+
+--- The row that opens the plugins folder.
 ---@param app beat.App
 ---@param ctx beat.ui.Context
----@param title string
----@param intro string
----@param entries beat.PluginStatus[]
----@param width number # The card's inner width
----@param phone boolean
----@param action wonderland.Element?
----@param empty wonderland.Element? # Drawn instead of the rows when there are none
----@return wonderland.Element
----@return number height
-local function section(app, ctx, title, intro, entries, width, phone, action, empty)
+---@param width number
+---@return beat.components.SettingsItem
+local function folderRow(app, ctx, width)
 	local theme = app.services.appearance.theme
-	local rowHeight = theme:px(phone and ROW_PHONE or ROW)
-
-	local content = {
-		text(intro):style(
-			theme:s():wrel(1.0):h(theme:px(INTRO)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
-		)
-	}
-	for _, entry in ipairs(entries) do
-		content[#content + 1] = row(app, ctx, entry, width, phone)
-	end
-	if #entries == 0 and empty ~= nil then content[#content + 1] = empty end
-	local rowCount = math.max(#entries, empty ~= nil and 1 or 0)
-	local height = theme:px(PAD * 2)
-		+ (action ~= nil and theme:px(32) or theme:px(24))
-		+ theme:px(GAP)
-		+ theme:px(INTRO)
-		+ theme:px(GAP)
-		+ rowCount * rowHeight
-		+ math.max(0, rowCount - 1) * theme:px(GAP)
-
-	local card = ui.card(
+	local button = ui.button(
 		ctx,
 		{
-			title = title,
-			action = action,
-			children = content,
-			height = height,
-			padding = theme:px(PAD),
-			gap = theme:px(GAP)
+			label = "Open folder",
+			onClick = { type = "openPluginsFolder" },
+			height = theme:px(32),
+			width = theme:px(120)
 		}
 	)
-	return card, height
-end
-
----@param app beat.App
----@param phone boolean
-local function emptyRow(app, phone)
-	local theme = app.services.appearance.theme
-	return div()
-		:style(sty():row():wrel(1.0):h(theme:px(phone and ROW_PHONE or ROW)):align("center"))
-		:children(
-			{
-				text("No plugins yet. Put one in the plugins folder; the folder button opens it.")
-					:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
-			}
-		)
+	return settingsList.row(app, {
+		label = "Plugins folder",
+		description = "Where beat looks for plugin files",
+		control = button,
+		controlWidth = theme:px(120),
+		controlHeight = theme:px(32),
+		width = width
+	})
 end
 
 ---@param app beat.App
@@ -289,6 +276,49 @@ local function settingsCard(app, uiCtx, entry, width)
 	return card, cardHeight
 end
 
+--- The banner under the title when a switch is waiting for the next start, with the button that
+--- starts it again now. Returns the element and the height it takes in the page.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param width number
+---@return wonderland.Element
+---@return number
+local function restartBanner(app, ctx, width)
+	local theme = app.services.appearance.theme
+	local padY = theme:px(12)
+	local padX = theme:px(16)
+	local buttonWidth = theme:px(96)
+	local buttonHeight = theme:px(32)
+	local gap = theme:px(12)
+	local textHeight = math.floor(theme:type("sm") * 1.4)
+	local height = padY * 2 + math.max(textHeight, buttonHeight)
+	local textWidth = math.max(theme:px(80), width - padX * 2 - buttonWidth - gap)
+
+	local button = ui.button(
+		ctx,
+		{
+			label = "Restart",
+			variant = "primary",
+			onClick = { type = "restartApp" },
+			height = buttonHeight,
+			width = buttonWidth
+		}
+	)
+	local element = div()
+		:style(
+			sty()
+				:row():w(width):h(height):pad(padY, padX, padY, padX):gap(gap):align("center"):justify("space-between")
+				:radius(theme:radius("md")):bg(theme:color("warning", 0.12))
+		)
+		:children({
+			text("Restart beat to apply plugin changes"):style(
+				theme:s():w(textWidth):h(textHeight):text(theme:type("sm")):fg(theme:color("text")):ellipsis()
+			),
+			button
+		})
+	return element, height
+end
+
 ---@param app beat.App
 ---@param page beat.PageInstance
 ---@param window wonderland.RenderWindow
@@ -296,74 +326,108 @@ end
 function plugins.view(app, page, window)
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
-	local narrow = window.width < 560
-	local phone = metrics.mobile(app, window.width)
-	local inner = metrics.contentWidth(app, window.width) - theme:px(PAD) * 2 - theme:px(2)
+	local mobile = metrics.mobile(app, window.width)
+	local column = settingsList.columnWidth(app, metrics.contentWidth(app, window.width))
+	local titleHeight = math.floor(theme:type("xxl") * 1.25)
+	local gap = theme:px(28)
 
-	local builtCard, builtHeight = section(
-		app,
-		ctx,
-		"Built-in",
-		"Beat's own plugins. They are how the app is made; the optional ones can be switched off.",
-		builtinPlugins(app),
-		inner,
-		phone,
-		nil,
-		nil
-	)
-
+	-- The three lists: the built-ins that cannot be off, the built-ins that can, and the plugins in
+	-- the folder.
+	local core, optional = {}, {}
+	for _, entry in ipairs(builtinPlugins(app)) do
+		if entry.required or keyOf(entry) == nil then
+			core[#core + 1] = entry
+		else
+			optional[#optional + 1] = entry
+		end
+	end
 	local installed = outsidePlugins(app)
-	local installedCard, installedHeight = section(
-		app,
-		ctx,
-		"Installed",
-		"Plugins in the plugins folder. A change applies after a restart.",
-		installed,
-		inner,
-		phone,
-		ui.iconButton(ctx, { name = "folder", size = theme:px(32), onClick = { type = "openPluginsFolder" } }),
-		emptyRow(app, phone)
-	)
 
-	-- Below the two lists, one card for each loaded plugin that asked for settings. The card is
-	-- drawn at the height the plugin's own `height` said, and its view gets the same inner width
-	-- as the plugin rows.
-	local cards = { builtCard, installedCard }
-	local cardsHeight = builtHeight + theme:space(16) + installedHeight
-	for _, entry in ipairs(app.registry:settings()) do
-		local element, height = settingsCard(app, ctx, entry, inner)
-		if element ~= nil then
-			cards[#cards + 1] = element
-			cardsHeight += theme:space(16) + height
+	-- A switch is only real on the next start, so the page says when one is waiting for it.
+	local restarting = false
+	for _, entry in ipairs(app.pluginStates) do
+		if pending(entry, app.services.settings.values) ~= nil then
+			restarting = true
+			break
 		end
 	end
 
-	local stack = div()
-		:style(sty():column():wrel(1.0):h(cardsHeight):gap(theme:space(16))):children(cards)
+	local children = {}
+	local totalHeight = titleHeight
 
-	return div()
-		:style(sty():column():wrel(1.0):h(theme:px(32) + theme:space(16) + cardsHeight):gap(theme:space(16)))
-		:children(
+	local title = text("Plugins"):style(
+		theme:s():h(titleHeight):text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
+	)
+	if mobile then
+		children[#children + 1] = title
+	else
+		local back = ui.button(
+			ctx,
 			{
-				div()
-					:style(sty():row():wrel(1.0):h(theme:px(32)):align("center"):justify("space-between"))
-					:children(
-						{
-							text("Plugins"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))),
-							ui.button(
-								ctx,
-								{
-									label = "Back to settings",
-									onClick = { type = "navigate", page = { kind = "settings" } },
-									height = theme:px(32),
-									width = theme:px(narrow and 160 or 140)
-								}
-							)
-						}
-					),
-				stack
+				label = "Back to settings",
+				onClick = { type = "navigate", page = { kind = "settings" } },
+				height = theme:px(32),
+				width = theme:px(140)
 			}
 		)
+		children[#children + 1] = div()
+			:style(sty():row():w(column):h(titleHeight):align("center"):justify("space-between"))
+			:children({ title, back })
+	end
+
+	if restarting then
+		local banner, bannerHeight = restartBanner(app, ctx, column)
+		children[#children + 1] = banner
+		totalHeight += gap + bannerHeight
+	end
+
+	---@param heading string
+	---@param rows beat.components.SettingsItem[]
+	local function addGroup(heading, rows)
+		if #rows == 0 then return end
+		local element, height = settingsList.group(app, { title = heading, rows = rows, width = column })
+		children[#children + 1] = element
+		totalHeight += gap + height
+	end
+
+	local coreRows = {}
+	for _, entry in ipairs(core) do
+		coreRows[#coreRows + 1] = entryRow(app, entry, column, true)
+	end
+	addGroup("Core plugins", coreRows)
+
+	local optionalRows = {}
+	for _, entry in ipairs(optional) do
+		optionalRows[#optionalRows + 1] = entryRow(app, entry, column)
+	end
+	addGroup("Built-in", optionalRows)
+
+	local installedRows = {}
+	for _, entry in ipairs(installed) do
+		installedRows[#installedRows + 1] = entryRow(app, entry, column)
+	end
+	if #installed == 0 then installedRows[1] = noPluginsRow(app, column) end
+	installedRows[#installedRows + 1] = folderRow(app, ctx, column)
+	addGroup("Installed", installedRows)
+
+	-- Below the lists, one card for each loaded plugin that asked for settings. The card fills the
+	-- column, and its view gets the room inside the card's padding.
+	local inner = column - theme:px(PAD) * 2
+	for _, entry in ipairs(app.registry:settings()) do
+		local card, height = settingsCard(app, ctx, entry, inner)
+		if card ~= nil then
+			children[#children + 1] = card
+			totalHeight += gap + height
+		end
+	end
+
+	local body = div():style(sty():column():w(column):h(totalHeight):gap(gap)):children(children)
+	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, totalHeight))
+
+	if mobile then return body end
+	return div()
+		:style(sty():row():wrel(1.0):h(totalHeight):justify("center"))
+		:children({ body })
 end
 
 return plugins

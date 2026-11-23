@@ -27,6 +27,7 @@ local function main()
 		-- the media stream's. The scan workers above make no sound and leave the keys as they found
 		-- them.
 		platform.useMediaVolumeKeys()
+		platform.followUserRotation()
 		App:run()
 	end
 end

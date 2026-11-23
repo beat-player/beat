@@ -21,6 +21,14 @@ local MOBILE_BAR_WIDTH = 14
 local MOBILE_GAP = 3
 local MOBILE_MIN_COUNT = 18
 
+-- The now-playing screen's strip is the meter itself rather than texture behind a control bar: a
+-- dozen-odd thick columns on a phone, a few dozen on a desktop, each one a range of the spectrum
+-- that is read at a glance.
+local BOLD_BAR_WIDTH = 34
+local BOLD_GAP = 7
+local BOLD_MIN_COUNT = 8
+local BOLD_MAX_COUNT = 40
+
 -- The opacity of a bar at rest and the extra a full level adds. The phone uses the same curve
 -- lifted by about three quarters: close to twice the wash without turning texture into a meter.
 local ALPHA_FLOOR = 0.035
@@ -33,17 +41,26 @@ local MOBILE_ALPHA_RANGE = 0.16
 ---@param theme beat.Theme
 ---@param width number
 ---@param mobile boolean
+---@param bold boolean
 ---@return number count
 ---@return number gap
 ---@return number barWidth
-local function barLayout(theme, width, mobile)
-	local gap = mobile and math.max(MOBILE_GAP, theme:px(MOBILE_GAP)) or math.max(2, theme:px(2))
-	local least = mobile and math.max(24, theme:px(MOBILE_BAR_WIDTH)) or math.max(16, theme:px(8))
+local function barLayout(theme, width, mobile, bold)
+	local gap, least, fewest, most
+	if bold then
+		gap, least = theme:px(BOLD_GAP), theme:px(BOLD_BAR_WIDTH)
+		fewest, most = BOLD_MIN_COUNT, BOLD_MAX_COUNT
+	elseif mobile then
+		gap, least = math.max(MOBILE_GAP, theme:px(MOBILE_GAP)), math.max(24, theme:px(MOBILE_BAR_WIDTH))
+		fewest, most = MOBILE_MIN_COUNT, MAX_COUNT
+	else
+		gap, least = math.max(2, theme:px(2)), math.max(16, theme:px(8))
+		fewest, most = MIN_COUNT, MAX_COUNT
+	end
 	local count = math.floor((width + gap) / (least + gap))
-	local fewest = mobile and MOBILE_MIN_COUNT or MIN_COUNT
 
 	if count < fewest then count = fewest end
-	if count > MAX_COUNT then count = MAX_COUNT end
+	if count > most then count = most end
 
 	return count, gap, math.max(1, (width - gap * (count - 1)) / count)
 end
@@ -78,7 +95,8 @@ end
 ---@param levels number[]
 ---@param intensity number
 ---@param reach number
-local function drawMeter(app, canvas, theme, levels, intensity, reach)
+---@param bold boolean
+local function drawMeter(app, canvas, theme, levels, intensity, reach, bold)
 	local active = false
 	for at = 1, #levels do
 		if levels[at] > 0.01 then
@@ -98,15 +116,28 @@ local function drawMeter(app, canvas, theme, levels, intensity, reach)
 	-- shape is added to the frame, so only the alpha has to be set for each bar.
 	local wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
 	local core = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-	local count, gap, barWidth = barLayout(theme, canvas.width, mobile)
+	local count, gap, barWidth = barLayout(theme, canvas.width, mobile, bold)
+	local bands = #levels
 	local spread = math.max(1, count - 1)
 
 	for at = 1, count do
-		local position = (at - 1) / spread * (#levels - 1) + 1
-		local lower = math.floor(position)
-		local upper = math.min(#levels, lower + 1)
-		local mix = position - lower
-		local level = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
+		local level
+		if count < bands then
+			-- Fewer bars than bands: a bar is the loudest of the bands it covers, so a hit in any
+			-- of them moves it rather than falling between two sampled ones.
+			local first = math.floor((at - 1) * bands / count) + 1
+			local last = math.max(first, math.floor(at * bands / count))
+			level = 0
+			for band = first, last do
+				if levels[band] > level then level = levels[band] end
+			end
+		else
+			local position = (at - 1) / spread * (bands - 1) + 1
+			local lower = math.floor(position)
+			local upper = math.min(bands, lower + 1)
+			local mix = position - lower
+			level = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
+		end
 		local barHeight = math.max(2, level * canvas.height * reach)
 		local x = (at - 1) * (barWidth + gap)
 		local alpha = (baseAlpha + level * levelAlpha) * intensity
@@ -133,14 +164,16 @@ end
 ---@param levels number[]
 ---@param intensity number
 ---@param reach number
+---@param bold boolean
 ---@return fun(canvas: wonderland.Canvas)
-local function meterOf(app, theme, levels, intensity, reach)
+local function meterOf(app, theme, levels, intensity, reach, bold)
 	---@type table<string, any>
 	local cache = theme:cache()
-	local meters = cache.spectrumMeters --[[@as table<number, table<number, beat.components.SpectrumMeter>>?]]
+	local key = bold and "spectrumMetersBold" or "spectrumMeters"
+	local meters = cache[key] --[[@as table<number, table<number, beat.components.SpectrumMeter>>?]]
 	if meters == nil then
 		meters = {}
-		cache.spectrumMeters = meters
+		cache[key] = meters
 	end
 
 	local byIntensity = meters[intensity]
@@ -152,7 +185,7 @@ local function meterOf(app, theme, levels, intensity, reach)
 	if meter == nil or meter.levels ~= levels then
 		---@param canvas wonderland.Canvas
 		local function draw(canvas)
-			drawMeter(app, canvas, theme, levels, intensity, reach)
+			drawMeter(app, canvas, theme, levels, intensity, reach, bold)
 		end
 
 		meter = { levels = levels, draw = draw }
@@ -164,6 +197,7 @@ end
 ---@class beat.components.SpectrumBackgroundProps
 ---@field intensity number? # Scales the wash's opacity; default 1
 ---@field reach number? # How much of the bar's height the tallest bar takes; default 0.82
+---@field bold boolean? # Few thick columns: the meter as the screen's own, not texture behind a bar
 
 --- The element fills the box it is given and takes no room in it, so a caller can place it as a
 --- layer behind its siblings.
@@ -173,6 +207,7 @@ end
 function spectrumBackground.view(app, props)
 	local intensity = props.intensity or 1
 	local reach = props.reach or 0.82
+	local bold = props.bold == true
 	local theme = app.services.appearance.theme
 	local spectrum = app.services.playback.spectrum
 	local levels = spectrum ~= nil ? (spectrum:values()) : {}
@@ -185,7 +220,7 @@ function spectrumBackground.view(app, props)
 		cache.spectrumBackground = style
 	end
 
-	return div():style(style):canvas(meterOf(app, theme, levels, intensity, reach))
+	return div():style(style):canvas(meterOf(app, theme, levels, intensity, reach, bold))
 end
 
 return spectrumBackground

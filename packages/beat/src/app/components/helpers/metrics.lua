@@ -153,6 +153,30 @@ function metrics.viewportHeight(app, width, height)
 	return height - metrics.topbarHeight(app, width) - metrics.bottomHeight(app, width)
 end
 
+--- How far a page can scroll: its content, the shell's top padding above it and a margin under
+--- it, less the room the window gives it between the bars. The margin is what lets the last of
+--- the content come to rest above the player bar rather than against it.
+---@param app beat.App
+---@param window { width: number, height: number }
+---@param contentHeight number
+---@return number
+function metrics.pageScrollLimit(app, window, contentHeight)
+	local theme = app.services.appearance.theme
+	local room = theme:space(20) + theme:space(32)
+	return math.max(0, contentHeight + room - metrics.viewportHeight(app, window.width, window.height))
+end
+
+--- The room a page's pinned header takes from the top of its body (see `beat.PageSurface.header`):
+--- the header, the page's top margin above it and a gap under it. A page that pins one scrolls in
+--- what is left, so its scroll limit is measured against the viewport less this.
+---@param app beat.App
+---@param height number # The header's own height
+---@return number
+function metrics.headerBox(app, height)
+	local theme = app.services.appearance.theme
+	return theme:space(20) + height + theme:space(12)
+end
+
 --- The same 1–5 column ladder for every album shelf. It is driven by the content box, because
 --- the sidebar and the mobile bottom bars are not part of the width a grid can use, and read in
 --- the theme's units, so a dense phone screen gets a phone's two columns.

@@ -13,7 +13,7 @@ local Queue = {}
 Queue.__index = Queue
 
 ---@param tracks beat.Track[]
----@param index number?
+---@param index number? # The track to start on; without one a shuffled queue starts on a random track
 ---@param opts { repeatMode: string?, shuffle: boolean?, source: string? }?
 ---@return beat.Queue
 function Queue.new(tracks, index, opts)
@@ -40,7 +40,9 @@ function Queue.new(tracks, index, opts)
 		source = opts.source or "library"
 	}, Queue)
 
-	if queue.shuffle then queue:shuffleOrder() end
+	-- A track picked to start on stays first; a shuffle with nothing picked -- the Shuffle button --
+	-- draws the first track at random too.
+	if queue.shuffle then queue:shuffleOrder(index ~= nil) end
 
 	return queue
 end

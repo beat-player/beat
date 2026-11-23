@@ -90,7 +90,7 @@ local function inspect(entry)
 		return
 	end
 
-	local key = names.albumKey(info.tags, entry.dir)
+	local key = names.albumKey(info.tags, entry.dir, entry.path)
 	local coverCache = cached[key]
 	if coverCache == nil then
 		if info.hasPicture then
@@ -99,7 +99,8 @@ local function inspect(entry)
 				COVER_SIZE,
 				cacheRoot
 			)
-		elseif entry.cover ~= nil and not triedFolder[key] then
+		elseif not names.isSingleKey(key) and entry.cover ~= nil and not triedFolder[key] then
+			-- A single is its own album, so the picture beside it belongs to no album of its own.
 			triedFolder[key] = true
 			local coverStat = fs.stat(entry.cover)
 			coverCache = artwork.cacheCover(

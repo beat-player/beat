@@ -45,7 +45,9 @@ local GLYPHS = {
 	edit = 0xE019,
 	add = 0xE01A,
 	star = 0xE01B,
-	starOutline = 0xE01C
+	starOutline = 0xE01C,
+	-- The queue's list: Playlists has its own mark, so the queue keeps the lines it always had.
+	queue = 0xE01D
 }
 
 local UTF8_GLYPHS = {}

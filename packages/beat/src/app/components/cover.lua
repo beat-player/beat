@@ -121,7 +121,10 @@ function cover.view(app, props)
 		return div():style(imageStyle(styles, size, radius, asset)):children({ sheen })
 	end
 
-	return div():style(styles.placeholder):children({ text(album.title:sub(1, 1):upper()):style(styles.initial), sheen })
+	-- The first character, not the first byte: a title in Japanese or with an accent begins with a
+	-- character several bytes long, and its first byte alone draws as a broken glyph.
+	local initial = album.title:match("^[%z\1-\127\194-\244][\128-\191]*") or ""
+	return div():style(styles.placeholder):children({ text(initial:upper()):style(styles.initial), sheen })
 end
 
 return cover

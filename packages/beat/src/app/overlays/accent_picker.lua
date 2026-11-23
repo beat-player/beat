@@ -1,10 +1,16 @@
--- A small confirmable colour grid, opened by the Appearance section's Custom button.
+-- A custom accent picker: a saturation and brightness square over hue, saturation and brightness
+-- sliders, opened by the Appearance section's Custom button.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
+local slider = require("beat.app.components.slider")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
---- A hue and brightness grid: the twelve hues of a colour wheel at three tones each.
+-- How finely the square is drawn: enough cells that its corners read as a gradient rather than a
+-- checkerboard, but few enough that a frame of it is a few hundred shapes.
+local COLS, ROWS = 24, 16
+
+--- The colour a hue, saturation and brightness name, as the hex a style or a canvas draws.
 ---@param hue number # From nought to one
 ---@param saturation number
 ---@param value number
@@ -32,30 +38,69 @@ local function hsvColour(hue, saturation, value)
 	return string.format("#%02x%02x%02x", math.floor(r * 255 + 0.5), math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
 end
 
-local ACCENT_GRID = {}
-for tone = 1, 3 do
-	for hue = 0, 11 do
-		local saturation = tone == 1 and 0.45 or tone == 2 and 0.72 or 0.94
-		local value = tone == 3 ? 0.72 : 1
-		ACCENT_GRID[#ACCENT_GRID + 1] = hsvColour(hue / 12, saturation, value)
+--- Where a hex colour sits in the colour wheel, so the picker opens on the accent the app shows.
+--- A colour it cannot read is the picker's default: a soft violet that reads on both themes.
+---@param colour string
+---@return number, number, number
+local function rgbToHsv(colour)
+	local hex = colour:match("^#(%x%x%x%x%x%x)$")
+	if hex == nil then
+		return 0.72, 0.55, 1
 	end
+
+	local r = (tonumber(hex:sub(1, 2), 16) or 0) / 255
+	local g = (tonumber(hex:sub(3, 4), 16) or 0) / 255
+	local b = (tonumber(hex:sub(5, 6), 16) or 0) / 255
+	local maximum = math.max(r, g, b)
+	local minimum = math.min(r, g, b)
+	local delta = maximum - minimum
+	local hue = 0
+	if delta > 0 then
+		if maximum == r then
+			hue = ((g - b) / delta) % 6
+		elseif maximum == g then
+			hue = (b - r) / delta + 2
+		else
+			hue = (r - g) / delta + 4
+		end
+		hue = hue / 6
+		if hue < 0 then
+			hue = hue + 1
+		end
+	end
+
+	local saturation = maximum > 0 ? delta / maximum : 0
+	return hue, saturation, maximum
+end
+
+---@param value number
+local function clamp01(value)
+	return math.max(0, math.min(1, value))
 end
 
 ---@class beat.AccentPickerState
+---@field h number # Hue, from nought to one
+---@field s number # Saturation, from nought to one
+---@field v number # Brightness, from nought to one
 ---@field draft string
 
 ---@class beat.AccentPickerOverlay: beat.OverlaySurface
 local accentPicker = {}
 
---- Opens on the accent settings hold now -- its colour when it is a custom one, the colour of its
---- name otherwise -- so the grid starts where the app already is.
+--- Opens on the accent the settings hold now: its colour when it is a custom one, the colour of its
+--- name otherwise, so the picker starts where the app already is.
 ---@param app beat.App
 function accentPicker.new(app)
-	local draft = app.services.settings.values.accent:match("#") and app.services.settings.values.accent or app.services.appearance:accentColour(
-		app.services.settings.values.accent
-	)
+	local accent = app.services.settings.values.accent
+	local colour
+	if type(accent) == "string" and accent:match("^#%x%x%x%x%x%x$") then
+		colour = accent:lower()
+	else
+		colour = app.services.appearance:accentColour(type(accent) == "string" ? accent : "lime")
+	end
+	local h, s, v = rgbToHsv(colour)
 	---@type beat.AccentPickerState
-	return { draft = draft }
+	return { h = h, s = s, v = v, draft = colour }
 end
 
 ---@param app beat.App
@@ -63,10 +108,24 @@ end
 ---@param message beat.Message
 function accentPicker.update(app, overlay, message)
 	local state = overlay.state
-	if message.type == "pickAccent" then
+	if message.type == "pickHsv" then
+		local pick = message --[[@as { h: number?, s: number?, v: number? }]]
+		if type(pick.h) == "number" then
+			state.h = clamp01(pick.h)
+		end
+		if type(pick.s) == "number" then
+			state.s = clamp01(pick.s)
+		end
+		if type(pick.v) == "number" then
+			state.v = clamp01(pick.v)
+		end
+		state.draft = hsvColour(state.h, state.s, state.v)
+		app:refresh()
+	elseif message.type == "pickAccent" then
 		local value = message.value
 		if type(value) == "string" and value:match("^#%x%x%x%x%x%x$") then
 			state.draft = value:lower()
+			state.h, state.s, state.v = rgbToHsv(state.draft)
 			app:refresh()
 		end
 	elseif message.type == "confirmAccent" then
@@ -81,6 +140,46 @@ function accentPicker.update(app, overlay, message)
 	return true
 end
 
+--- One labelled channel slider: the three are the same control with a different colour and a
+--- different field on the message, so they are built the same way.
+---@param app beat.App
+---@param theme beat.Theme
+---@param label string
+---@param field "h"|"s"|"v"
+---@param value number
+---@param fillColour string
+---@param sliderWidth number
+---@param labelWidth number
+---@param rowHeight number
+---@param rowGap number
+local function channelRow(app, theme, label, field, value, fillColour, sliderWidth, labelWidth, rowHeight, rowGap)
+	return div()
+		:style(sty():row():h(rowHeight):gap(rowGap):align("center"))
+		:children(
+			{
+				text(label):style(
+					theme:s():w(labelWidth):text(theme:type("sm")):weight("medium"):fg(theme:color("muted"))
+				),
+				slider.view(
+					app,
+					{
+						width = sliderWidth,
+						value = value,
+						onchange = function(nextValue)
+							return { type = "pickHsv", [field] = nextValue }
+						end,
+						trackColour = theme:color("text", 0.1),
+						fillColour = fillColour,
+						thumbColour = theme:color("text"),
+						height = rowHeight,
+						trackHeight = theme:px(6),
+						thumbSize = theme:px(18)
+					}
+				)
+			}
+		)
+end
+
 ---@param app beat.App
 ---@param overlay beat.OverlayInstance<beat.AccentPickerState>
 ---@param window wonderland.RenderWindow
@@ -89,71 +188,133 @@ function accentPicker.view(app, overlay, window)
 	local state = overlay.state
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
+	local h, s, v = state.h, state.s, state.v
 	local draft = state.draft
-	local narrow = window.width < 560
-	local columns = narrow ? 6 : 12
-	local rows = math.ceil(#ACCENT_GRID / columns)
-	local swatch = (theme:px(narrow ? 24 : 26))
-	local gap = (theme:px(narrow ? 6 : 8))
-	local pad = theme:px(20)
-	local headerHeight = theme:px(44)
-	local footerHeight = theme:px(36)
-	local gridWidth = columns * swatch + (columns - 1) * gap
-	local gridHeight = rows * swatch + (rows - 1) * gap
-	local panelWidth = gridWidth + pad * 2
-	local panelHeight = pad * 2 + headerHeight + gridHeight + footerHeight + theme:px(24)
+	local pad = theme:px(18)
+	local gap = theme:px(12)
+	local titleHeight = theme:px(26)
+	local previewHeight = theme:px(40)
+	local squareHeight = theme:px(160)
+	local sliderHeight = theme:px(28)
+	local footerHeight = theme:px(32)
+	local panelWidth = math.min(theme:px(360), window.width - theme:px(24))
+	local inner = math.max(0, panelWidth - pad * 2)
+	local labelWidth = theme:px(80)
+	local rowGap = theme:px(10)
+	local sliderWidth = math.max(0, inner - labelWidth - rowGap)
+	local panelHeight = pad * 2 + titleHeight + previewHeight + squareHeight + sliderHeight * 3 + footerHeight + gap * 6
 
-	local cells = {}
-	for rowAt = 1, rows do
-		local row = {}
-		for columnAt = 1, columns do
-			local colour = ACCENT_GRID[(rowAt - 1) * columns + columnAt]
-			if colour ~= nil then
-				local selected = draft:lower() == colour
-				row[#row + 1] = div()
-					:style(
-						sty()
-							:size(swatch, swatch):radius(theme:radius("sm")):bg(colour):align("center"):justify("center")
-							:border(((theme:px(selected ? 2 : 1))), selected ? (theme:color("text")) : (theme:color("border")))
-					):onClick({ type = "pickAccent", value = colour })
-					:children(
-						selected ? ui.icon(
-							ctx,
-							{ name = "check", size = (theme:px(14)), colour = app.services.appearance:accentInk(colour) }
-						) : div()
-					)
+	-- The square is a grid of small rectangles rather than a shader: the canvas has no gradient, and
+	-- a hue carried by the colour of each cell is what a saturation and brightness plane is.
+	local square = div()
+		:style(sty():w(inner):h(squareHeight):radius(theme:radius("md")))
+		:canvas(
+			function(canvas)
+				local cellWidth = canvas.width / COLS
+				local cellHeight = canvas.height / ROWS
+				for row = 0, ROWS - 1 do
+					local top = math.floor(row * cellHeight)
+					local bottom = math.floor((row + 1) * cellHeight + 0.5)
+					for column = 0, COLS - 1 do
+						local left = math.floor(column * cellWidth)
+						local right = math.floor((column + 1) * cellWidth + 0.5)
+						canvas:rect(
+							left,
+							top,
+							right - left,
+							bottom - top,
+							hsvColour(h, column / (COLS - 1), 1 - row / (ROWS - 1)),
+							0
+						)
+					end
+				end
+				-- A white ring with the chosen colour inside it, so the marker reads on any part of
+				-- the square rather than only on the half its own colour contrasts with.
+				local markerX = s * canvas.width
+				local markerY = (1 - v) * canvas.height
+				canvas:circle(markerX, markerY, theme:px(7), "#ffffff")
+				canvas:circle(markerX, markerY, theme:px(5), draft)
 			end
-		end
-		cells[#cells + 1] = div():style(sty():row():h(swatch):gap(gap)):children(row)
-	end
+		)
+		:onMouseDown(
+			function(x, y, elementWidth, elementHeight)
+				return {
+					type = "pickHsv",
+					s = elementWidth > 0 ? clamp01(x / elementWidth) : 0,
+					v = elementHeight > 0 ? clamp01(1 - y / elementHeight) : 0
+				}
+			end
+		)
 
-	local name = text("Custom accent"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text")))
-	local hex = text(draft:upper()):style(theme:s():text(theme:type("xs")):fg(theme:color("muted")))
-	local header = div()
-		:style(sty():row():h(headerHeight):gap(theme:px(10)):align("center"))
+	local titleRow = div()
+		:style(sty():row():h(titleHeight):align("center"))
+		:children(
+			{ text("Custom accent"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))) }
+		)
+	local previewRow = div()
+		:style(sty():row():h(previewHeight):gap(theme:px(12)):align("center"))
 		:children(
 			{
 				div()
 					:style(
 						sty()
-							:size(theme:px(36), theme:px(36)):radius(theme:radius("full")):bg(draft)
+							:size(theme:px(40), theme:px(40)):radius(theme:radius("full")):bg(draft)
 							:border(theme:px(1), theme:color("border"))
 					),
-				div():style(sty():column():wrel(1.0):gap(theme:px(1))):children({ name, hex })
+				text(draft:upper()):style(
+					theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))
+				)
 			}
 		)
 
 	local panel = div()
 		:style(
 			sty()
-				:w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(12)):radius(theme:radius("lg"))
+				:w(panelWidth):h(panelHeight):column():pad(pad):gap(gap):radius(theme:radius("lg"))
 				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				:shadow(0, theme:px(16), theme:px(42), "#00000080")
 		):onClick({ type = "keep" })
 		:children(
 			{
-				header,
-				div():style(sty():column():h(gridHeight):gap(gap)):children(cells),
+				titleRow,
+				previewRow,
+				square,
+				channelRow(
+					app,
+					theme,
+					"Hue",
+					"h",
+					h,
+					hsvColour(h, 1, 1),
+					sliderWidth,
+					labelWidth,
+					sliderHeight,
+					rowGap
+				),
+				channelRow(
+					app,
+					theme,
+					"Saturation",
+					"s",
+					s,
+					hsvColour(h, s, 1),
+					sliderWidth,
+					labelWidth,
+					sliderHeight,
+					rowGap
+				),
+				channelRow(
+					app,
+					theme,
+					"Brightness",
+					"v",
+					v,
+					hsvColour(h, s, v),
+					sliderWidth,
+					labelWidth,
+					sliderHeight,
+					rowGap
+				),
 				div()
 					:style(sty():row():h(footerHeight):gap(theme:px(8)):align("center"):justify("end"))
 					:children(

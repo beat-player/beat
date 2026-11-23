@@ -190,6 +190,14 @@ jobs:
           test -d "$ndk"
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
           echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
+          # Dependency build scripts run `strip` on the libraries they build. The host's GNU strip
+          # only reads x86-64 objects, so an aarch64 library fails the build; the NDK's llvm-strip
+          # reads every architecture the APK targets, and is put first on PATH under that name.
+          tools="$RUNNER_TEMP/android-tools"
+          mkdir -p "$tools"
+          ln -sf "$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" "$tools/strip"
+          "$tools/strip" --version
+          echo "$tools" >> "$GITHUB_PATH"
 
       - name: Cache native deps
         uses: actions/cache@v5

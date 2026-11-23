@@ -10,7 +10,7 @@ local settings = {}
 
 ---@class beat.Settings
 ---@field root string?
----@field theme string
+---@field theme string # A palette name, or "auto" to follow the clock (the appearance service resolves it)
 ---@field accent string # A preset name, or a custom #rrggbb colour
 ---@field volume number
 ---@field isMuted boolean

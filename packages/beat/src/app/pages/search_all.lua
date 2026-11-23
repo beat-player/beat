@@ -217,6 +217,7 @@ function searchAll.view(app, page, window)
 									onClick = { type = "playTrack", trackId = track.id },
 									width = width,
 									showAlbum = true,
+									showCover = true,
 									mobile = mobile,
 									ui = ctx
 								}
@@ -228,10 +229,7 @@ function searchAll.view(app, page, window)
 	end
 
 	local contentHeight = listStart + totalRows * rowHeight
-	app.services.scroll:setLimit(
-		app:pageKey(),
-		math.max(0, contentHeight - metrics.viewportHeight(app, window.width, window.height))
-	)
+	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, contentHeight))
 	return div()
 		:style(sty():column():wrel(1.0):h(contentHeight):gap(gap))
 		:children({ header, div():style(sty():column():wrel(1.0):h(totalRows * rowHeight)):children(list) })

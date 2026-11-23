@@ -11,10 +11,11 @@ local Log = require("beat.log")
 local LibraryCache = {}
 
 -- Raised when what a scan reads changes, so a cache written by an older scan is read again rather
--- than trusted: 6 adds each track's audio fingerprint, which the listener's tags are now keyed by,
--- and a cache written before it has none, so every track must be read once to get one. 5 was
--- treble's exact length for an MP3 with no length header, where 4 had a guess.
-local VERSION = 6
+-- than trusted: 7 files a track with no album tag as a single of its own, where 6 named it after
+-- its folder. 6 added each track's audio fingerprint, which the listener's tags are keyed by, and
+-- a cache written before it has none, so every track must be read once to get one. 5 was treble's
+-- exact length for an MP3 with no length header, where 4 had a guess.
+local VERSION = 7
 
 local function cacheFile()
 	return paths.file("library.json")

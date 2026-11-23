@@ -74,6 +74,19 @@ test.it("shuffles every track once, keeping the current one first", function()
 	test.equal(#queue.order, 10)
 end)
 
+test.it("starts a shuffle with no chosen track on a random one", function()
+	math.randomseed(7)
+	local firsts = {}
+	for _ = 1, 40 do
+		local queue = Queue.new(tracks(10), nil, { shuffle = true })
+		firsts[assert(queue:current()).id] = true
+		test.equal(#queue.order, 10)
+	end
+	local distinct = 0
+	for _ in pairs(firsts) do distinct += 1 end
+	test.truthy(distinct > 1, "the Shuffle button does not always open on the first track")
+end)
+
 test.it("a manual next moves even when repeat-one is on", function()
 	local queue = Queue.new(tracks(2), 1, { repeatMode = "one" })
 	test.equal(assert(queue:next()).id, 2)

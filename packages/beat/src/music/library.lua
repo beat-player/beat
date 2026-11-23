@@ -44,6 +44,7 @@ local names = require("beat.music.names")
 ---@field coverCache string?
 ---@field coverTrack beat.Track?
 ---@field modified number # The newest file in the album, in seconds
+---@field single boolean? # True when the album is one file with no album tag, titled after it
 ---@field searchText string? # Folded title and artist, made on the first search
 
 ---@class beat.Artist
@@ -156,7 +157,8 @@ local function place(self, track, key)
 			coverPath = track.coverPath,
 			coverCache = track.coverCache,
 			coverTrack = track.hasPicture and track or nil,
-			modified = track.modified
+			modified = track.modified,
+			single = names.isSingleKey(key) or nil
 		}
 
 		self.albums[#self.albums + 1] = album
@@ -208,22 +210,22 @@ local function place(self, track, key)
 	return track, gainedCover
 end
 
---- The album key is the album artist when the files agree on one, and the album's directory
---- when they do not: a folder of tracks by different artists is still one compilation. A scan
---- that already decided which album a file belongs to hands that key over: what a file was
---- grouped into is not always something its own tags say twice, and a cache replaying the tags
---- alone would group it again into an album of its own.
+--- The album key a track is filed under. A scan that already decided which album a file belongs
+--- to hands that key over: what a file was grouped into is not always something its own tags say
+--- twice, and a cache replaying the tags alone would group it again into an album of its own.
+--- Otherwise the tags and the file's path make the key, and a file with no album tag is a single.
 ---@param tags table<string, any>?
 ---@param dir string
+---@param file string
 ---@param key string?
 ---@return string
-local function albumKeyOf(tags, dir, key)
+local function albumKeyOf(tags, dir, file, key)
 	if key ~= nil then return key end
-	return names.albumKey(tags, dir)
+	return names.albumKey(tags, dir, file)
 end
 
 --- Adds one inspected file. `entry` is what the scanner found; `cover` is the folder picture, if
---- one was beside the file.
+--- one was beside the file, which a single does not use.
 ---@param info treble.audio.Inspect
 ---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number?, key: string? }
 ---@param cover string?
@@ -234,12 +236,12 @@ function Library:add(info, entry, cover, coverCache)
 	local tags = info.tags or {}
 	local base = names.stripExtension(entry.name)
 	local title = hasText(tags.title) and tags.title or names.stripTrackPrefix(base)
-	local albumFallback = names.parentName(entry.dir)
-	local artistFallback = names.parentName(path.dirname(entry.dir))
-	if artistFallback == "Unknown Album" then artistFallback = "Unknown Artist" end
+	local single = not hasText(tags.album)
 
-	local artist = intern(self, hasText(tags.artist) and tags.artist or artistFallback) or ""
-	local albumTitle = intern(self, hasText(tags.album) and tags.album or albumFallback) or ""
+	-- A file that names no artist is unknown; nothing about the folder it sits in says otherwise.
+	local artist = intern(self, hasText(tags.artist) and tags.artist or "Unknown Artist") or ""
+	-- A file that names no album is a single, and its own title names its album.
+	local albumTitle = intern(self, hasText(tags.album) and tags.album or title) or ""
 	local albumArtist = intern(self, hasText(tags.albumArtist) and tags.albumArtist or artist) or ""
 
 	local number = tags.track
@@ -249,6 +251,11 @@ function Library:add(info, entry, cover, coverCache)
 
 	local id = self.nextTrackId
 	self.nextTrackId = id + 1
+
+	-- A folder picture belongs to a folder of one album; a single is its own album and may only
+	-- show a picture from its own file.
+	local coverPath = nil
+	if not single then coverPath = intern(self, cover) end
 
 	---@type beat.Track
 	local track = {
@@ -269,13 +276,13 @@ function Library:add(info, entry, cover, coverCache)
 		sampleRate = info.sampleRate,
 		channels = info.channels,
 		hasPicture = info.hasPicture,
-		coverPath = intern(self, cover),
+		coverPath = coverPath,
 		coverCache = intern(self, coverCache),
 		modified = entry.modifyTime or 0,
 		fingerprint = info.fingerprint
 	}
 
-	return place(self, track, albumKeyOf(tags, entry.dir, entry.key))
+	return place(self, track, albumKeyOf(tags, entry.dir, entry.path, entry.key))
 end
 
 ---@param value any
@@ -301,10 +308,10 @@ local function numberOr(value, fallback)
 	return value
 end
 
---- Adds one track a cache wrote down: the values `add` derives from a scan's tags and folder are
---- already there, so nothing here re-derives a title from a file name or a folder from a path. A
---- launch reads thousands of these before it draws anything, and the tables and the folded strings
---- a derivation would make for each were most of the garbage and a third of the time.
+--- Adds one track a cache wrote down: the values `add` derives from a scan's tags and path are
+--- already there, so nothing here re-derives a title from a file name. A launch reads thousands of
+--- these before it draws anything, and the tables and the folded strings a derivation would make
+--- for each were most of the garbage and a third of the time.
 ---@param record table # One `packed` record from the cache
 ---@return beat.Track
 ---@return boolean gainedCover # Whether this was the album's first cached cover
@@ -316,28 +323,36 @@ function Library:addCached(record)
 	local albumTitle = intern(self, textOf(record.album)) or ""
 	local albumArtist = intern(self, textOf(record.albumArtist)) or ""
 	local key = textOf(record.key)
+	local hadAlbum = albumTitle ~= ""
 
 	if title == nil or title == "" or artist == "" or albumTitle == "" or albumArtist == "" or key == nil then
-		-- A record that does not say everything is filled in the way a scan would fill it in, from
-		-- the file's path. What the cache does say is kept; interning a value twice hands back the
-		-- copy already in the library.
+		-- A record that does not say everything is filled in the way a scan would fill it in: a
+		-- missing artist is unknown, and a missing album makes the track a single named after its
+		-- own title. What the cache does say is kept; interning a value twice hands back the copy
+		-- already in the library.
 		local dir = path.dirname(file)
 		if title == nil or title == "" then
 			title = names.stripTrackPrefix(names.stripExtension(path.basename(file)))
 		end
-		local albumFallback = names.parentName(dir)
-		local artistFallback = names.parentName(path.dirname(dir))
-		if artistFallback == "Unknown Album" then artistFallback = "Unknown Artist" end
-		if artist == "" then artist = intern(self, artistFallback) or "" end
-		if albumTitle == "" then albumTitle = intern(self, albumFallback) or "" end
+		if artist == "" then artist = intern(self, "Unknown Artist") or "" end
+		if albumTitle == "" then albumTitle = intern(self, title) or "" end
 		if albumArtist == "" then albumArtist = artist end
 		if key == nil then
-			key = names.albumKey({ album = albumTitle, albumArtist = albumArtist }, dir)
+			if hadAlbum then
+				key = names.albumKey({ album = albumTitle, albumArtist = albumArtist }, dir, file)
+			else
+				key = names.albumKey({ albumArtist = albumArtist }, dir, file)
+			end
 		end
 	end
 
 	local id = self.nextTrackId
 	self.nextTrackId = id + 1
+
+	---@cast key string
+	-- A single's album is its file, not the folder it sits in, so a folder picture is not its cover.
+	local coverPath = intern(self, textOf(record.coverPath))
+	if names.isSingleKey(key) then coverPath = nil end
 
 	---@type beat.Track
 	local track = {
@@ -358,7 +373,7 @@ function Library:addCached(record)
 		sampleRate = numberOr(record.sampleRate, 0),
 		channels = numberOr(record.channels, 0),
 		hasPicture = record.hasPicture == true,
-		coverPath = intern(self, textOf(record.coverPath)),
+		coverPath = coverPath,
 		coverCache = intern(self, textOf(record.coverCache)),
 		modified = numberOr(record.modified, 0),
 		fingerprint = textOf(record.fingerprint)

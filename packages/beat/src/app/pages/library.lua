@@ -161,7 +161,7 @@ function libraryPage.view(app, page, window)
 	local totalRows = list and #albums or math.ceil(#albums / columns)
 	local contentHeight = headerHeight + theme:space(18) + totalRows * rowHeight
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
-	app.services.scroll:setLimit(app:pageKey(), math.max(0, contentHeight - viewport))
+	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, contentHeight))
 	local scroll = app.services.scroll:offset(app:pageKey())
 	local listStart = headerHeight + theme:space(18)
 	local first, last, top = app.services.scroll.slices(

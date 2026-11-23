@@ -49,3 +49,8 @@ end
 
 local icon = build:read("assets/icon-256.png")
 build:write("app/icon.lua", "return \"" .. toLuaLiteral(icon) .. "\"\n")
+
+-- The Android media session's Java half (android/build-dex.sh), loaded at run time by
+-- `beat.app.services.system.media`: a NativeActivity APK carries no Java code of its own.
+local mediaDex = build:read("assets/media.dex")
+build:write("app/media_dex.lua", "return \"" .. toLuaLiteral(mediaDex) .. "\"\n")

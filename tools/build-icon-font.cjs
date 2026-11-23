@@ -26,8 +26,8 @@ const output = path.join(root, "packages", "beat-ui", "src", "assets", "fonts", 
 const icons = [
 	["play", 0xE000, "play"],
 	["pause", 0xE001, "pause"],
-	["previous", 0xE002, "play-skip-back"],
-	["next", 0xE003, "play-skip-forward"],
+	["previous", 0xE002, "material-skip-previous"],
+	["next", 0xE003, "material-skip-next"],
 	["shuffle", 0xE004, "shuffle"],
 	["repeat", 0xE005, "repeat"],
 	["repeatOne", 0xE006, "repeat-one"],
@@ -46,12 +46,13 @@ const icons = [
 	["settings", 0xE013, "settings-outline"],
 	["github", 0xE015, "logo-github"],
 	["tag", 0xE016, "pricetag"],
-	["playlists", 0xE017, "list"],
+	["playlists", 0xE017, "material-library-music"],
 	["hand", 0xE018, "hand-left"],
 	["edit", 0xE019, "pencil"],
 	["add", 0xE01A, "add"],
 	["star", 0xE01B, "star"],
 	["starOutline", 0xE01C, "star-outline"],
+	["queue", 0xE01D, "list"],
 ];
 
 const converted = fs.mkdtempSync(path.join(os.tmpdir(), "beat-icons-"));

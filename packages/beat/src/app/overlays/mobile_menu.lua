@@ -1,14 +1,23 @@
--- The phone's own menu: the two places the top bar no longer has room for in its corner. It opens
--- above the tabs and the player bar, where the hand that pressed the last tab already is.
+-- The phone's own menu: the places the top bar no longer has room for in its corner. It pops up
+-- out of the More tab, pointing at it, over the mini player rather than above it.
 local wonderland = require("wonderland")
 local metrics = require("beat.app.components.helpers.metrics")
+local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 ---@class beat.MobileMenuOverlay: beat.OverlaySurface
 local mobileMenu = { light = true }
 
-function mobileMenu.new()
+-- The tab bar's own height, which the menu sits on; see `beat.components.chrome.mobileNav`.
+local NAV_HEIGHT = 58
+-- The More tab is the fifth of the app's tabs; plugins' tabs come after it.
+local MORE_TAB = 5
+local APP_TABS = 5
+
+---@param app beat.App
+function mobileMenu.new(app)
+	popup.open(app, "mobileMenu")
 	return {}
 end
 
@@ -64,9 +73,18 @@ function mobileMenu.view(app, _overlay, window)
 		rows[#rows + 1] = entry(app, ctx, rowWidth, "Tasks", { type = "open", overlay = "tasks" })
 	end
 	local height = padding * 2 + theme:px(44) * #rows + theme:px(2) * (#rows - 1)
-	local x = window.width - width - theme:px(12)
-	local y = window.height - metrics.bottomHeight(app, window.width) - height - theme:px(8)
-	y = math.max(theme:px(8), y)
+
+	-- The menu stands on the tab bar, its point over the middle of the More tab, and as far right
+	-- as the window lets it go while still covering that tab.
+	local _, inset = metrics.insets()
+	local navTop = window.height - theme:px(NAV_HEIGHT) - inset
+	local tabWidth = math.floor(window.width / (APP_TABS + #app.registry:nav()))
+	local tabCentre = (MORE_TAB - 0.5) * tabWidth
+	local edge = theme:px(8)
+	local x = math.max(edge, math.min(window.width - width - edge, tabCentre - width + theme:px(40)))
+	local point = theme:px(8)
+	local total = height + point
+	local y = navTop - total - theme:px(2)
 
 	local panel = div()
 		:style(
@@ -77,9 +95,31 @@ function mobileMenu.view(app, _overlay, window)
 		):onClick({ type = "keep" })
 		:children(rows)
 
+	-- The point under the panel, over the tab: what says which control the menu belongs to.
+	local pointX = tabCentre - x
+	local colour = theme:color("elevated")
+	local arrow = div():style(sty():w(width):h(point)):canvas(function(canvas)
+		canvas:polygon({ pointX - point, -1, pointX + point, -1, pointX, point }, colour)
+	end)
+
 	return div()
 		:style(sty():fill():offset(0, 0):z(130)):onClick({ type = "dismiss" })
-		:children({ div():style(sty():w(width):h(height):offset(x, y)):children({ panel }) })
+		:children(
+			{
+				popup.view(
+					app,
+					{
+						key = "mobileMenu",
+						panel = div():style(sty():column():w(width):h(total)):children({ panel, arrow }),
+						x = x,
+						y = y,
+						width = width,
+						height = total,
+						grows = "up"
+					}
+				)
+			}
+		)
 end
 
 return mobileMenu

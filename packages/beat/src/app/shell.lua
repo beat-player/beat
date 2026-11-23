@@ -122,11 +122,21 @@ end
 ---@param ctx beat.ui.Context
 ---@param bodyHeight number
 ---@param pad number
+---@param top number # Room above the first of the content: none under a pinned header, which has its own
 ---@return wonderland.StyleBuilder
-local function pageBodyStyle(ctx, bodyHeight, pad)
+local function pageBodyStyle(ctx, bodyHeight, pad, top)
 	return sty()
-		:column():wrel(1.0):h(bodyHeight):pad(ctx:space(20), pad, 0, pad):gap(ctx:space(18))
+		:column():wrel(1.0):h(bodyHeight):pad(top, pad, 0, pad):gap(ctx:space(18))
 		:bar(ctx:px(8), ctx:px(40), ctx:color("faint"))
+end
+
+--- The box a page's pinned header sits in: the page's own top margin above it and a gap below.
+---@param ctx beat.ui.Context
+---@param height number # The header's own height
+---@param pad number
+---@return wonderland.StyleBuilder
+local function pageHeaderStyle(ctx, height, pad)
+	return sty():column():wrel(1.0):h(ctx:space(20) + height + ctx:space(12)):pad(ctx:space(20), pad, ctx:space(12), pad)
 end
 
 ---@param ctx beat.ui.Context
@@ -209,7 +219,10 @@ function shell.view(app, window)
 		})
 	end
 
-	local content = app.registry:page(page.kind).view(app, page, window)
+	local surface = app.registry:page(page.kind)
+	local content = surface.view(app, page, window)
+	local header, headerHeight = nil, 0
+	if surface.header ~= nil then header, headerHeight = surface.header(app, page, window) end
 
 	local bottomHeight = metrics.bottomHeight(app, width)
 	local pageHeight = height - bottomHeight
@@ -229,10 +242,17 @@ function shell.view(app, window)
 	end
 
 	-- The body's box is the window's height less the bars and the page's padding: every frame of a
-	-- resize or a page that scrolls asks for the same one again.
-	local bodyStyle = cache.of(uiCtx, pageBodyStyle, "shellPageBody", bodyHeight, pad) --[[@as wonderland.StyleBuilder]]
+	-- resize or a page that scrolls asks for the same one again. A page with a pinned header gives
+	-- that header the top of the box, and only what is under it scrolls.
+	local headerBox = header ~= nil and metrics.headerBox(app, headerHeight) or 0
+	local bodyStyle = cache.of(uiCtx, pageBodyStyle, "shellPageBody", bodyHeight - headerBox, pad, header ~= nil and 0 or theme:space(20)) --[[@as wonderland.StyleBuilder]]
 
 	local pageBody = div():style(bodyStyle):scroll(scroll):onScroll(send.scroll):children({ content })
+	if header ~= nil then
+		local headerStyle = cache.of(uiCtx, pageHeaderStyle, "shellPageHeader", headerHeight, pad) --[[@as wonderland.StyleBuilder]]
+		local column = cache.of(uiCtx, clipStyle, "shellPageColumn", bodyHeight) --[[@as wonderland.StyleBuilder]]
+		pageBody = div():style(column):children({ div():style(headerStyle):children({ header }), pageBody })
+	end
 
 	-- The page is moved by a wrapper whose styles are made once per scale, not by a style that
 	-- names the frame's exact position: a style is interned by its values, and interning a new

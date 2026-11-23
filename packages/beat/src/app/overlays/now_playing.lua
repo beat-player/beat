@@ -7,6 +7,8 @@ local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
 local metrics = require("beat.app.components.helpers.metrics")
+local measure = require("beat.app.components.helpers.measure")
+local popup = require("beat.app.components.popup")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -86,20 +88,22 @@ end
 ---@field top number # Where the tool row's top is from the top of the box a panel is offset from
 
 --- Places a panel opened from the now-playing tool row: under the row where it fits or where
---- there is more room below than above, over it otherwise.
+--- there is more room below than above, over it otherwise. It pops out of the row the way it
+--- opens, from the motion `key` its overlay started (see `beat.components.popup`).
 ---@param app beat.App
 ---@param panel wonderland.Element
 ---@param x number # From the row's left edge
 ---@param width number
 ---@param height number
 ---@param room beat.ToolRoom
+---@param key string
 ---@return wonderland.Element
-local function toolPanel(app, panel, x, width, height, room)
+local function toolPanel(app, panel, x, width, height, room, key)
 	local theme = app.services.appearance.theme
 	local gap = theme:px(6)
 	local below = height + gap <= room.below or room.below >= room.above
 	local y = room.top + (below and (theme:px(34) + gap) or -(height + gap))
-	return div():style(sty():w(width):h(height):offset(x, y):z(130)):children({ panel })
+	return popup.view(app, { key = key, panel = panel, x = x, y = y, width = width, height = height, grows = below and "down" or "up" })
 end
 
 --- Draws a panel at the button that opened it. The anchor -- where the controls row is, and how
@@ -121,7 +125,7 @@ end
 ---@field anchor table?
 
 ---@class beat.NowPlayingOverlay: beat.OverlaySurface
----@field toolPanel fun(app: beat.App, panel: wonderland.Element, x: number, width: number, height: number, room: beat.ToolRoom): wonderland.Element
+---@field toolPanel fun(app: beat.App, panel: wonderland.Element, x: number, width: number, height: number, room: beat.ToolRoom, key: string): wonderland.Element
 
 --- The styles of the screen that depend on the theme alone: the tool row and the marks in it are
 --- the same for every track and every window size, and this screen is built again whenever what is
@@ -269,14 +273,38 @@ function nowPlaying.view(app, _overlay, window)
 		}):children(cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true }))
 		local transport = math.max(0.7, math.min(1, progressWidth / theme:px(240)))
 		local controlGap = theme:px(10 * transport)
+		-- The album and artist sit at their own widths, so the dot stays between them; only when
+		-- the two do not fit together are they cut, the artist keeping its whole name where that is
+		-- short and the album never giving up more than two fifths of the line.
+		local lineHeight = math.floor(theme:type("lg") * 1.3)
+		local subtitleStyle = theme:s():text(theme:type("lg")):weight("medium")
+		local sepWidth = math.ceil(measure.width(app, "  ·  ", subtitleStyle) or theme:px(24))
+		local albumWidth = math.ceil(measure.width(app, album.title, subtitleStyle) or progressWidth) + 1
+		local artistWidth = math.ceil(measure.width(app, track.artist, subtitleStyle) or progressWidth) + 1
+		local room = progressWidth - sepWidth
+		if albumWidth + artistWidth > room then
+			artistWidth = math.min(artistWidth, math.floor(room * 0.4))
+			albumWidth = math.max(math.floor(room * 0.6), room - artistWidth)
+			artistWidth = room - albumWidth
+		end
 		local textRows = {
 			text(track.title)
 				:style(
 					theme:s()
 						:w(progressWidth):text(((theme:type(mobile ? "xxl" : "hero")))):weight("bold"):fg(theme:color("text")):ellipsis()
 				),
-			text(album.title .. "  ·  " .. track.artist)
-				:style(theme:s():w(progressWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis())
+			div():style(sty():row():w(progressWidth):h(lineHeight):align("center")):children({
+				text(album.title)
+					:style(theme:s():w(albumWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis())
+					:hover(theme:s():w(albumWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("text")):ellipsis())
+					:onClick({ type = "navigate", page = { kind = "album", id = album.id } }),
+				text("  ·  ")
+					:style(theme:s():w(sepWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("muted"))),
+				text(track.artist)
+					:style(theme:s():w(artistWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("muted")):ellipsis())
+					:hover(theme:s():w(artistWidth):text(theme:type("lg")):weight("medium"):fg(theme:color("text")):ellipsis())
+					:onClick({ type = "navigate", page = { kind = "artist", id = track.artistId } })
+			})
 		}
 		local queue = app.services.playback.player.queue
 		local repeatIcon = queue?.repeatMode == "one" ? "repeatOne" : "repeat"
@@ -287,7 +315,7 @@ function nowPlaying.view(app, _overlay, window)
 		local toolChildren = {
 			div():style(styles.toolGroup):children({
 				ui.iconButton(ctx, {
-					name = "playlists",
+					name = "queue",
 					size = toolSize,
 					onClick = { type = "toggleQueue" },
 					active = app:overlay("queue") ~= nil
@@ -409,7 +437,7 @@ function nowPlaying.view(app, _overlay, window)
 	local content = div()
 		:style(sty():fill():column():pad(margin, margin, margin, margin):gap(theme:space(16))):children(contentChildren)
 
-	local children = { spectrumBackground.view(app, { intensity = 0.28, reach = 0.72 }), content }
+	local children = { spectrumBackground.view(app, { intensity = 0.7, reach = 0.8, bold = true }), content }
 	-- The panels sit inside the stage, so what closes them on a click elsewhere is here: under
 	-- them, over everything else on the screen.
 	if app:overlay("queue") ~= nil or app:overlay("more") ~= nil then

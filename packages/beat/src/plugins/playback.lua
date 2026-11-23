@@ -3,6 +3,7 @@
 local beat = require("beat")
 local playback = require("beat.app.services.playback")
 local equalizer = require("beat.app.services.equalizer")
+local media = require("beat.app.services.system.media")
 
 local nowPlaying = require("beat.app.overlays.now_playing")
 local more = require("beat.app.overlays.more")
@@ -14,6 +15,8 @@ local equalizerRename = require("beat.app.overlays.equalizer_rename")
 return beat.plugin({ name = "playback", version = "1.0.0", author = "beat", description = "Playback, the queue and the equalizer", requires = { core = "^1.0.0", library = "^1.0.0", collections = "^1.0.0" }, setup = function(handle)
 	handle.service("playback", playback)
 	handle.service("equalizer", equalizer)
+	-- The lock screen's player and the shade's controls, on a phone.
+	handle.service("media", media)
 
 	handle.overlay("now_playing", nowPlaying)
 	handle.overlay("more", more)

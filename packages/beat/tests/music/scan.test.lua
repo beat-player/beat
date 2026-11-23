@@ -2,6 +2,7 @@ local test = require("lde-test")
 local fs = require("fs")
 local path = require("path")
 local Scanner = require("beat.music.scan")
+local Library = require("beat.music.library")
 
 local HERE = (debug.getinfo(1, "S").source:sub(2):match("^(.*)[/\\]") or ".")
 local FIXTURES = path.join(HERE, "..", "fixtures")
@@ -120,17 +121,25 @@ test.it("scans folders, groups albums, reads the cover beside them", function()
 	local library = assert(scanner.library)
 
 	test.equal(#library.tracks, 4, "four playable files")
-	test.equal(#library.albums, 3, "the tagged file is its own album")
+	test.equal(#library.albums, 4, "each file with no album tag is its own album")
 	test.equal(scanner:progress().phase, "done")
 	test.truthy(library.ready)
 
 	local night = albumNamed(library, "Night Drive")
-	test.truthy(night, "the folder's tracks are one album")
-	test.equal(#night.tracks, 2)
+	test.truthy(night, "a file with no album tag is a single named after its title")
+	test.equal(#night.tracks, 1)
+	test.truthy(night.single)
 	test.equal(night.tracks[1].title, "Night Drive", "the track number is stripped from the name")
-	test.equal(night.tracks[2].title, "Afterglow")
-	test.equal(night.coverPath, path.join(albumDir, "cover.png"))
-	test.equal(night.artist, "Mira Vale")
+	test.falsy(night.coverPath, "a single does not take the picture beside it")
+	test.equal(night.artist, "Unknown Artist", "no folder names its artist")
+
+	local afterglow = albumNamed(library, "Afterglow")
+	test.truthy(afterglow, "the other file in the folder is a single of its own")
+	test.equal(#afterglow.tracks, 1)
+
+	local guest = albumNamed(library, "Guest")
+	test.truthy(guest)
+	test.equal(#guest.tracks, 1)
 
 	local tagged = albumNamed(library, "Flac Album")
 	test.truthy(tagged)
@@ -243,14 +252,50 @@ test.it("searches titles, albums and artists", function()
 	test.equal(albums[1].title, "Night Drive")
 	test.equal(tracks[1].title, "Night Drive")
 
-	local _, foundArtists = library:search("mira")
-	test.equal(#foundArtists, 1)
-	test.equal(foundArtists[1].name, "Mira Vale")
+	local _, foundArtists = library:search("unknown")
+	test.equal(#foundArtists, 1, "the file that names no artist is filed under Unknown Artist")
+	test.equal(foundArtists[1].name, "Unknown Artist")
 	test.equal(albums[1].artistId, foundArtists[1].id)
 	test.equal(tracks[1].artistId, foundArtists[1].id)
+
+	local _, folderArtists = library:search("mira")
+	test.equal(#folderArtists, 0, "a folder name is not an artist")
 
 	local none = library:search("nothing here")
 	test.equal(#none, 0)
 
 	removeTree(root)
+end)
+
+test.it("files two files with no album tag as two singles", function()
+	local library = Library.new("/singles")
+	local function add(dir, title, artist)
+		library:add(
+			{
+				format = "FLAC",
+				sampleRate = 44100,
+				channels = 2,
+				duration = 120,
+				hasPicture = false,
+				tags = { title = title, artist = artist }
+			},
+			{ path = dir .. "/" .. title .. ".flac", dir = dir, name = title .. ".flac", ext = "flac" },
+			dir .. "/folder.jpg"
+		)
+	end
+	add("/singles/one", "Same Title", "Artist One")
+	add("/singles/two", "Same Title", "Artist One")
+	add("/singles/three", "Loose", nil)
+	library:finish()
+
+	test.equal(#library.albums, 3, "each single is its own album, even sharing a title")
+	for _, album in ipairs(library.albums) do
+		test.truthy(album.single, "the album is a single")
+		test.equal(album.title, album.tracks[1].title, "named after its track")
+		test.falsy(album.coverPath, "a single does not take the picture beside it")
+	end
+
+	local loose = albumNamed(library, "Loose")
+	test.equal(loose.tracks[1].artist, "Unknown Artist")
+	test.equal(loose.artist, "Unknown Artist")
 end)

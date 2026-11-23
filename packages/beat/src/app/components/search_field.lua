@@ -37,9 +37,12 @@ end
 ---@field ring wonderland.StyleBuilder
 ---@field clearBox wonderland.StyleBuilder
 ---@field clearDraw fun(canvas: wonderland.Canvas)
+---@field textSize number
+---@field iconSize number
 
 --- The styles of a pill at a width, a height and a state. They are kept on the theme, so a frame
---- does not intern the same builders again.
+--- does not intern the same builders again. A tall pill -- the phone's -- sets its text, glyphs
+--- and padding larger to match: the same field a size up, not a small field in a big box.
 ---@param ctx beat.ui.Context
 ---@param width number
 ---@param height number
@@ -47,22 +50,30 @@ end
 ---@param hasClear boolean
 ---@return beat.components.SearchFieldStyles
 local function buildStyles(ctx, width, height, focused, hasClear)
+	local large = height >= ctx:px(44)
+	local textSize = large and ctx:type("base") or ctx:type("sm")
+	local inner = height - ctx:px(large and 8 or 2)
+	local side = ctx:px(large and 16 or 12)
+	local iconSize = ctx:px(large and 20 or 16)
+	local clearSize = ctx:px(large and 28 or 20)
 	-- The magnifier, the clear mark and the gaps between them come out of the width the field's
 	-- own box gets: what is left is the text.
-	local areaWidth = width - ctx:px(24) - ctx:px(16) - ctx:px(8) - (hasClear and ctx:px(28) or 0)
+	local areaWidth = width - side * 2 - iconSize - ctx:px(8) - (hasClear and (clearSize + ctx:px(8)) or 0)
 	return {
-		area = sty():w(areaWidth):h(ctx:px(32)):row():align("center"),
+		area = sty():w(areaWidth):h(inner):row():align("center"),
 		input = sty()
-			:wrel(1.0):h(ctx:px(32)):row():align("center"):pad(ctx:px(10), 0, ctx:px(10), 0):text(ctx:type("sm"))
+			:wrel(1.0):h(inner):row():align("center"):pad(ctx:px(10), 0, ctx:px(10), 0):text(textSize)
 			:fg(ctx:color("text")),
-		field = sty():row():wrel(1.0):h(ctx:px(32)):gap(ctx:px(8)):align("center"),
+		textSize = textSize,
+		field = sty():row():wrel(1.0):h(inner):gap(ctx:px(8)):align("center"),
 		pill = sty()
 			:row():w(width):h(height):radius(ctx:radius("full"))
-			:bg(focused and ctx:color("hover") or ctx:color("elevated")):pad(0, ctx:px(12), 0, ctx:px(12)):align("center"),
+			:bg(focused and ctx:color("hover") or ctx:color("elevated")):pad(0, side, 0, side):align("center"),
 		ring = sty()
-			:w(width):h(height):radius(ctx:radius("full")):border(ctx:px(1), ctx:color("accent")):offset(-ctx:px(12), 0),
-		clearBox = sty():size(ctx:px(20), ctx:px(20)):radius(ctx:radius("full")):align("center"):justify("center"),
-		clearDraw = clearDraw(ctx:color("muted"), math.max(1, ctx:px(1.25)), ctx:px(4))
+			:w(width):h(height):radius(ctx:radius("full")):border(ctx:px(1), ctx:color("accent")):offset(-side, 0),
+		clearBox = sty():size(clearSize, clearSize):radius(ctx:radius("full")):align("center"):justify("center"),
+		clearDraw = clearDraw(ctx:color("muted"), math.max(1, ctx:px(large and 1.75 or 1.25)), ctx:px(large and 5 or 4)),
+		iconSize = iconSize
 	}
 end
 
@@ -71,7 +82,7 @@ end
 ---@field value string
 ---@field width number
 ---@field placeholder string
----@field height number? # The pill's height; default px(38) on a phone, px(34) otherwise
+---@field height number? # The pill's height; default px(48) on a phone, px(34) otherwise
 ---@field clearMessage any? # What the clear mark sends; default a search that empties the query
 
 ---@param ctx beat.ui.Context
@@ -81,7 +92,7 @@ function searchField.view(ctx, props)
 	local focused = ctx:focused(props.name)
 	local query = props.value
 	local hasClear = query ~= ""
-	local height = props.height or ctx:px(ctx.mobile and 38 or 34)
+	local height = props.height or ctx:px(ctx.mobile and 48 or 34)
 	local styles = cache.of(ctx, buildStyles, "searchField", props.width, height, focused, hasClear) --[[@as beat.components.SearchFieldStyles]]
 	local shown = hasClear and query or (focused and " " or props.placeholder)
 	local colour = hasClear ? (ctx:color("text")) : focused and (ctx:color("text")) or (ctx:color("faint"))
@@ -92,10 +103,10 @@ function searchField.view(ctx, props)
 		oninput = typed,
 		onsubmit = || -> nil
 	})
-	input:children(text(shown):style(ctx:s():wrel(1.0):text(ctx:type("sm")):fg(colour):ellipsis()))
+	input:children(text(shown):style(ctx:s():wrel(1.0):text(styles.textSize):fg(colour):ellipsis()))
 
 	local field = div():style(styles.field):children({
-		ui.icon(ctx, { name = "search", size = ctx:px(16), colour = ctx:color("faint") }),
+		ui.icon(ctx, { name = "search", size = styles.iconSize, colour = ctx:color("faint") }),
 		div():style(styles.area):children({ input })
 	})
 

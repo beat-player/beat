@@ -108,21 +108,27 @@ function Motion:get(key, fallback)
 	return known.value
 end
 
+--- Moves the clock to `now`. Returns whether anything moved: an animation still running, or one
+--- that reached its end on this step -- its last frame is a change too, and a ticker that only
+--- woke after the animation's whole length still has to build the frame that shows it done.
 ---@return boolean
 function Motion:update(now)
 	self.now = now
 	local active = false
+	local finished = false
 
 	for _, known in pairs(self.values) do
 		if known.duration > 0 and now < known.start + known.duration then
 			active = true
 		elseif known.duration > 0 then
 			known.value = known.to
+			known.duration = 0
+			finished = true
 		end
 	end
 
 	self.active = active
-	return active
+	return active or finished
 end
 
 function Motion:isActive()

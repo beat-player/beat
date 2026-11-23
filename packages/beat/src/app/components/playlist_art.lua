@@ -111,9 +111,32 @@ end
 ---@field name string # The playlist's name, reduced to its initials
 ---@field ui beat.ui.Context
 
+--- Four separately rounded cells in two rows, a small gap between them: the square a mosaic is
+--- drawn into. Each cell is built by `cell`, which gets the slot it fills and the size and corner
+--- radius it should draw at.
+---@param app beat.App
+---@param cell fun(slot: number, size: number, radius: number): wonderland.Element # builds the cell for slot 1..4
+---@param size number
+---@param radius number
+---@return wonderland.Element
+function PlaylistArt.grid(app, cell, size, radius)
+	local gap = math.max(1, math.floor(size * 0.02))
+	local cellSize = math.floor((size - gap) / 2)
+	local cellRadius = math.min(radius, math.floor(cellSize * 0.15))
+
+	local function row(from)
+		return div():style(sty():row():h(cellSize):gap(gap)):children({
+			cell(from, cellSize, cellRadius),
+			cell(from + 1, cellSize, cellRadius)
+		})
+	end
+
+	return div():style(sty():column():size(size, size):gap(gap)):children({ row(1), row(3) })
+end
+
 --- A playlist's square: four evenly spread album pictures behind the playlist's initials. A
---- one-track playlist is one cover, and two or three leave their remaining cells black. The
---- rounded parent clips whatever the cells do, so every playlist has the same outer shape.
+--- one-track playlist is one cover, and two or three leave their remaining cells black. The cells
+--- sit apart with corners of their own, so no rounded clip slices the covers they hold.
 ---@param app beat.App
 ---@param props beat.components.PlaylistArtProps
 ---@return wonderland.Element
@@ -133,36 +156,31 @@ function PlaylistArt.view(app, props)
 				:align("center"):justify("center")
 		):children(text(initials):style(theme:s():text(fontSize):weight("bold"):fg(theme:color("text"))))
 
-	local root = div():style(sty():column():size(size, size):radius(artRadius):bg("#000000")):clip()
+	local root = div():style(sty():size(size, size))
 
 	local library = app.services.library.current
 	if #picked <= 1 then
 		local track = picked[1]
 		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
 		if album ~= nil then
-			root:children({ cover.view(app, { album = album, size = size, radius = 0 }) })
+			root:children({ cover.view(app, { album = album, size = size, radius = artRadius }) })
+		else
+			root:children({ div():style(sty():size(size, size):radius(artRadius):bg("#000000")) })
 		end
 		root:children({ badge })
 		return root
 	end
 
-	local cell = math.floor(size / 2)
-	local function cellAt(slot)
+	local function cellAt(slot, cellSize, cellRadius)
 		local track = picked[slot]
 		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
 		if album ~= nil then
-			return cover.view(app, { album = album, size = cell, radius = 0 })
+			return cover.view(app, { album = album, size = cellSize, radius = cellRadius })
 		end
-		return div():style(sty():size(cell, cell):bg("#000000"))
+		return div():style(sty():size(cellSize, cellSize):radius(cellRadius):bg("#000000"))
 	end
 
-	root:children(
-		{
-			div():style(sty():row():h(cell)):children({ cellAt(1), cellAt(2) }),
-			div():style(sty():row():h(cell)):children({ cellAt(3), cellAt(4) }),
-			badge
-		}
-	)
+	root:children({ PlaylistArt.grid(app, cellAt, size, artRadius), badge })
 	return root
 end
 

@@ -1,5 +1,5 @@
--- The playlist a New playlist button starts: a name, and the tags that make it follow tracks by
--- themselves rather than only hold what is dropped on it.
+-- A new playlist: a name first, then -- only if wanted -- the tags whose songs join it by
+-- themselves. Songs can always be added by hand later, so nothing past the name is required.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local tagPills = require("beat.app.components.tag_pills")
@@ -81,6 +81,39 @@ function playlistDialog.update(app, overlay, message)
 	return false
 end
 
+--- The All/Any choice for two or more tags, as one control split in two.
+---@param app beat.App
+---@param match "all"|"any"
+---@param width number
+---@param height number
+---@return wonderland.Element
+local function matchControl(app, match, width, height)
+	local theme = app.services.appearance.theme
+	local inset = theme:px(3)
+	local half = math.floor((width - inset * 2) / 2)
+	local function option(label, value)
+		local chosen = match == value
+		return div()
+			:style(
+				sty()
+					:w(half):h(height - inset * 2):radius(theme:radius("full")):align("center"):justify("center")
+					:bg(chosen ? (theme:color("hover")) : "#00000000")
+			)
+			:onClick({ type = "playlistDraftMatch", value = value })
+			:children(
+				text(label)
+					:style(theme:s():text(theme:type("sm")):weight("semibold"):fg(chosen ? (theme:color("text")) : (theme:color("muted"))))
+			)
+	end
+	return div()
+		:style(
+			sty()
+				:row():w(width):h(height):pad(inset):radius(theme:radius("full")):align("center")
+				:border(theme:px(1), theme:color("border"))
+		)
+		:children({ option("Has all tags", "all"), option("Has any tag", "any") })
+end
+
 ---@param app beat.App
 ---@param overlay beat.OverlayInstance<beat.PlaylistDialogState>
 ---@param window wonderland.RenderWindow
@@ -90,12 +123,23 @@ function playlistDialog.view(app, overlay, window)
 	local ctx = app:ui(window)
 	local tags = app.services.collections.taxonomy:visibleTags()
 	local panelWidth = ctx:panelWidth(440)
-	local pad = theme:px(18)
+	local pad = theme:px(20)
 	local content = panelWidth - pad * 2
-	local children = {
-		text("New playlist"):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-		text("Tags add tracks automatically; you can still add the rest by hand.")
-			:style(theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
+	local gap = theme:px(14)
+
+	---@type wonderland.Element[]
+	local children = {}
+	local height = 0
+	local function add(element, elementHeight)
+		if #children > 0 then height += gap end
+		children[#children + 1] = element
+		height += elementHeight
+	end
+
+	local muted = theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+
+	add(text("New playlist"):style(theme:s():h(theme:px(26)):text(theme:type("lg")):weight("bold"):fg(theme:color("text"))), theme:px(26))
+	add(
 		ui.field(
 			ctx,
 			{
@@ -105,83 +149,85 @@ function playlistDialog.view(app, overlay, window)
 				oninput = |value| -> { type = "playlistDraft", value = value },
 				onsubmit = || -> { type = "createPlaylist" }
 			}
-		)
-	}
-
-	local columns = metrics.mobile(app, window.width) ? 2 : 3
-	local pills = tagPills.view(
-		app,
-		{
-			tags = tags,
-			selected = state.tagIds,
-			action = |tag| -> { type = "playlistDraftTag", id = tag.id },
-			width = content,
-			columns = columns
-		}
+		),
+		theme:px(34)
 	)
-	children[#children + 1] = pills or text("Create a tag to make this playlist smart too.")
-		:style(theme:s():text(theme:type("sm")):fg(theme:color("faint")))
-	children[#children + 1] = div()
-		:style(sty():row():h(theme:px(28)):gap(theme:px(8)):align("center"))
-		:children(
-			{
-				text("Match"):style(theme:s():text(theme:type("xs")):fg(theme:color("muted"))),
-				ui.button(
-					ctx,
+
+	if #tags > 0 then
+		local labelHeight = theme:px(20)
+		local helpHeight = theme:px(18)
+		add(
+			div()
+				:style(sty():column():wrel(1.0):h(labelHeight + theme:px(2) + helpHeight):gap(theme:px(2)))
+				:children(
 					{
-						label = "All tags",
-						onClick = { type = "playlistDraftMatch", value = "all" },
-						height = theme:px(26),
-						width = theme:px(82),
-						variant = state.match == "all" and "primary" or nil
+						div()
+							:style(sty():row():wrel(1.0):h(labelHeight):gap(theme:px(8)):align("center"))
+							:children(
+								{
+									text("Fill from tags"):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))),
+									text("optional"):style(theme:s():text(theme:type("xs")):fg(theme:color("faint")))
+								}
+							),
+						text("Songs with these tags join it by themselves."):style(muted)
 					}
 				),
-				ui.button(
-					ctx,
-					{
-						label = "Any tag",
-						onClick = { type = "playlistDraftMatch", value = "any" },
-						height = theme:px(26),
-						width = theme:px(82),
-						variant = state.match == "any" and "primary" or nil
-					}
-				)
-			}
+			labelHeight + theme:px(2) + helpHeight
 		)
 
-	children[#children + 1] = div()
-		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
-		:children(
-			{
-				ui.button(ctx, { label = "Cancel", onClick = { type = "dismiss" }, height = theme:px(30), width = theme:px(80) }),
-				ui.button(
-					ctx,
-					{
-						label = "Create",
-						onClick = { type = "createPlaylist" },
-						variant = "primary",
-						height = theme:px(30),
-						width = theme:px(86)
-					}
-				)
-			}
+		local columns = metrics.mobile(app, window.width) ? 2 : 3
+		local tagRows = math.ceil(#tags / columns)
+		add(
+			assert(tagPills.view(
+				app,
+				{
+					tags = tags,
+					selected = state.tagIds,
+					action = |tag| -> { type = "playlistDraftTag", id = tag.id },
+					width = content,
+					columns = columns
+				}
+			)),
+			tagRows * theme:px(28) + math.max(0, tagRows - 1) * theme:px(8)
 		)
 
-	local tagRows = math.max(1, math.ceil(#tags / columns))
-	local pillsHeight = #tags > 0 and (tagRows * theme:px(28) + math.max(0, tagRows - 1) * theme:px(8)) or theme:px(20)
-	-- Six children -- title, copy, field, pills, match row, actions -- and a gap between each.
-	local panelHeight = pad * 2
-		+ theme:px(24)
-		+ theme:px(20)
-		+ theme:px(34)
-		+ pillsHeight
-		+ theme:px(28)
-		+ theme:px(32)
-		+ theme:px(10) * 5
+		local picked = 0
+		for _ in pairs(state.tagIds) do picked += 1 end
+		-- All or any only means something once there are two tags to combine.
+		if picked >= 2 then
+			add(matchControl(app, state.match, math.min(content, theme:px(280)), theme:px(34)), theme:px(34))
+		end
+	end
+
+	add(text("Add songs by hand from any song's menu, too."):style(muted:h(theme:px(18))), theme:px(18))
+
+	-- Create is quiet until there is a name to create the playlist with.
+	local named = state.name:match("%S") ~= nil
+	add(
+		div()
+			:style(sty():row():wrel(1.0):h(theme:px(38)):gap(theme:px(8)):align("center"):justify("end"))
+			:children(
+				{
+					ui.button(ctx, { label = "Cancel", onClick = { type = "dismiss" }, variant = "quiet", height = theme:px(36), width = theme:px(84) }),
+					ui.button(
+						ctx,
+						{
+							label = "Create",
+							onClick = named and { type = "createPlaylist" } or { type = "keep" },
+							variant = named and "primary" or "secondary",
+							height = theme:px(36),
+							width = theme:px(96)
+						}
+					)
+				}
+			),
+		theme:px(38)
+	)
+
 	local panel = div()
 		:style(
 			sty()
-				:w(panelWidth):h(panelHeight):column():pad(pad):gap(theme:px(10)):radius(theme:radius("lg"))
+				:w(panelWidth):h(pad * 2 + height):column():pad(pad):gap(gap):radius(theme:radius("lg"))
 				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
 				:shadow(0, theme:px(16), theme:px(42), "#00000080")
 		):onClick({ type = "keep" }):children(children)

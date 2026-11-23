@@ -141,7 +141,10 @@ local function hasText(screen, value)
 		if found then return end
 		local node = ctx.screen:node(index)
 		local element = elements.pointers[node.element]
-		if element ~= nil and elements.textOf(element) == value then
+		local label = element ~= nil and elements.textOf(element) or nil
+		-- A plugin's row joins its state and its description into one line, so a check for the
+		-- description alone matches inside it.
+		if label ~= nil and label:find(value, 1, true) ~= nil then
 			found = true
 			return
 		end

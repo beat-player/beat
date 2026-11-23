@@ -8,6 +8,8 @@ local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
 local searchField = require("beat.app.components.search_field")
+local measure = require("beat.app.components.helpers.measure")
+local format = require("beat.app.components.helpers.format")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -119,6 +121,100 @@ local function searchTagFilter(app, width)
 		), height
 end
 
+-- The phone's field: a thumb-sized pill with text read at arm's length.
+local MOBILE_FIELD_HEIGHT = 48
+
+--- How tall the pinned field is on this window: a phone's field, or none where the top bar has it.
+---@param app beat.App
+---@param window wonderland.RenderWindow
+---@return number
+local function pinnedHeight(app, window)
+	local ctx = app:ui(window)
+	if not ctx.mobile or app.services.library.current == nil then return 0 end
+	return ctx:px(MOBILE_FIELD_HEIGHT)
+end
+
+--- On a phone the field is this page's, not the top bar's, and it stays at the top while the
+--- results scroll under it. A desktop keeps the one in the top bar, which is already fixed.
+---@param app beat.App
+---@param page beat.PageInstance
+---@param window wonderland.RenderWindow
+---@return wonderland.Element?
+---@return number
+function searchPage.header(app, page, window)
+	local height = pinnedHeight(app, window)
+	if height == 0 then return nil, 0 end
+	return searchField.view(
+		app:ui(window),
+		{
+			name = "pageSearch",
+			value = app.services.search.query,
+			width = metrics.contentWidth(app, window.width),
+			height = height,
+			placeholder = "Artists, albums and tracks",
+			clearMessage = { type = "clearPageSearch" }
+		}
+	), height
+end
+
+--- What a search that found nothing shows: a magnifier in a soft disc, what was looked for, and
+--- the one way out. Every line is its own width and centred on the column, so short copy sits in
+--- the middle rather than at the left of a fixed-width box.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param query string
+---@param width number
+---@return wonderland.Element
+---@return number
+local function noResults(app, ctx, query, width)
+	local theme = app.services.appearance.theme
+	local disc = theme:px(72)
+	local titleSize = theme:type("lg")
+	local copySize = theme:type("sm")
+	local buttonHeight = theme:px(40)
+	local height = theme:px(32) + disc + theme:px(18) + math.floor(titleSize * 1.3) + theme:px(6)
+		+ math.floor(copySize * 1.4) + theme:px(20) + buttonHeight
+
+	local function centred(element, lineHeight)
+		return div():style(sty():row():wrel(1.0):h(lineHeight):justify("center"):align("center")):children({ element })
+	end
+
+	-- The query is the part of the title that can be any length: past the column it is cut, and
+	-- only then given a width, so a title that fits is its own width and stays centred.
+	local titleStyle = theme:s():text(titleSize):weight("bold"):fg(theme:color("text"))
+	local title = "No results for “" .. query .. "”"
+	local room = math.floor(width * 0.9)
+	if (measure.width(app, title, titleStyle) or 0) > room then titleStyle = titleStyle:w(room):ellipsis() end
+
+	return div()
+		:style(sty():column():wrel(1.0):h(height):pad(theme:px(32), 0, 0, 0):align("center"))
+		:children(
+			{
+				centred(
+					div()
+						:style(sty():size(disc, disc):radius(theme:radius("full")):bg(theme:color("accent", 0.12)):align("center"):justify("center"))
+						:children(ui.icon(ctx, { name = "search", size = theme:px(30), colour = theme:color("accent") })),
+					disc
+				),
+				div():style(sty():h(theme:px(18))),
+				centred(
+					text(title):style(titleStyle),
+					math.floor(titleSize * 1.3)
+				),
+				div():style(sty():h(theme:px(6))),
+				centred(
+					text("Check the spelling, or try fewer words."):style(theme:s():text(copySize):fg(theme:color("muted"))),
+					math.floor(copySize * 1.4)
+				),
+				div():style(sty():h(theme:px(20))),
+				centred(
+					ui.button(ctx, { label = "Clear search", onClick = { type = "clearSearch" }, height = buttonHeight, width = theme:px(140) }),
+					buttonHeight
+				)
+			}
+		), height
+end
+
 ---@param app beat.App
 ---@param page beat.PageInstance
 ---@param window wonderland.RenderWindow
@@ -145,21 +241,14 @@ function searchPage.view(app, page, window)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
 	local cardHeight = albumCard.height(app, { width = cardWidth })
-	-- On a phone the field is this page's, not the top bar's: it leads the page and the keyboard
-	-- comes up for it. A desktop keeps the one in the top bar.
-	local field, fieldHeight = nil, 0
-	if ctx.mobile then
-		field = searchField.view(
-			ctx,
-			{
-				name = "pageSearch",
-				value = search.query,
-				width = content,
-				placeholder = "Artists, albums and tracks",
-				clearMessage = { type = "clearPageSearch" }
-			}
-		)
-		fieldHeight = theme:px(38) + gap
+	-- The phone's field is the pinned header's (see `searchPage.header`), so it is not part of what
+	-- scrolls: the header's box comes out of the body's room, which is the same as asking the
+	-- helper for that much more content. It is added to the height rather than to the answer
+	-- because the helper clamps at zero, and a short page should not gain scroll from its header.
+	local pinned = pinnedHeight(app, window)
+	local function limit(contentHeight)
+		local headerRoom = pinned > 0 and metrics.headerBox(app, pinned) or 0
+		app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, contentHeight + headerRoom))
 	end
 
 	if search.query == "" then
@@ -193,7 +282,6 @@ function searchPage.view(app, page, window)
 			)
 		end
 		local children = {}
-		if field ~= nil then children[#children + 1] = field end
 		children[#children + 1] = text("Search your library"):style(
 			theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
 		)
@@ -203,8 +291,10 @@ function searchPage.view(app, page, window)
 		children[#children + 1] = ui.section(ctx, { title = "Recently added" })
 		children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
 
+		local idleHeight = cardHeight + theme:px(150)
+		limit(idleHeight)
 		return div()
-			:style(sty():column():wrel(1.0):h(cardHeight + theme:px(150) + fieldHeight):gap(gap))
+			:style(sty():column():wrel(1.0):h(idleHeight):gap(gap))
 			:children(children)
 	end
 
@@ -219,7 +309,8 @@ function searchPage.view(app, page, window)
 	local rowGap = theme:space(16)
 	local sectionGap = theme:space(16)
 	local sectionHeight = theme:px(24)
-	local height = theme:px(40) + filterHeight + fieldHeight
+	local countHeight = theme:px(18)
+	local height = countHeight + filterHeight
 	if albumLimit > 0 then
 		height = height + sectionGap + sectionHeight + sectionGap + albumRows * cardHeight + math.max(0, albumRows - 1) * rowGap
 	end
@@ -230,10 +321,14 @@ function searchPage.view(app, page, window)
 		height = height + sectionGap + sectionHeight + sectionGap + trackLimit * trackRowHeight
 	end
 
+	local total = #albums + #artists + #tracks
+	local found = total > 0
 	local children = {}
-	if field ~= nil then children[#children + 1] = field end
-	children[#children + 1] = text("Results for \"" .. search.query .. "\"")
-		:style(theme:s():wrel(1.0):text(theme:type("xxl")):weight("bold"):fg(theme:color("text")):ellipsis())
+	if found then
+		-- The field already says what was searched for; this says how much it found.
+		children[#children + 1] = text(format.count(total, "result") .. " found")
+			:style(theme:s():wrel(1.0):h(countHeight):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+	end
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then
@@ -311,6 +406,7 @@ function searchPage.view(app, page, window)
 					onClick = { type = "playTrack", trackId = track.id },
 					width = content,
 					showAlbum = true,
+					showCover = true,
 					mobile = ctx.mobile,
 					ui = ctx
 				}
@@ -318,26 +414,16 @@ function searchPage.view(app, page, window)
 		end
 	end
 
-	if #albums + #artists + #tracks == 0 then
-		height = height + theme:px(300) + sectionGap
-		children[#children + 1] = div()
-			:style(sty():wrel(1.0):h(theme:px(300)))
-			:children(
-				{
-					ui.emptyState(
-						ctx,
-						{
-							title = "No results",
-							copy = "Try a different artist, album or title.",
-							actionLabel = "Clear search",
-							action = { type = "clearSearch" }
-						}
-					)
-				}
-			)
+	if not found then
+		-- The empty state says what was searched for itself, so it takes the title's place.
+		local empty, emptyHeight = noResults(app, ctx, search.query, content)
+		height = height - countHeight + emptyHeight
+		children[#children + 1] = empty
 	end
 
-	return div():style(sty():column():wrel(1.0):h(height + theme:space(24)):gap(theme:space(16))):children(children)
+	height = height + theme:space(24)
+	limit(height)
+	return div():style(sty():column():wrel(1.0):h(height):gap(theme:space(16))):children(children)
 end
 
 return searchPage

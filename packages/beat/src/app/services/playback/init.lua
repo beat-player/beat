@@ -57,8 +57,9 @@ function Playback.new(deps)
 	---@param samples ffi.cdata*
 	---@param frames number
 	---@param channels number
-	local function onSamples(samples, frames, channels)
-		self.spectrum:feed(samples, frames, channels)
+	---@param startFrame number
+	local function onSamples(samples, frames, channels, startFrame)
+		self.spectrum:feed(samples, frames, channels, startFrame)
 	end
 	self.player.onSamples = onSamples
 
@@ -190,7 +191,7 @@ function Playback:playAlbum(albumId, shuffle, restart)
 	if not shuffle and not restart and current ~= nil and current.albumId == album.id then
 		self.player:toggle()
 	elseif shuffle then
-		self.player:playTracks(album.tracks, 1, { shuffle = true, source = "album" })
+		self.player:playTracks(album.tracks, nil, { shuffle = true, source = "album" })
 	else
 		self.player:playAlbum(album)
 	end
@@ -251,7 +252,7 @@ function Playback:playPlaylist(playlistId, shuffle)
 		self.toasts:show("That playlist has no tracks yet", "error")
 		return false
 	end
-	self.player:playTracks(tracks, 1, { source = "playlist:" .. tostring(playlist.id), shuffle = shuffle })
+	self.player:playTracks(tracks, nil, { source = "playlist:" .. tostring(playlist.id), shuffle = shuffle })
 	self.toasts:show("Playing " .. playlist.name)
 	return true
 end
@@ -424,7 +425,7 @@ function Playback:step(now)
 		changed = true
 	end
 
-	local meterChanged, meterEasing = self.spectrum:step(now)
+	local meterChanged, meterEasing = self.spectrum:step(now, self.player:heardFrame())
 	if meterChanged then repaint = true end
 
 	local err = self.player:takeError()
