@@ -6,6 +6,7 @@
 -- nothing -- the shape is drawn with the track -- which is what lets a repaint move it without the
 -- slider being laid out again.
 local wonderland = require("wonderland")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -25,6 +26,10 @@ local slider = {}
 ---@field thumbSize number? # Default theme:px(14)
 ---@field origin number? # Where the fill starts, as a fraction; default the left end
 ---@field liveValue fun(): number? # Where the slider is when the frame is drawn, for one that follows something moving
+
+---@class beat.components.SliderStyles
+---@field track wonderland.StyleBuilder
+---@field thumb wonderland.StyleBuilder
 
 --- Where a value sits between the two ends of a slider, 0 at the left one and 1 at the right.
 ---@param value number
@@ -52,12 +57,30 @@ function slider.view(app, props)
 	local origin = props.origin
 	local liveValue = props.liveValue
 
-	local sliderElement = div():style(sty():w(width):h(height):row():align("center")):slider({
+	-- The box and the nub it places are the same for every frame of a slider this wide, tall and
+	-- with a nub this size: kept rather than made again, because the sidebar and the player bar are
+	-- built again on every scroll step. Sliders that differ in any of those have a record each.
+	local byHeight = styles.of(theme, "slider", width) --[[@as table<number, table<number, beat.components.SliderStyles>>]]
+	local byThumb = byHeight[height]
+	if byThumb == nil then
+		byThumb = {}
+		byHeight[height] = byThumb
+	end
+	local kept = byThumb[thumbSize]
+	if kept == nil then
+		kept = {
+			track = sty():w(width):h(height):row():align("center"),
+			thumb = sty():size(thumbSize, thumbSize)
+		}
+		byThumb[thumbSize] = kept
+	end
+
+	local sliderElement = div():style(kept.track):slider({
 		value = props.value,
 		min = min,
 		max = max,
 		onchange = props.onchange
-	}):children(div():style(sty():size(thumbSize, thumbSize)):thumb())
+	}):children(div():style(kept.thumb):thumb())
 
 	-- What the slider draws reads the value when the frame is drawn rather than when the view was
 	-- built: a repaint then shows the place the playhead is at now, and a rebuild the same place.

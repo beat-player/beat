@@ -1452,6 +1452,43 @@ test.it("adds tracks from a background scan as they arrive", function()
 	App.services.playback.player:close()
 end)
 
+test.it("adds a reused track from a background scan without reading it", function()
+	App:init({ scan = false })
+	App.services.settings.values.root = "/beat-fixtures"
+	App.services.library.current = Library.new("/beat-fixtures")
+
+	local job = ScanJob.new("/beat-fixtures", os.tmpname() .. "-beat-scan.jsonl", os.tmpname() .. "-beat-scan.cancel")
+	job.queued = {
+		{
+			type = "reused",
+			record = {
+				path = "/beat-fixtures/2.wav",
+				key = "single\0/beat-fixtures/2.wav",
+				title = "Second",
+				artist = "Artist",
+				album = "Second",
+				albumArtist = "Artist",
+				duration = 180,
+				format = "WAV",
+				sampleRate = 44100,
+				channels = 2,
+				hasPicture = false,
+				modified = 0
+			}
+		}
+	}
+	job.changed = true
+	job.latest = { phase = "inspect", files = 1, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/2.wav" }
+
+	test.truthy(App.services.scan:ingest(job, nil), "the reused record changed the library")
+	local track = App.services.library.current.tracks[1]
+	test.equal(track.path, "/beat-fixtures/2.wav")
+	test.equal(track.title, "Second", "the record is taken as the scan found it")
+	job:close()
+
+	App.services.playback.player:close()
+end)
+
 test.skipIf(not canRender)("changes theme without rebuilding the whole app", function()
 	App:init({ scan = false })
 	App.services.library.current = fixture()

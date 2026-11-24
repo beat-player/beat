@@ -86,9 +86,10 @@ test.it("keeps only real file names in the switched-off plugin list", function()
 	fs.write(path.join(dir, "settings.json"), '{ "disabledPlugins": [ "rym.lua", 4, "", true, "lastfm.lua" ] }')
 
 	local loaded = settingsModel.load(dir)
-	test.equal(#loaded.disabledPlugins, 2, "numbers, empty strings and booleans are not names")
+	test.equal(#loaded.disabledPlugins, 3, "numbers, empty strings and booleans are not names")
 	test.equal(loaded.disabledPlugins[1], "rym.lua")
 	test.equal(loaded.disabledPlugins[2], "lastfm.lua")
+	test.equal(loaded.disabledPlugins[3], "debug", "a switch the file was written before starts off")
 
 	fs.delete(paths.file("settings.json", dir))
 	fs.rmdir(dir)

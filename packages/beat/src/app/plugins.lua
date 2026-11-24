@@ -13,7 +13,8 @@ local Plugins = {}
 -- services by name -- so it cannot be switched off at the next start. The page draws no switch
 -- for those, and a name in `disabledPlugins` is ignored for them.
 local OPTIONAL = {
-	ratings = true
+	ratings = true,
+	debug = true
 }
 
 --- Whether a built-in plugin can be switched off.

@@ -9,6 +9,7 @@ local Signal = require("beat.app.signal")
 
 ---@class beat.LibraryService: beat.Service
 ---@field current beat.Library?
+---@field outdated string[]? # Tracks an older cache may have grouped by folder, which a scan reads again
 ---@field sortedAlbums beat.Album[]?
 ---@field sortedFor string?
 ---@field settings beat.SettingsService
@@ -39,7 +40,9 @@ function LibraryService.new(deps)
 
 	local options = deps.options or {}
 	local root = deps.settings.values.root
-	if root ~= nil and options.scan ~= false then self.current = LibraryCache.load(root) end
+	if root ~= nil and options.scan ~= false then
+		self.current, self.outdated = LibraryCache.load(root)
+	end
 	return self
 end
 
@@ -55,6 +58,7 @@ end
 ---@param root string
 function LibraryService:replace(root)
 	self.current = Library.new(root)
+	self.outdated = nil
 	dropSorted(self)
 	self.replaced:fire(self.current)
 	self.emit({ type = "libraryReplaced" })
@@ -90,9 +94,44 @@ function LibraryService:add(info, entry, cover, coverCache)
 	return track, gainedCover
 end
 
+--- The records a scan can take from what is already loaded instead of reading the files again.
+--- Tracks an older cache could not vouch for are left out, so the scan reads those again.
+---@return table[]?
+function LibraryService:records()
+	local library = self.current
+	if library == nil then return nil end
+
+	local skip = nil
+	if self.outdated ~= nil then
+		skip = {}
+		for _, file in ipairs(self.outdated) do skip[file] = true end
+	end
+
+	local records = {}
+	for _, track in ipairs(library.tracks) do
+		if skip == nil or not skip[track.path] then
+			local album = library:album(track.albumId)
+			records[#records + 1] = LibraryCache.pack(track, album?.key)
+		end
+	end
+	return records
+end
+
+--- A track the scan took from the library already loaded rather than read again.
+---@param record table
+---@return beat.Track? track
+---@return boolean? gainedCover
+function LibraryService:addCached(record)
+	local track, gainedCover = self.current:addCached(record)
+	dropSorted(self)
+	self.changed:fire()
+	return track, gainedCover
+end
+
 --- The scan is over: album track lists and durations are final now.
 function LibraryService:finish()
 	self.current:finish()
+	self.outdated = nil
 	dropSorted(self)
 	self.changed:fire()
 	self.finished:fire(self.current)

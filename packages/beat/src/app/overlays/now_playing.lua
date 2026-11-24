@@ -9,23 +9,10 @@ local spectrumBackground = require("beat.app.components.spectrum_background")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
 local popup = require("beat.app.components.popup")
+local tapButton = require("beat.app.components.tap_button")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-
---- A control whose hit area can be larger than its mark: the phone's transport and tool buttons
---- keep their glyph but get a thumb-sized box around it, and the box is transparent.
----@param ctx beat.ui.Context
----@param props { name: string, size: number, hit: number, onClick: any, active: boolean? }
-local function tapButton(ctx, props)
-	local colour = props.active ? (ctx:color("text")) : (ctx:color("muted"))
-	local glyphSize = math.max(18, math.floor(props.size * 0.8 + 0.5))
-	return ui.iconButton(ctx, {
-		size = props.hit,
-		onClick = props.onClick,
-		content = ui.icon(ctx, { name = props.name, size = glyphSize, colour = colour })
-	})
-end
 
 --- The volume control is a button. Its bubble is a sibling of the transport group rather than a
 --- child of the button: a positioned panel inside a size-locked button shifted the row's paint
@@ -36,7 +23,7 @@ end
 ---@param hit number
 local function volumeButton(app, ctx, size, hit)
 	local muted = app.services.settings.values.isMuted
-	return tapButton(ctx, {
+	return tapButton.view(ctx, {
 		name = muted ? "mute" : "volume",
 		size = size,
 		hit = hit,
@@ -265,7 +252,7 @@ function nowPlaying.view(app, _overlay, window)
 
 	local styles = screenStyles(theme, mobile)
 	local header = div():style(styles.header):children({
-		tapButton(ctx, {
+		tapButton.view(ctx, {
 			name = "chevronDown",
 			size = theme:px(34),
 			hit = mobile and theme:px(48) or theme:px(34),
@@ -352,7 +339,7 @@ function nowPlaying.view(app, _overlay, window)
 		local toolGroupWidth = styles.toolGroupWidth
 		local toolChildren = {
 			div():style(styles.toolGroup):children({
-				tapButton(ctx, {
+				tapButton.view(ctx, {
 					name = "queue",
 					size = toolSize,
 					hit = toolHit,
@@ -375,14 +362,14 @@ function nowPlaying.view(app, _overlay, window)
 			})
 		end
 		toolChildren[#toolChildren + 1] = div():style(styles.toolGroup):children({
-			tapButton(ctx, {
+			tapButton.view(ctx, {
 				name = "shuffle",
 				size = toolSize,
 				hit = toolHit,
 				onClick = { type = "shuffle" },
 				active = queue?.shuffle ?? false
 			}),
-			tapButton(ctx, {
+			tapButton.view(ctx, {
 				name = repeatIcon,
 				size = toolSize,
 				hit = toolHit,
@@ -411,7 +398,7 @@ function nowPlaying.view(app, _overlay, window)
 			volumeButton(app, ctx, theme:px(28 * transport), sideHit),
 			div():style(sty():w("auto"):h(controlHeight)),
 			div():style(sty():row():w(skipHit * 2 + playSize + controlGap * 2):h(controlHeight):gap(controlGap):align("center"):justify("center")):children({
-				tapButton(ctx, { name = "previous", size = skipSize, hit = skipHit, onClick = { type = "previous" } }),
+				tapButton.view(ctx, { name = "previous", size = skipSize, hit = skipHit, onClick = { type = "previous" } }),
 				div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({
 					type = "togglePlay"
 				}):children(ui.icon(ctx, {
@@ -419,7 +406,7 @@ function nowPlaying.view(app, _overlay, window)
 					size = theme:px(24 * transport),
 					colour = theme.accentInk
 				})),
-				tapButton(ctx, { name = "next", size = skipSize, hit = skipHit, onClick = { type = "next" } })
+				tapButton.view(ctx, { name = "next", size = skipSize, hit = skipHit, onClick = { type = "next" } })
 			}),
 			div():style(sty():w("auto"):h(controlHeight)),
 			equalizerButton(app, ctx, theme:px(28 * transport), sideHit, { type = "toggleEqualizer" }, app:overlay("equalizer") ~= nil)

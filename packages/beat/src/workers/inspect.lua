@@ -18,8 +18,24 @@ local manifestPath = assert(env.var("BEAT_SCAN_MANIFEST"), "no scan manifest")
 local outputPath = assert(env.var("BEAT_SCAN_OUTPUT"), "no scan output")
 local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
 local cacheRoot = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
+---@type string?
+local knownPath = env.var("BEAT_SCAN_KNOWN")
 
 local file = assert(io.open(outputPath, "wb"))
+
+-- What the library already knows about the files this shard will meet, one record a line. A file
+-- whose modification time still matches its record is what the record says, so it is not opened:
+-- on a mount every open is a round trip, and a fingerprint reads three windows through the file,
+-- which for an Ogg track means walking its pages to find them.
+---@type table<string, table>?
+local known = nil
+if knownPath ~= nil then
+	known = {}
+	for line in assert(io.lines(knownPath)) do
+		local ok, record = pcall(|| -> json.decode(line):unpack())
+		if ok and type(record) == "table" and type(record.path) == "string" then known[record.path] = record end
+	end
+end
 
 -- A track line is the JSON the app reads: the coordinator forwards it untouched, so the only thing
 -- written for one is the encoded event and a newline. Everything else this shard has to say --
@@ -83,6 +99,25 @@ local function inspect(entry)
 		ext = entry.ext,
 		modifyTime = stat?.modifyTime
 	}
+
+	if known ~= nil then
+		local record = known[entry.path]
+		if record ~= nil then
+			local cover = record.coverCache
+			-- A cover the cache no longer holds is made again, so a rescan restores a cleaned cache.
+			if record.modified == fileEntry.modifyTime
+				and (cover == nil or (type(cover) == "string" and fs.isfile(cover))) then
+				if type(cover) == "string" then usedCovers[cover] = true end
+				local sent, encoded = pcall(json.encode, { type = "reused", record = record })
+				if sent then
+					tracks += 1
+					file:write(encoded, "\n")
+					file:flush()
+					return
+				end
+			end
+		end
+	end
 
 	local ok, info = pcall(audio.inspect, entry.path)
 	if not ok or info == nil then

@@ -36,6 +36,7 @@ ScanJob.__index = ScanJob
 ---@field child process.Child? # The coordinator process, until it exits
 ---@field exitCode number? # How the coordinator exited, once it has
 ---@field decodeErrors number # Lines the worker wrote that were not JSON this could read
+---@field knownFile string? # The records the scan may take unchanged, written for the inspectors
 ---@field thread threading.Handle? # The scan's thread, where it runs on one: an Android app cannot start a copy of itself
 
 --- A job over an already-known output path, which is also what the tests write by hand.
@@ -65,17 +66,33 @@ end
 
 --- A scan in a coordinator process, which starts the inspectors.
 ---@param root string
+---@param known table[]? # Records from the library already loaded, for files a scan can skip
 ---@return beat.ScanJob
-local function startWorker(root)
+local function startWorker(root, known)
 	local output = os.tmpname() .. "-beat-scan.jsonl"
 	local cancelFile = os.tmpname() .. "-beat-scan.cancel"
 	fs.delete(output)
 	fs.delete(cancelFile)
 
 	local job = ScanJob.new(root, output, cancelFile)
-	local child, err = workerProcess.spawn(
-		{ BEAT_WORKER = "scan", BEAT_SCAN_ROOT = root, BEAT_SCAN_OUTPUT = output, BEAT_SCAN_CANCEL = cancelFile }
-	)
+	local vars = { BEAT_WORKER = "scan", BEAT_SCAN_ROOT = root, BEAT_SCAN_OUTPUT = output, BEAT_SCAN_CANCEL = cancelFile }
+	if known ~= nil then
+		-- What the last scan read, one record a line, so an inspector can take a file that has not
+		-- changed from it instead of opening it again. The job removes the file with its others.
+		local knownFile = os.tmpname() .. "-beat-scan-known.jsonl"
+		local handle = assert(io.open(knownFile, "w"))
+		for _, record in ipairs(known) do
+			-- A record that cannot travel is left out, and its file is read again: one bad tag must
+			-- not stop a scan from starting.
+			local ok, line = pcall(json.encode, record)
+			if ok then handle:write(line, "\n") end
+		end
+		handle:close()
+		job.knownFile = knownFile
+		vars.BEAT_SCAN_KNOWN = knownFile
+	end
+
+	local child, err = workerProcess.spawn(vars)
 
 	if child == nil then
 		job.done = true
@@ -173,10 +190,11 @@ local function startThread(root)
 end
 
 ---@param root string
+---@param known table[]? # Records from the library already loaded; a phone's local scan reads every file again
 ---@return beat.ScanJob
-function ScanJob.start(root)
+function ScanJob.start(root, known)
 	if platform.android then return startThread(root) end
-	return startWorker(root)
+	return startWorker(root, known)
 end
 
 --- A worker line as the Lua table the app reads. A function rather than a closure per line: this
@@ -355,6 +373,7 @@ end
 function ScanJob:close()
 	fs.delete(self.output)
 	fs.delete(self.cancelFile)
+	if self.knownFile ~= nil then fs.delete(self.knownFile) end
 end
 
 return ScanJob

@@ -31,8 +31,16 @@ local settings = {}
 ---@field equalizerGains number[]?
 ---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
 ---@field disabledPlugins string[] # Plugin files switched off by name; applied at the next start
+---@field pluginDefaultsVersion number # The optional plugin list this file has been brought up to
 ---@field plugins table<string, table<string, any>> # A plugin's own values, by plugin name
 ---@field lastPage beat.SavedPage? # The page the last launch was on, as the app writes it down
+
+-- The optional plugins that arrived after a settings file could already name its switches: a file
+-- written before one of them existed never had the chance to say no to it, so it starts off there
+-- too. The version is written with the file, which is what keeps the switch a person does turn on
+-- from being turned off again at the next launch.
+local PLUGIN_DEFAULTS_VERSION = 2
+local INTRODUCED = { { name = "debug", since = 2 } }
 
 ---@type beat.Settings
 local DEFAULTS = {
@@ -59,10 +67,11 @@ local DEFAULTS = {
 	equalizerPreset = "flat",
 	equalizerGains = { 0, 0, 0, 0, 0 },
 	equalizerCustomPresets = {},
-	-- A fresh install starts with ratings off: the stars are an extra some people want, not part
-	-- of the player. A settings file that already names its switches keeps whatever it says, so
-	-- someone who turned ratings on is not turned off by an update.
-	disabledPlugins = { "ratings" },
+	-- A fresh install starts with the stars and the performance overlay off: both are extras some
+	-- people want, not part of the player. A settings file that already names its switches keeps
+	-- whatever it says, so someone who turned one on is not turned off by an update.
+	disabledPlugins = { "ratings", "debug" },
+	pluginDefaultsVersion = PLUGIN_DEFAULTS_VERSION,
 	plugins = {},
 	lastPage = nil
 }
@@ -94,6 +103,27 @@ local function defaultPluginNames()
 	local names = {}
 	for _, name in ipairs(DEFAULTS.disabledPlugins) do names[#names + 1] = name end
 	return names
+end
+
+--- Adds the optional plugins a file was written before to its switches. A file that already
+--- carries the current version has been asked about all of them, including one a person turned
+--- on, and is left as it is.
+---@param data table
+---@param names string[]
+local function addIntroduced(data, names)
+	local version = type(data.pluginDefaultsVersion) == "number" and data.pluginDefaultsVersion or 1
+	for _, plugin in ipairs(INTRODUCED) do
+		if version < plugin.since then
+			local present = false
+			for _, name in ipairs(names) do
+				if name == plugin.name then
+					present = true
+					break
+				end
+			end
+			if not present then names[#names + 1] = plugin.name end
+		end
+	end
 end
 
 --- A value a plugin can keep: what JSON holds, and nothing else. A table is either a list of
@@ -214,11 +244,16 @@ function settings.load(dir)
 		-- A file that names its switches keeps them exactly; only one written before this key
 		-- existed gets the fresh-install list, so turning ratings on is a switch that stays on.
 		disabledPlugins = data.disabledPlugins == nil and defaultPluginNames() or pluginNames(data.disabledPlugins),
+		pluginDefaultsVersion = PLUGIN_DEFAULTS_VERSION,
 		plugins = plugins,
 		-- The app validates what a route names when it opens it; a file written by another
 		-- version, or by hand, is not trusted to name a page here.
 		lastPage = type(data.lastPage) == "table" and data.lastPage or nil
 	}
+
+	-- A plugin the file was written before starts off there: the file has no word on a switch it
+	-- never saw, and the overlay does not arrive on a screen that never chose it.
+	addIntroduced(data, loaded.disabledPlugins)
 
 	return loaded, file
 end

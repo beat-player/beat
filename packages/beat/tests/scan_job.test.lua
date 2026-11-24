@@ -2,6 +2,7 @@ local test = require("lde-test")
 local fs = require("fs")
 local json = require("json")
 local ScanJob = require("beat.app.services.scan.job")
+local time = require("wonderland.time")
 
 ---@param file string
 ---@param values table[] # JSON events, one line each
@@ -134,4 +135,63 @@ test.skipIf(not canNameNonUtf8())("scans past a file whose name is not UTF-8 and
 	test.equal(tracks[1], "plain.wav")
 	test.equal(progress.skipped, 1)
 	test.equal(progress.errors[1] and progress.errors[1].message, "skipped: its name is not UTF-8")
+end)
+
+test.it("takes a file whose modification time has not changed from the records it was given", function()
+	local root = os.tmpname() .. "-beat-scan-reuse"
+	os.remove(root)
+	fs.mkdirAll(root)
+	local tone = assert(fs.read("tests/fixtures/tone.wav"))
+	local unchanged = root .. "/unchanged.wav"
+	local changed = root .. "/changed.wav"
+	assert(fs.write(unchanged, tone))
+	assert(fs.write(changed, tone))
+
+	-- A record of the first file as an earlier scan read it. It says nothing true about the file,
+	-- so a reused event carrying this title proves the inspector did not open it.
+	local stat = assert(fs.stat(unchanged))
+	local record = {
+		path = unchanged,
+		key = "single\0" .. unchanged,
+		title = "already read",
+		artist = "a test",
+		album = "already read",
+		albumArtist = "a test",
+		duration = 1,
+		format = "WAV",
+		sampleRate = 48000,
+		channels = 2,
+		hasPicture = false,
+		modified = assert(stat.modifyTime)
+	}
+
+	local job = ScanJob.start(root, { record })
+	local reused, scanned = 0, 0
+	local reusedTitle = nil
+	local started = time.now()
+	while (not job:isDone() or job:hasPending()) and time.now() - started < 30 do
+		---@type beat.Message[]
+		local events = job:poll(64)
+		for _, event in ipairs(events) do
+			if event.type == "reused" then
+				reused += 1
+				reusedTitle = event.record and event.record.title
+			elseif event.type == "track" then
+				scanned += 1
+			end
+		end
+	end
+	local progress = job:progress()
+	job:close()
+
+	fs.delete(unchanged)
+	fs.delete(changed)
+	fs.rmdir(root)
+
+	test.equal(job.error, nil)
+	test.equal(reused, 1, "the file the record describes is not read again")
+	test.equal(reusedTitle, "already read")
+	test.equal(scanned, 1, "the file it does not describe is read")
+	test.equal(progress.phase, "done")
+	test.equal(progress.tracks, 2, "both files are in what the scan reports")
 end)

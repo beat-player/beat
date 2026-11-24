@@ -8,6 +8,20 @@
 --   lde run --profile tools/bench.lua       # with the hottest functions
 --
 -- BEAT_BENCH_CONFIG names the config directory to copy (default: the real one).
+--
+-- BEAT_BENCH_MODE runs one scenario only, at a phone's geometry unless told otherwise, and prints
+-- the bytes each frame allocates (`collectgarbage("count")` with the collector stopped) and the
+-- frame time's mean, p95 and worst:
+--
+--   BEAT_BENCH_MODE=scroll BEAT_BENCH_PAGE=home lde run tools/bench.lua
+--   BEAT_BENCH_MODE=idle|scroll|playing   what the frames do: a page standing still, the page
+--                                         scrolled by 40 px a frame, or a track playing
+--   BEAT_BENCH_PAGE=home|library|library-list|album|artist|playlists|search|settings
+--   BEAT_BENCH_WIDTH / HEIGHT / DENSITY   window geometry (default a Pixel 7: 1080×2400 at 2.625)
+--   BEAT_BENCH_FRAMES=240                 how many measured frames
+--   BEAT_BENCH_COVERS=1                   also step the cover service every eighth frame, as the
+--                                         ticker does; off by default so the numbers are the
+--                                         frame's own allocations rather than image decoding
 local fs = require("fs")
 local path = require("path")
 local wonderland = require("wonderland")
@@ -35,6 +49,20 @@ do
 	decoded.version = 7
 	fs.write(file, json.encode(decoded))
 	require("beat.app.services.scan.job").start = function() error("the bench does not scan") end
+end
+
+local mode = os.getenv("BEAT_BENCH_MODE")
+local phone = mode ~= nil
+local benchWidth = tonumber(os.getenv("BEAT_BENCH_WIDTH") or "") or (phone and 1080 or 1440)
+local benchHeight = tonumber(os.getenv("BEAT_BENCH_HEIGHT") or "") or (phone and 2400 or 900)
+
+-- The phone's geometry: its display density makes a length in the theme's units 2.625 physical
+-- pixels, and the system bars cover a strip of the window top and bottom. A desktop run keeps the
+-- neutral screen `beat.platform` reports.
+if phone then
+	local density = tonumber(os.getenv("BEAT_BENCH_DENSITY") or "") or 2.625
+	local inset = math.floor(24 * density + 0.5)
+	require("beat.platform").screen = function() return { density = density, top = inset, bottom = inset } end
 end
 
 local results = {}
@@ -94,7 +122,7 @@ screen = wonderland.headless.new(function(window, assets)
 	local element = require("beat.app.shell").view(App, window)
 	viewTime = viewTime + (now() - at)
 	return element
-end, { width = 1440, height = 900 })
+end, { width = benchWidth, height = benchHeight })
 local screenMs = (now() - screenAt) * 1000
 App.layoutPlugin = screen.plugins.layout
 App.uiPlugin = screen.plugins.ui
@@ -117,7 +145,7 @@ local firstFrame = (now() - firstAt) * 1000
 -- Lets the cover service decode what the page asked for, as the ticker would between frames.
 local function settleCovers()
 	for _ = 1, 200 do
-		local _, busy = App.services.covers:step()
+		local _, busy = App.services.covers:step(now())
 		if not busy then break end
 	end
 	draw()
@@ -125,6 +153,162 @@ end
 
 local library = App.services.library.current
 assert(library ~= nil, "the bench needs a library cache in " .. source)
+
+-- A stand-in for the audio player: a playhead that moves with the frame, and whatever the scenario
+-- writes into the spectrum's levels. Both the full suite and a focused `playing` run drive one.
+---@param album beat.Album
+---@return { at: number }
+local function installPlayer(album)
+	local Queue = require("beat.app.services.playback.queue")
+	local state = { at = 30 }
+	local player = App.services.playback.player
+	player.queue = Queue.new(album.tracks, 1, {})
+	player.loaded = true
+	player.startAt = nil
+	player.player = setmetatable({
+		position = function() return state.at end,
+		duration = function() return 240 end,
+		isPlaying = function() return true end,
+		isFinished = function() return false end,
+		update = function() end,
+		close = function() end,
+		setVolume = function() end,
+		setEqualizer = function() end
+	}, { __index = function() return function() end end }) --[[@as treble.Player]]
+	App.services.playback.lastListenedTrackId = player:current().id
+	return state
+end
+
+if mode then
+	local pageName = os.getenv("BEAT_BENCH_PAGE") or "home"
+	local routes = {
+		home = { kind = "home" },
+		library = { kind = "library" },
+		["library-list"] = { kind = "library" },
+		album = { kind = "album", id = library.albums[1].id },
+		artist = { kind = "artist", id = library.artists[1].id },
+		playlists = { kind = "playlists" },
+		search = { kind = "search" },
+		settings = { kind = "settings" }
+	}
+	local route = assert(routes[pageName], "unknown BEAT_BENCH_PAGE " .. pageName)
+	local frames = tonumber(os.getenv("BEAT_BENCH_FRAMES") or "") or 240
+	local stepCovers = os.getenv("BEAT_BENCH_COVERS") == "1"
+
+	App.services.settings.values.view = pageName == "library-list" and "list" or "grid"
+	App.page = App:pageFor(route)
+	draw()
+	if pageName == "search" then App:act({ type = "search", value = "the night" }) end
+	settleCovers()
+	App.services.scroll.offsets[App:pageKey()] = 0
+	draw()
+
+	local function percentiles(times)
+		local count = #times
+		local total = 0
+		for at = 1, count do total = total + times[at] end
+		local ordered = {}
+		for at = 1, count do ordered[at] = times[at] end
+		table.sort(ordered)
+		return total / count, ordered[math.max(1, math.ceil(count * 0.95))], ordered[count]
+	end
+
+	--- The allocations of `frame` over `count` frames, with the collector stopped so every byte
+	--- stays counted: the difference in `collectgarbage("count")` is what the frames made.
+	local function run(label, count, before, frame)
+		local times = {}
+		for at = 1, count do times[at] = 0 end
+		collectgarbage()
+		collectgarbage("stop")
+		local startKiB = collectgarbage("count")
+		for at = 1, count do
+			if before ~= nil then before(at) end
+			local began = now()
+			frame(at)
+			times[at] = (now() - began) * 1000
+		end
+		local allocated = collectgarbage("count") - startKiB
+		collectgarbage("restart")
+		collectgarbage()
+		local mean, p95, worst = percentiles(times)
+		print(string.format(
+			"%-28s %5d frames  %7.2f KiB/frame  mean %6.2f ms  p95 %6.2f ms  worst %6.2f ms",
+			label,
+			count,
+			allocated / count,
+			mean,
+			p95,
+			worst
+		))
+	end
+
+	local window = screen.window
+
+	-- A temporary diagnostic: where the idling ticker's bytes go. Each service is stepped on its
+	-- own with the collector stopped, then the whole tick and one forced draw.
+	if os.getenv("BEAT_BENCH_SERVICES") == "1" then
+		local function allocatedBy(frames, fn)
+			collectgarbage()
+			collectgarbage("stop")
+			local startKiB = collectgarbage("count")
+			for at = 1, frames do fn(at) end
+			local allocated = collectgarbage("count") - startKiB
+			collectgarbage("restart")
+			collectgarbage()
+			return allocated / frames
+		end
+		for _, service in ipairs(App.serviceOrder) do
+			if service.step ~= nil then
+				print(string.format("%-28s %7.2f KiB/frame", tostring(service.class or service), allocatedBy(frames, function() service:step(now()) end)))
+			end
+		end
+		print(string.format("%-28s %7.2f KiB/frame", "tick", allocatedBy(frames, function() App:tick(now(), window) end)))
+		print(string.format("%-28s %7.2f KiB/frame", "draw", allocatedBy(frames, function() draw() end)))
+	end
+
+	if mode == "scroll" then
+		local key = App:pageKey()
+		run("scroll " .. pageName, frames, function(at)
+			App.services.scroll.offsets[key] = at * 40
+			if stepCovers and at % 8 == 0 then App.services.covers:step(now()) end
+		end, draw)
+	elseif mode == "redraw" then
+		run("redraw " .. pageName, frames, nil, draw)
+	elseif mode == "playing" then
+		local state = installPlayer(library.albums[1])
+		local spectrum = App.services.playback.spectrum
+		App.page = App:pageFor(route)
+		settleCovers()
+		run("playing " .. pageName, frames, function(at)
+			state.at = 30 + at / 60
+			for band = 1, #spectrum.levels do spectrum.levels[band] = 0.5 + 0.4 * math.sin(at / 7 + band) end
+		end, function()
+			App:tick(now(), window)
+			if window.shouldRedraw then
+				window.shouldRedraw = false
+				ui:frame(window)
+			end
+		end)
+	elseif mode == "idle" then
+		run("idle " .. pageName, frames, nil, function()
+			App:tick(now(), window)
+			if window.shouldRedraw then
+				window.shouldRedraw = false
+				ui:frame(window)
+			end
+		end)
+	else
+		error("unknown BEAT_BENCH_MODE " .. mode)
+	end
+
+	local rest = heapKiB()
+	print(string.format("heap at rest %8.0f KiB (%.1f MiB)", rest, rest / 1024))
+
+	screen:close()
+	App.services.playback.player:close()
+	fs.rmdir(config)
+	return
+end
 
 local pages = {
 	{ kind = "home" },
@@ -150,7 +334,7 @@ settleCovers()
 local key = App:pageKey()
 scenario("scroll library grid", 240, function(frame)
 	App.services.scroll.offsets[key] = frame * 40
-	if frame % 8 == 0 then App.services.covers:step() end
+	if frame % 8 == 0 then App.services.covers:step(now()) end
 end, draw)
 
 App.services.settings.values.view = "list"
@@ -197,23 +381,7 @@ end, draw)
 -- whatever they changed is drawn. The audio is a stand-in whose playhead moves a frame at a time,
 -- and the spectrum is given new levels every frame as the decoder would.
 do
-	local Queue = require("beat.app.services.playback.queue")
-	local state = { at = 30 }
-	local player = App.services.playback.player
-	player.queue = Queue.new(library.albums[1].tracks, 1, {})
-	player.loaded = true
-	player.startAt = nil
-	player.player = setmetatable({
-		position = function() return state.at end,
-		duration = function() return 240 end,
-		isPlaying = function() return true end,
-		isFinished = function() return false end,
-		update = function() end,
-		close = function() end,
-		setVolume = function() end,
-		setEqualizer = function() end
-	}, { __index = function() return function() end end }) --[[@as treble.Player]]
-	App.services.playback.lastListenedTrackId = player:current().id
+	local state = installPlayer(library.albums[1])
 	App.page = App:pageFor({ kind = "home" })
 	settleCovers()
 	local spectrum = App.services.playback.spectrum

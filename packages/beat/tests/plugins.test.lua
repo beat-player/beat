@@ -527,6 +527,8 @@ test.it("starts with the ratings plugin off and the app's own plugins on", funct
 	test.equal(ratings.state, "off", "a fresh install has ratings off")
 	test.equal(ratings.required, false, "ratings is the optional one")
 	test.equal(App.registry:hasPlugin("ratings"), false, "and nothing can draw its stars")
+	test.equal(assert(entry("debug")).required, false, "the performance overlay is optional too")
+	test.equal(App.registry:hasPlugin("debug"), false, "and starts out of the way")
 
 	local core = assert(entry("core"))
 	test.equal(core.state, "loaded")
@@ -561,10 +563,11 @@ test.it("turns ratings back on and keeps that switch in a settings file", functi
 	App.services.settings:flush()
 
 	local saved = json.decode(assert(fs.read(paths.file("settings.json")))):unpack()
-	test.equal(#saved.disabledPlugins, 0, "the file names its switches, and ratings is not one of them")
+	test.equal(#saved.disabledPlugins, 1, "the file names its switches, and ratings is not one of them")
+	test.equal(saved.disabledPlugins[1], "debug", "the performance overlay is the one still off")
 
 	App:init({ scan = false })
-	test.equal(assert(entry("ratings")).state, "loaded", "the next start honours the empty list")
+	test.equal(assert(entry("ratings")).state, "loaded", "the next start honours the list")
 	test.equal(App.registry:hasPlugin("ratings"), true, "and the stars come back")
 end)
 
@@ -596,13 +599,21 @@ test.it("builds the app again in this process when a plugin switch is applied", 
 	test.equal(App.registry:hasPlugin("ratings"), true)
 end)
 
-test.it("only fills in the fresh-install switches when the file has no disabledPlugins key", function()
+test.it("fills in switches a settings file was written before", function()
 	fs.write(paths.file("settings.json"), "{}")
 	local fresh = settingsModel.load()
-	test.equal(#fresh.disabledPlugins, 1)
+	test.equal(#fresh.disabledPlugins, 2)
 	test.equal(fresh.disabledPlugins[1], "ratings")
+	test.equal(fresh.disabledPlugins[2], "debug")
 
-	fs.write(paths.file("settings.json"), '{"disabledPlugins":[]}')
+	fs.write(paths.file("settings.json"), '{"disabledPlugins":[],"pluginDefaultsVersion":2}')
 	local chosen = settingsModel.load()
 	test.equal(#chosen.disabledPlugins, 0, "a file that names the switches keeps them, even an empty list")
+
+	-- A file from before the overlay existed had no way to say no to it, so the new switch starts off.
+	fs.write(paths.file("settings.json"), '{"disabledPlugins":[]}')
+	local older = settingsModel.load()
+	test.equal(#older.disabledPlugins, 1)
+	test.equal(older.disabledPlugins[1], "debug")
+	test.equal(older.pluginDefaultsVersion, 2, "and the file is brought up to date when it is next written")
 end)

@@ -5,6 +5,7 @@ local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
+local tapButton = require("beat.app.components.tap_button")
 local volume = require("beat.app.components.volume")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
@@ -163,6 +164,7 @@ end
 ---@field width number
 ---@field artSize number
 ---@field nextSize number
+---@field nextHit number
 ---@field empty wonderland.StyleBuilder
 ---@field bar wonderland.StyleBuilder
 ---@field row wonderland.StyleBuilder
@@ -170,6 +172,7 @@ end
 ---@field title wonderland.StyleBuilder
 ---@field artist wonderland.StyleBuilder
 ---@field play wonderland.StyleBuilder
+---@field playHit wonderland.StyleBuilder
 ---@field lineHeight number
 ---@field line string
 ---@field played string
@@ -187,13 +190,18 @@ local function mobileStyles(theme, width)
 	local artSize = theme:px(42)
 	local playSize = theme:px(40)
 	local nextSize = theme:px(32)
+	-- A thumb needs more than a glyph: each control answers over a larger transparent box, and the
+	-- text gets only what the boxes leave. The 56 box still fits the bar's 64.
+	local playHit = math.max(playSize, theme:px(48))
+	local nextHit = math.max(nextSize, theme:px(56))
 	local gap = theme:space(10)
-	local textWidth = math.max(theme:px(70), width - pad * 2 - artSize - playSize - nextSize - gap * 3)
+	local textWidth = math.max(theme:px(70), width - pad * 2 - artSize - playHit - nextHit - gap * 3)
 
 	styles = {
 		width = width,
 		artSize = artSize,
 		nextSize = nextSize,
+		nextHit = nextHit,
 		empty = cache.playerBarEmpty or sty():h(0),
 		-- The bar's background is a box of its own so the meter, a layer behind the row, is not
 		-- inset by the row's padding: the same shape as the desktop bar.
@@ -204,12 +212,16 @@ local function mobileStyles(theme, width)
 		artist = theme:s():w(textWidth):text(theme:type("xs")):fg(theme:color("muted")):ellipsis(),
 		play = sty()
 			:size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center"),
+		-- The transparent box the play control's circle is centred in, so the circle stays 40 and
+		-- the target under it is 48.
+		playHit = sty():size(playHit, playHit):align("center"):justify("center"),
 		-- The two colours of the strip of playhead at the bottom, and the height of it.
 		lineHeight = math.max(2, theme:px(2)),
 		line = theme:color("text", 0.1),
 		played = theme:color("accent")
 	}
 	cache.playerBarEmpty = styles.empty
+	cache.playerBarMobile = styles
 
 	return styles
 end
@@ -258,16 +270,20 @@ function playerBar.mobile(app, props)
 	end):children({
 		cover.view(app, { album = album, size = styles.artSize, radius = theme:radius("sm") }),
 		div():style(styles.info):children({ text(track.title):style(styles.title), text(track.artist):style(styles.artist) }),
-		div():style(styles.play):onClick({ type = "togglePlay" }):children(ui.icon(ctx, {
-			name = playing ? "pause" : "play",
-			size = (theme:px(19)),
-			colour = theme.accentInk
-		})),
-		ui.iconButton(ctx, { name = "next", size = styles.nextSize, onClick = { type = "next" } })
+		div():style(styles.playHit):onClick({ type = "togglePlay" }):children({
+			div():style(styles.play):children(ui.icon(ctx, {
+				name = playing ? "pause" : "play",
+				size = (theme:px(19)),
+				colour = theme.accentInk
+			}))
+		}),
+		tapButton.view(ctx, { name = "next", size = styles.nextSize, hit = styles.nextHit, onClick = { type = "next" } })
 	})
 
 	-- The meter is the desktop bar's own, put behind the row: it reads the levels when the frame
 	-- is drawn, so the app's repaints move it while the music plays and leave it still once it stops.
+	-- The bar answers a press itself, but a press in one of the controls meets that control first:
+	-- the enlarged boxes take their presses without the track view opening under them.
 	return div():style(styles.bar):onClick({ type = "open", overlay = "now_playing" }):children({
 		spectrumBackground.view(app, {}),
 		row

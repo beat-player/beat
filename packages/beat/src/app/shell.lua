@@ -24,6 +24,11 @@ local shell = {}
 local transitionCache = {}
 local TRANSITION_STEPS = 16
 
+-- The performance overlay's surface is drawn without being opened, so it is handed the state it
+-- would have had: one table for every frame, rather than one made to be thrown away.
+---@type beat.OverlayInstance
+local DEBUG_OVERLAY = { name = "debug", state = {} }
+
 ---@param theme beat.Theme
 local function transitionStyles(theme)
 	local cached = transitionCache[theme.scale]
@@ -303,6 +308,14 @@ function shell.view(app, window)
 
 	local rootBox = cache.of(uiCtx, rootStyle, "shellRoot") --[[@as wonderland.StyleBuilder]]
 	local root = div():style(rootBox):children(rootChildren)
+
+	-- The performance overlay is a plugin, so the shell draws nothing for it unless it is loaded:
+	-- a switch in Settings takes it out of the app at the next start. It is added under the toasts
+	-- and the panels, so the numbers never cover a message or a menu.
+	if app.registry:hasPlugin("debug") then
+		local surface = app.registry:overlay("debug")
+		if surface.view ~= nil then root:children({ surface.view(app, DEBUG_OVERLAY, window) }) end
+	end
 
 	local toastLayer = toasts.view(app, { window = window })
 	if toastLayer ~= nil then root:children(toastLayer) end

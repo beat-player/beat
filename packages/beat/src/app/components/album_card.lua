@@ -107,27 +107,25 @@ function albumCard.view(app, props)
 		s.radius = theme:radius("md")
 	end
 
+	-- The children are handed over one at a time rather than as a table: this runs for every card of
+	-- every frame, and a table a card is only a list of is a table that frame no longer needs.
 	return div()
 		:style(s.card):hover(s.cardHover):onClick(actions.open)
 		:onContextMenu(actions.menu)
 		:children(
-			{
-				div()
-					:style(s.art)
-					:children(
-						{
-							cover.view(app, { album = album, size = width, radius = s.radius, sheen = true }),
-							div()
-								:style(s.play):onClick(onPlay)
-								:children(
-									ui.icon(ctx, { name = playing ? "pause" : "play", size = s.iconSize, colour = theme.accentInk })
-								)
-						}
-					),
-				div()
-					:style(s.block)
-					:children({ text(album.title):style(s.title), text(album.artist):style(s.artist) })
-			}
+			div()
+				:style(s.art)
+				:children(
+					cover.view(app, { album = album, size = width, radius = s.radius, sheen = true }),
+					div()
+						:style(s.play):onClick(onPlay)
+						:children(
+							ui.icon(ctx, { name = playing ? "pause" : "play", size = s.iconSize, colour = theme.accentInk })
+						)
+				),
+			div()
+				:style(s.block)
+				:children(text(album.title):style(s.title), text(album.artist):style(s.artist))
 		)
 end
 

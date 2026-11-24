@@ -4,6 +4,7 @@ local wonderland = require("wonderland")
 local utf8 = require("utf8")
 local ui = require("beat-ui")
 local cover = require("beat.app.components.cover")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -111,6 +112,26 @@ end
 ---@field name string # The playlist's name, reduced to its initials
 ---@field ui beat.ui.Context
 
+--- The mosaic's rows and square at one size, kept per size and corner radius.
+---@class beat.components.PlaylistArtGridStyles
+---@field radius number?
+---@field row wonderland.StyleBuilder
+---@field column wonderland.StyleBuilder
+
+--- The badge and the square around it, kept per size and the shape of the initials.
+---@class beat.components.PlaylistArtStyles
+---@field fontSize number
+---@field radius number
+---@field badge wonderland.StyleBuilder
+---@field badgeText wonderland.StyleBuilder
+---@field root wonderland.StyleBuilder
+---@field empty wonderland.StyleBuilder
+
+--- The black cell of a mosaic with fewer than four pictures, kept per cell size.
+---@class beat.components.PlaylistArtCellStyles
+---@field radius number?
+---@field style wonderland.StyleBuilder
+
 --- Four separately rounded cells in two rows, a small gap between them: the square a mosaic is
 --- drawn into. Each cell is built by `cell`, which gets the slot it fills and the size and corner
 --- radius it should draw at.
@@ -120,18 +141,28 @@ end
 ---@param radius number
 ---@return wonderland.Element
 function PlaylistArt.grid(app, cell, size, radius)
+	local theme = app.services.appearance.theme
 	local gap = math.max(1, math.floor(size * 0.02))
 	local cellSize = math.floor((size - gap) / 2)
 	local cellRadius = math.min(radius, math.floor(cellSize * 0.15))
 
-	local function row(from)
-		return div():style(sty():row():h(cellSize):gap(gap)):children({
-			cell(from, cellSize, cellRadius),
-			cell(from + 1, cellSize, cellRadius)
-		})
+	-- The rows and the square are the same for every frame at this size: kept rather than made
+	-- again, because the sidebar around a scrolling page is built again with it.
+	local kept = styles.of(theme, "playlistArtGrid", size) --[[@as beat.components.PlaylistArtGridStyles]]
+	if kept.radius ~= radius then
+		kept.radius = radius
+		kept.row = sty():row():h(cellSize):gap(gap)
+		kept.column = sty():column():size(size, size):gap(gap)
 	end
 
-	return div():style(sty():column():size(size, size):gap(gap)):children({ row(1), row(3) })
+	local function row(from)
+		return div():style(kept.row):children(
+			cell(from, cellSize, cellRadius),
+			cell(from + 1, cellSize, cellRadius)
+		)
+	end
+
+	return div():style(kept.column):children(row(1), row(3))
 end
 
 --- A playlist's square: four evenly spread album pictures behind the playlist's initials. A
@@ -148,15 +179,32 @@ function PlaylistArt.view(app, props)
 	local initials = PlaylistArt.initials(name)
 	local badgeSize = math.floor(size * (#initials > 1 and 0.46 or 0.5))
 	local fontSize = math.max(10, math.floor(size * (#initials > 1 and 0.32 or 0.38)))
-	local badge = div()
-		:style(
-			sty()
-				:size(badgeSize, badgeSize):radius(badgeSize / 2)
-				:offset(math.floor((size - badgeSize) / 2), math.floor((size - badgeSize) / 2)):bg(theme:color("bg", 0.72))
-				:align("center"):justify("center")
-		):children(text(initials):style(theme:s():text(fontSize):weight("bold"):fg(theme:color("text"))))
 
-	local root = div():style(sty():size(size, size))
+	-- The badge, the square it sits in and the cells of the mosaic are the same for every frame at
+	-- this size, and the sidebar holding them is built again on every scroll step: kept rather than
+	-- made again. A playlist with one initial wears a bigger badge than one with two, so the two
+	-- shapes have a record of their own rather than taking turns at one.
+	local variants = styles.of(theme, "playlistArt", size) --[[@as table<number, beat.components.PlaylistArtStyles?>]]
+	local kept = variants[badgeSize]
+	if kept == nil or kept.fontSize ~= fontSize or kept.radius ~= artRadius then
+		local inset = math.floor((size - badgeSize) / 2)
+		kept = {
+			fontSize = fontSize,
+			radius = artRadius,
+			badge = sty()
+				:size(badgeSize, badgeSize):radius(badgeSize / 2)
+				:offset(inset, inset):bg(theme:color("bg", 0.72))
+				:align("center"):justify("center"),
+			badgeText = theme:s():text(fontSize):weight("bold"):fg(theme:color("text")),
+			root = sty():size(size, size),
+			empty = sty():size(size, size):radius(artRadius):bg("#000000")
+		}
+		variants[badgeSize] = kept
+	end
+
+	local badge = div():style(kept.badge):children(text(initials):style(kept.badgeText))
+
+	local root = div():style(kept.root)
 
 	local library = app.services.library.current
 	if #picked <= 1 then
@@ -165,7 +213,7 @@ function PlaylistArt.view(app, props)
 		if album ~= nil then
 			root:children({ cover.view(app, { album = album, size = size, radius = artRadius }) })
 		else
-			root:children({ div():style(sty():size(size, size):radius(artRadius):bg("#000000")) })
+			root:children({ div():style(kept.empty) })
 		end
 		root:children({ badge })
 		return root
@@ -177,7 +225,12 @@ function PlaylistArt.view(app, props)
 		if album ~= nil then
 			return cover.view(app, { album = album, size = cellSize, radius = cellRadius })
 		end
-		return div():style(sty():size(cellSize, cellSize):radius(cellRadius):bg("#000000"))
+		local cells = styles.of(theme, "playlistArtCell", cellSize) --[[@as beat.components.PlaylistArtCellStyles]]
+		if cells.radius ~= cellRadius then
+			cells.radius = cellRadius
+			cells.style = sty():size(cellSize, cellSize):radius(cellRadius):bg("#000000")
+		end
+		return div():style(cells.style)
 	end
 
 	root:children({ PlaylistArt.grid(app, cellAt, size, artRadius), badge })

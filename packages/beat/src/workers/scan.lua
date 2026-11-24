@@ -20,6 +20,8 @@ local time = require("wonderland.time")
 local root = assert(env.var("BEAT_SCAN_ROOT"), "no scan root")
 local output = assert(env.var("BEAT_SCAN_OUTPUT"), "no scan output")
 local cancelFile = assert(env.var("BEAT_SCAN_CANCEL"), "no scan cancel file")
+---@type string?
+local knownFile = env.var("BEAT_SCAN_KNOWN")
 
 local WORKERS = tonumber(os.getenv("BEAT_SCAN_WORKERS") or "") or 4
 WORKERS = math.max(1, math.min(16, WORKERS))
@@ -339,7 +341,9 @@ local ok, err = pcall(function()
 			for _, entry in ipairs(shardEntries) do listing:write(json.encode(entry), "\n") end
 			listing:close()
 
-			local child, spawnErr = workerProcess.spawn({ BEAT_WORKER = "inspect", BEAT_SCAN_MANIFEST = manifest, BEAT_SCAN_OUTPUT = shardOutput, BEAT_SCAN_CANCEL = cancelFile, BEAT_SCAN_ROOT = root })
+			local vars = { BEAT_WORKER = "inspect", BEAT_SCAN_MANIFEST = manifest, BEAT_SCAN_OUTPUT = shardOutput, BEAT_SCAN_CANCEL = cancelFile, BEAT_SCAN_ROOT = root }
+			if knownFile ~= nil then vars.BEAT_SCAN_KNOWN = knownFile end
+			local child, spawnErr = workerProcess.spawn(vars)
 			if child == nil then
 				error("could not start scan inspector " .. at .. ": " .. tostring(spawnErr))
 			end

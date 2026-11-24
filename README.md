@@ -64,14 +64,15 @@ lde test -C packages/beat     # run tests
 
 ## Performance
 
-4,054 tracks (12 GB) on a Google Drive mount, Intel i7-9700F, Linux.
+4,096 tracks (12 GB) on a Google Drive mount, Intel i7-9700F, Linux.
 
 |                      |           |
 | -------------------- | --------- |
 | Executable           | 4.1 MB    |
 | Memory, empty        | ~130 MB   |
 | Memory, full library | ~166 MB   |
-| Full scan            | 2.4–3.0 s |
+| Rescan               | 0.3 s     |
+| First scan           | ~18 s     |
 
 ## Status
 

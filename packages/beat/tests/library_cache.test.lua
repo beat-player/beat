@@ -6,7 +6,9 @@ local test = require("lde-test")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local LibraryCache = require("beat.app.services.library.cache")
+local LibraryService = require("beat.app.services.library.init")
 local fs = require("fs")
+local json = require("json")
 
 local configDirectory = os.tmpname() .. "-beat-cache-config"
 os.remove(configDirectory)
@@ -93,6 +95,70 @@ test.it("ignores a cache written for another version of the cache", function()
 	fs.delete(path)
 end)
 
+--- Rewrites a saved cache's header to an earlier layout, keeping its records as they were.
+---@param version number
+local function rewriteVersion(version)
+	local file = paths.file("library.json")
+	local document = json.decode(assert(fs.read(file))):unpack()
+	document.version = version
+	assert(fs.write(file, json.encode(document)))
+end
+
+test.it("reads a version 6 cache that grouped every track the way 7 does", function()
+	local library = Library.new(ROOT)
+	local info, entry = file("01 - Heard Em Say", "Kanye West")
+	-- 6 named a file with no album tag after its folder. This file's folder is not its album, so
+	-- both versions group it the same, and reading its file again would only cost a round trip.
+	entry.path = ROOT .. "/Kanye/01 - Heard Em Say.flac"
+	entry.dir = ROOT .. "/Kanye"
+	library:add(info, entry)
+	library:finish()
+	test.equal(LibraryCache.save(library), true)
+	rewriteVersion(6)
+
+	local loaded, outdated = LibraryCache.load(ROOT)
+	assert(loaded, "a 6 cache that says what 7 would is still usable")
+	test.equal(#loaded.tracks, 1)
+	test.equal(#loaded.albums, 1)
+	test.equal(loaded.albums[1].title, "Late Registration")
+	test.equal(outdated, nil, "and it has nothing left to read")
+	fs.delete(paths.file("library.json"))
+end)
+
+test.it("leaves a version 6 track that may have been named after its folder", function()
+	local library = Library.new(ROOT)
+	-- The helper files tracks beside their album's name, which is the case 6 may have made up for a
+	-- file with no album tag; nothing in the record says whether the tag was there.
+	library:add(file("01 - Heard Em Say", "Kanye West"))
+	library:finish()
+	test.equal(LibraryCache.save(library), true)
+	rewriteVersion(6)
+
+	local loaded, outdated = LibraryCache.load(ROOT)
+	assert(loaded, "the records it can vouch for are still usable")
+	test.equal(#loaded.tracks, 0, "the track it cannot vouch for is not in the library")
+	assert(outdated, "and its file is handed back to be read")
+	test.equal(outdated[1], ROOT .. "/Late Registration/01 - Heard Em Say.flac")
+	fs.delete(paths.file("library.json"))
+end)
+
+test.it("leaves a version 6 track whose artist may have been named after its folder", function()
+	local library = Library.new(ROOT)
+	-- 6 named a file with no artist tag after the folder above its album's, which is what this
+	-- record's artist says; 7 calls that an unknown artist, so the record cannot be trusted.
+	library:add(file("01 - Heard Em Say", "music"))
+	library:finish()
+	test.equal(LibraryCache.save(library), true)
+	rewriteVersion(6)
+
+	local loaded, outdated = LibraryCache.load(ROOT)
+	assert(loaded, "the records it can vouch for are still usable")
+	test.equal(#loaded.tracks, 0, "the track it cannot vouch for is not in the library")
+	assert(outdated, "and its file is handed back to be read")
+	test.equal(outdated[1], ROOT .. "/Late Registration/01 - Heard Em Say.flac")
+	fs.delete(paths.file("library.json"))
+end)
+
 test.it("keeps each track's fingerprint, so tags stay attached across a launch", function()
 	local library = Library.new(ROOT)
 	local info, entry = file("01 - Heard Em Say", "Kanye West")
@@ -103,4 +169,29 @@ test.it("keeps each track's fingerprint, so tags stay attached across a launch",
 
 	local loaded = assert(LibraryCache.load(ROOT))
 	test.equal(loaded.tracks[1].fingerprint, "0123456789abcdef")
+end)
+
+test.it("hands a scan records for the tracks a cache could vouch for", function()
+	---@type table
+	local deps = {
+		settings = { values = { root = ROOT } },
+		options = { scan = false },
+		emit = function() end
+	}
+	---@cast deps { settings: beat.SettingsService, options: { scan: boolean? }, emit: fun(message: table) }
+	local service = LibraryService.new(deps)
+	local library = Library.new(ROOT)
+	local info, entry = file("01 - Heard Em Say", "Kanye West")
+	library:add(info, entry)
+	library:finish()
+	service.current = library
+
+	service.outdated = nil
+	local records = assert(service:records())
+	test.equal(#records, 1, "a current library hands every track to the scan")
+	test.equal(records[1].path, entry.path)
+	test.equal(records[1].title, "01 - Heard Em Say")
+
+	service.outdated = { entry.path }
+	test.equal(#service:records(), 0, "a track an older cache could not vouch for is read again")
 end)

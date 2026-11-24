@@ -38,7 +38,7 @@ local iconCache
 -- Beat's own plugins, by module name under `beat.plugins`. Each registers the services, pages and
 -- overlays of one feature; outside plugins are loaded after them, from the config directory's
 -- `plugins` folder, or through `opts.plugins` for a caller that supplies them itself.
-local BUILT_IN = { "beat_ui", "core", "tasks", "plugins", "library", "collections", "ratings", "playback", "lastfm" }
+local BUILT_IN = { "beat_ui", "core", "tasks", "plugins", "library", "collections", "ratings", "playback", "lastfm", "debug" }
 
 local MEDIA_MESSAGES = {
 	playPause = "togglePlay",
@@ -86,6 +86,7 @@ local TRAY_MESSAGES = {
 ---@field appearance beat.AppearanceService
 ---@field collections beat.CollectionsService
 ---@field covers beat.CoversService
+---@field debug beat.DebugService? # The performance overlay, when its plugin is on
 ---@field equalizer beat.EqualizerService
 ---@field haptics beat.HapticsService
 ---@field lastfm beat.LastfmService

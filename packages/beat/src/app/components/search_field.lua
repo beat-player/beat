@@ -39,6 +39,7 @@ end
 ---@field clearDraw fun(canvas: wonderland.Canvas)
 ---@field textSize number
 ---@field iconSize number
+---@field shown table<string, wonderland.StyleBuilder>? # The value's line, by the colour of the state it is in
 
 --- The styles of a pill at a width, a height and a state. They are kept on the theme, so a frame
 --- does not intern the same builders again. A tall pill -- the phone's -- sets its text, glyphs
@@ -103,7 +104,19 @@ function searchField.view(ctx, props)
 		oninput = typed,
 		onsubmit = || -> nil
 	})
-	input:children(text(shown):style(ctx:s():wrel(1.0):text(styles.textSize):fg(colour):ellipsis()))
+	-- The line takes the colour of the state it is in, and there are a handful of those: one style
+	-- per colour, kept with the rest of what the field built.
+	local shownStyles = styles.shown
+	if shownStyles == nil then
+		shownStyles = {}
+		styles.shown = shownStyles
+	end
+	local shownStyle = shownStyles[colour]
+	if shownStyle == nil then
+		shownStyle = ctx:s():wrel(1.0):text(styles.textSize):fg(colour):ellipsis()
+		shownStyles[colour] = shownStyle
+	end
+	input:children(text(shown):style(shownStyle))
 
 	local field = div():style(styles.field):children({
 		ui.icon(ctx, { name = "search", size = styles.iconSize, colour = ctx:color("faint") }),

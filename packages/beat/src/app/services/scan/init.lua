@@ -4,6 +4,7 @@
 -- first launch asks -- everything a view needs to say "no folder yet" comes from here.
 local Picker = require("beat.app.services.scan.picker")
 local ScanJob = require("beat.app.services.scan.job")
+local path = require("path")
 local time = require("wonderland.time")
 local Log = require("beat.log")
 local platform = require("beat.platform")
@@ -102,11 +103,12 @@ end
 
 --- A launch draws the last complete scan, so it only scans when there is nothing to draw; a
 --- manual Rescan replaces what is there. `App:init` used to decide this before anything had a
---- chance to draw.
+--- chance to draw. A cache from the previous layout can still be drawn, but the tracks it may
+--- have grouped by folder are read again by a scan that takes the rest from the cache.
 function Scan:resume()
 	local root = self.settings.values.root
 	if root == nil or self.options.scan == false then return end
-	if self.library.current ~= nil then return end
+	if self.library.current ~= nil and (self.library.outdated == nil or #self.library.outdated == 0) then return end
 	-- A phone keeps the music folder behind a permission. Without it the folder reads as empty,
 	-- and a scan of it would save an empty library over the one the listener is about to allow.
 	if not platform.canReadMusic() then
@@ -120,16 +122,26 @@ end
 --- A new library for a root. What was playing is from the old one, so it stops; every cover on
 --- screen belongs to an album that is gone, so they are released. The app goes home with the
 --- history forgotten, because every page behind the scan showed the library it replaced.
+---
+--- A scan of the same root takes the records of the library already loaded, so an inspector can
+--- answer for a file whose modification time has not changed without opening it. A new root has
+--- nothing in common with the old library, and starts from nothing.
 ---@param root string
 function Scan:start(root)
 	Picker.cancel(self.pick)
 	self.pick = nil
 	if self.job ~= nil then self.job:cancel() end
 
+	local current = self.library.current
+	local known = nil
+	if current ~= nil and path.normalize(current.root) == path.normalize(root) then
+		known = self.library:records()
+	end
+
 	self.playback:reset()
 	self.covers:releaseAll()
 	self.library:replace(root)
-	self.job = ScanJob.start(root)
+	self.job = ScanJob.start(root, known)
 	self.islandOpen = true
 	self.summary = nil
 	self.skipped = 0
@@ -209,6 +221,21 @@ function Scan:ingest(job, errors)
 			---@cast event table
 			if event.type == "track" and library.current ~= nil then
 				self:addTrack(event, errors)
+				changed = true
+			elseif event.type == "reused" and library.current ~= nil then
+				-- A file the scan did not open: the library's own record for it, which a cache
+				-- stored and the scan carried forward.
+				local ok, err = pcall(library.addCached, library, event.record)
+				if not ok then
+					self.toasts:show("Could not read a scanned track", "error")
+					if errors ~= nil then
+						local record = event.record
+						errors[#errors + 1] = {
+							path = type(record) == "table" and tostring(record.path) or "a track",
+							message = tostring(err)
+						}
+					end
+				end
 				changed = true
 			end
 		end

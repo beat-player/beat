@@ -4,6 +4,7 @@
 -- when a cover is first requested.
 local fs = require("fs")
 local json = require("json")
+local path = require("path")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Log = require("beat.log")
@@ -17,14 +18,35 @@ local LibraryCache = {}
 -- exact length for an MP3 with no length header, where 4 had a guess.
 local VERSION = 7
 
+-- The version before it, which is still read when it will group every track the way 7 does; see
+-- `sameGrouping`. A full re-inspect is a long walk of a remote folder, so a cache that already
+-- says the right things is not thrown away over the number in its header.
+local PREVIOUS = 6
+
+--- Whether a 6 cache recorded a track the way 7 would group it. 6 named a file with no album tag
+--- after its folder, and a file with no artist tag after its folder's parent, while 7 makes the
+--- first a single named after its own title and calls the second an unknown artist; both wrote
+--- the same album, key and artist for a file whose tags named them. A record whose album is its
+--- folder's name, or whose artist is its folder's parent's name, may be either, and nothing in
+--- the record says which, so it is left out of what the cache loads and read again instead.
+---@param record table
+---@return boolean
+local function sameGrouping(record)
+	local dir = path.dirname(record.path)
+	return record.album ~= path.basename(dir) and record.artist ~= path.basename(path.dirname(dir))
+end
+
 local function cacheFile()
 	return paths.file("library.json")
 end
 
+--- One track as a cache record: only the fields a Track is made from, plus the album key the scan
+--- filed it under. A scan also writes these for the library already loaded, so an inspector can
+--- take a file it has not touched from one instead of reading it again.
 ---@param track beat.Track
 ---@param key string? # The album the scan put it in, which its tags alone do not always say
 ---@return table
-local function packed(track, key)
+function LibraryCache.pack(track, key)
 	return {
 		path = track.path,
 		key = key,
@@ -55,7 +77,7 @@ function LibraryCache.save(library)
 	local tracks = {}
 	for _, track in ipairs(library.tracks) do
 		local album = library:album(track.albumId)
-		tracks[#tracks + 1] = packed(track, album?.key)
+		tracks[#tracks + 1] = LibraryCache.pack(track, album?.key)
 	end
 
 	local ok, encoded = pcall(json.encode, { version = VERSION, root = library.root, tracks = tracks })
@@ -90,29 +112,40 @@ local function field(value, key)
 end
 
 --- The library a decoded cache says, or nothing for one written for another root or version.
+--- A 6 cache is read when it groups tracks the way 7 does; the records it may have named after
+--- their folder are returned instead, for the scan to read again.
 ---@param decoded json.Value
 ---@param root string
----@return beat.Library?
+---@return beat.Library? library
+---@return string[]? outdated
 local function read(decoded, root)
-	if decoded:type() ~= "object" or field(decoded, "version") ~= VERSION or field(decoded, "root") ~= root then
-		return nil
-	end
+	if decoded:type() ~= "object" or field(decoded, "root") ~= root then return nil end
+
+	local version = field(decoded, "version")
+	if version ~= VERSION and version ~= PREVIOUS then return nil end
 
 	local tracks = decoded:get("tracks", MISSING)
 	if tracks == MISSING then return nil end
 	---@cast tracks json.Value
 	if not (tracks:is("array") or tracks:is("object")) then return nil end
 
+	local outdated = nil
 	local library = Library.new(root)
 	for _, item in tracks:children() do
 		if item == nil or not item:is("object") then return nil end
 		local record = item:unpack()
+		---@cast record table
 		if type(record.path) ~= "string" then return nil end
-		library:addCached(record)
+		if version == PREVIOUS and not sameGrouping(record) then
+			outdated = outdated or {}
+			outdated[#outdated + 1] = record.path
+		else
+			library:addCached(record)
+		end
 	end
 	library:finish()
 
-	return library
+	return library, outdated
 end
 
 --- Reads the cache back into a library. The file is parsed by yyjson outside the Lua heap, and
@@ -122,6 +155,7 @@ end
 --- the process held until the collector happens to come round to it.
 ---@param root string
 ---@return beat.Library?
+---@return string[]? outdated # Tracks an older cache may have grouped by folder, to read again
 function LibraryCache.load(root)
 	local file = cacheFile()
 	if not fs.isfile(file) then return nil end
@@ -133,9 +167,9 @@ function LibraryCache.load(root)
 	end
 
 	---@cast document json.Document
-	local library = read(document:root(), root)
+	local library, outdated = read(document:root(), root)
 	document:free()
-	return library
+	return library, outdated
 end
 
 return LibraryCache
