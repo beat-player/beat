@@ -337,8 +337,12 @@ function Update:checked(response, manual)
 
 	local releases
 	if err == nil then
-		local ok, decoded = pcall(json.decode, response.body)
-		if not ok or type(decoded) ~= "table" then
+		-- `json.decode` hands back a handle on the parsed document, not Lua tables: it has no
+		-- list elements of its own, so a release list read through it looked empty and every check
+		-- said "up to date". `unpack` turns it into the plain tables `pick` walks.
+		local body = response.body --[[@as string]]
+		local ok, decoded = pcall(|| -> json.decode(body):unpack())
+		if not ok or type(decoded) ~= "table" or decoded[1] == nil then
 			err = "GitHub sent an answer beat could not read"
 		else
 			releases = decoded
