@@ -163,6 +163,10 @@ function slider.view(app, props)
 	record.fraction, record.min, record.max = fraction, min, max
 	record.origin, record.liveValue = origin, liveValue
 	record.trackColour, record.fillColour, record.thumbColour = props.trackColour, props.fillColour, thumbColour
+	-- The draw reads these when the frame is painted. The record is keyed by the box and the nub,
+	-- not by the track's thickness, so a slider that changes thickness keeps the draw it had but
+	-- must not keep the old line under the nub.
+	record.trackHeight, record.radius = trackHeight, radius
 
 	local sliderElement = div():style(kept.track):slider({
 		value = props.value,

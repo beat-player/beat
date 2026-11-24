@@ -404,6 +404,29 @@ function App:leave()
 	if self.loopHandler ~= nil then self.loopHandler:exit() end
 end
 
+--- Asks every service that owns a thread to stop, without waiting for it or giving back anything it
+--- may still be using. What the process calls once its window is gone: the OS reclaims the threads,
+--- their rings and their channels, and no Lua finalizer runs on an object a thread still holds.
+function App:releaseThreads()
+	if self.services == nil then return end
+	local playback = self.services.playback
+	if playback ~= nil and playback.release ~= nil then playback:release() end
+
+	-- The scan's inspectors can be in the middle of a file read; `close` cancels them and joins
+	-- them on the next scan, which never comes because the process is leaving.
+	local scan = self.services.scan
+	if scan ~= nil then
+		-- The scan service may grow a `release` of its own; until then its `close` is the
+		-- non-blocking cancel it always was.
+		local leaving = scan --[[@as { release: (fun(self: any))?, close: (fun(self: any))? }]]
+		if leaving.release ~= nil then
+			leaving.release(scan)
+		elseif leaving.close ~= nil then
+			leaving.close(scan)
+		end
+	end
+end
+
 --- The icon, tooltip and menu the notification area shows, from what is loaded and playing. The
 --- tooltip names the track; the menu mirrors the player bar's controls, in the order a menu reads.
 ---@return winit.Tray?

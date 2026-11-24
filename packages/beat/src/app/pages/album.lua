@@ -49,10 +49,43 @@ end
 ---@field cover fun(size: number): wonderland.Element
 ---@field trackAction fun(track: beat.Track, at: number): table
 ---@field trackIndex fun(track: beat.Track, at: number): number
+---@field meta string? # The line under the title, kept with the track list it counts
+---@field metaTracks beat.Track[]?
+---@field metaCount number?
+---@field metaLast beat.Track?
+---@field metaYear number?
 ---@field props table
 
 ---@type table<beat.Album, beat.pages.AlbumUi>
 local albumUi = setmetatable({}, { __mode = "k" })
+
+--- The line under an album's title, rebuilt only when the tracks it counts have changed. A folder
+--- added to the library mutates the album in place -- the track list is replaced and the length
+--- summed from it -- so the record's own words would otherwise keep the first scan's count and
+--- length. The list, its length and its last track are the fingerprint: adding a track changes
+--- the length, and a folder scanned again replaces the list even when the count comes out equal.
+---@param kept beat.pages.AlbumUi
+---@param album beat.Album
+---@return string
+local function metaFor(kept, album)
+	local tracks = album.tracks
+	local count = #tracks
+	if
+		kept.meta == nil
+		or kept.metaTracks ~= tracks
+		or kept.metaCount ~= count
+		or kept.metaLast ~= tracks[count]
+		or kept.metaYear ~= album.year
+	then
+		kept.metaTracks, kept.metaCount, kept.metaLast = tracks, count, tracks[count]
+		kept.metaYear = album.year
+		kept.meta = (album.year and (album.year .. " · ") or "")
+			.. format.count(count, "track")
+			.. " · "
+			.. format.duration(album.duration)
+	end
+	return assert(kept.meta)
+end
 
 --- The things one album's page sends and draws, made the first time the album is shown. It is
 --- kept apart from the lookup that follows so the frames after the first only read the record:
@@ -60,9 +93,8 @@ local albumUi = setmetatable({}, { __mode = "k" })
 --- the record is already there.
 ---@param app beat.App
 ---@param album beat.Album
----@param ratings boolean
 ---@return beat.pages.AlbumUi
-local function buildUi(app, album, ratings)
+local function buildUi(app, album)
 	local id = album.id
 	local artistId = album.artistId
 	local found = {
@@ -97,17 +129,15 @@ local function buildUi(app, album, ratings)
 		title = album.title,
 		subtitle = album.artist,
 		subtitleAction = found.subtitleAction,
-		meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track") .. " · " .. format.duration(
-			album.duration
-		),
+		meta = nil,
 		playAction = found.playAction,
 		playIcon = "play",
 		titleOnly = true,
-		ratings = ratings,
+		ratings = nil,
 		phoneHero = true,
 		shuffleAction = found.shuffleAction,
 		rating = nil,
-		onRate = ratings and found.rate or nil,
+		onRate = nil,
 		tracks = album.tracks,
 		trackAction = found.trackAction,
 		trackIndex = found.trackIndex
@@ -117,12 +147,11 @@ end
 
 ---@param app beat.App
 ---@param album beat.Album
----@param ratings boolean
 ---@return beat.pages.AlbumUi
-local function uiFor(app, album, ratings)
+local function uiFor(app, album)
 	local found = albumUi[album]
 	if found ~= nil then return found end
-	found = buildUi(app, album, ratings)
+	found = buildUi(app, album)
 	albumUi[album] = found
 	return found
 end
@@ -177,9 +206,21 @@ function albumPage.view(app, page, window)
 	local thisAlbum = current?.albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
 	local ratings = app.registry:hasPlugin("ratings")
-	local kept = uiFor(app, album, ratings)
+	local kept = uiFor(app, album)
 	local props = kept.props
+
+	-- The record outlives the scan that filled it: a folder added to the library mutates this
+	-- album's track list and length, and the ratings plugin can be switched between frames. So
+	-- everything that comes from the album or the registry is written from what it says now; the
+	-- record only keeps what those values were, so the frame allocates nothing unless they moved.
 	props.window = window
+	props.label = album.single and "SINGLE" or "ALBUM"
+	props.title = album.title
+	props.subtitle = album.artist
+	props.meta = metaFor(kept, album)
+	props.tracks = album.tracks
+	props.ratings = ratings
+	props.onRate = ratings and kept.rate or nil
 	props.playAction = thisAlbum and TOGGLE_PLAY or kept.playAction
 	props.playIcon = playing and thisAlbum and "pause" or "play"
 	props.loading = thisAlbum and app.services.playback.player:isLoading()

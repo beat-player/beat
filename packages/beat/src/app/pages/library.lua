@@ -67,10 +67,15 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@field contentHeight number?
 ---@field content wonderland.StyleBuilder
 
---- The words a list row shows under its title and at its end, kept per album: an album's year,
---- track count and length do not change while the library holds it, and the row is built again on
---- every frame of a scroll.
+--- The words a list row shows under its title and at its end, kept per album: the row is built
+--- again on every frame of a scroll. An album record outlives a folder add, though, and its track
+--- list and length change under it, so the words are rebuilt when the list it counts moves.
 ---@class beat.pages.LibraryRowText
+---@field trackCount number
+---@field lastTrack beat.Track?
+---@field tracks beat.Track[]
+---@field artist string
+---@field year number?
 ---@field subtitle string
 ---@field count string
 ---@field duration string
@@ -82,10 +87,27 @@ local rowTexts = setmetatable({}, { __mode = "k" })
 ---@return beat.pages.LibraryRowText
 local function rowText(album)
 	local known = rowTexts[album]
-	if known == nil then
+	local tracks = album.tracks
+	local trackCount = #tracks
+	-- Sorting the same list, or adding a track to it, leaves a cheap fingerprint: the list itself,
+	-- how long it is, and the last track in it. A folder removed and scanned again replaces the
+	-- list, so a count that happens to match still rebuilds.
+	if
+		known == nil
+		or known.tracks ~= tracks
+		or known.trackCount ~= trackCount
+		or known.lastTrack ~= tracks[trackCount]
+		or known.artist ~= album.artist
+		or known.year ~= album.year
+	then
 		known = {
+			tracks = tracks,
+			trackCount = trackCount,
+			lastTrack = tracks[trackCount],
+			artist = album.artist,
+			year = album.year,
 			subtitle = album.artist .. (album.year and (" · " .. album.year) or ""),
-			count = format.count(#album.tracks, "track"),
+			count = format.count(trackCount, "track"),
 			duration = format.duration(album.duration)
 		}
 		rowTexts[album] = known

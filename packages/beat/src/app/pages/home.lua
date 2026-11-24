@@ -41,10 +41,12 @@ local RECENTLY_ADDED = { title = "Recently added" }
 local YOUR_ALBUMS = { title = "Your albums" }
 local ARTISTS = { title = "Artists" }
 
---- The albums heard lately, kept against the taxonomy's revision and the library they were read
---- from: home asks every frame, and answering means walking every album that has a metric and
---- sorting them. A listen is the only thing that changes the answer, and that bumps the revision.
----@type { revision: number, library: beat.Library, limit: number, albums: beat.Album[] }?
+--- The albums heard lately, kept against the taxonomy it was read from, its revision and the
+--- library it was read from: home asks every frame, and answering means walking every album that
+--- has a metric and sorting them. A listen is the only thing that changes the answer, and that
+--- bumps the revision. The taxonomy itself is part of the key because its revision is only unique
+--- within one instance.
+---@type { taxonomy: beat.Taxonomy, revision: number, library: beat.Library, limit: number, albums: beat.Album[] }?
 local listenedCache
 
 ---@param app beat.App
@@ -53,8 +55,20 @@ local listenedCache
 local function listenedAlbums(app, library, limit)
 	local taxonomy = app.services.collections.taxonomy
 	local kept = listenedCache
-	if kept == nil or kept.revision ~= taxonomy.revision or kept.library ~= library or kept.limit ~= limit then
-		kept = { revision = taxonomy.revision, library = library, limit = limit, albums = taxonomy:recentAlbums(library, limit) }
+	if
+		kept == nil
+		or kept.taxonomy ~= taxonomy
+		or kept.revision ~= taxonomy.revision
+		or kept.library ~= library
+		or kept.limit ~= limit
+	then
+		kept = {
+			taxonomy = taxonomy,
+			revision = taxonomy.revision,
+			library = library,
+			limit = limit,
+			albums = taxonomy:recentAlbums(library, limit)
+		}
 		listenedCache = kept
 	end
 	return kept.albums

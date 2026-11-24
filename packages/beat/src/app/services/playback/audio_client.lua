@@ -57,6 +57,8 @@ local threading = require("threading")
 ---@field audioIndex number?
 ---@field loading boolean # Whether a requested track has yet to be heard
 ---@field loadingId number # The command that requested it
+---@field released boolean # Whether the thread was only told to stop, never joined
+---@field unjoined boolean # Whether a shutdown left the thread (and its channels) running
 ---@field dead boolean # Whether the audio thread ended without being asked
 ---@field error string?
 ---@field onTrackEnd fun(completed: boolean?)?
@@ -65,21 +67,32 @@ local threading = require("threading")
 local AudioClient = {}
 AudioClient.__index = AudioClient
 
--- Threads a shutdown could not wait for because their decoder was still in a read. Their handles
--- are joined on a later start or shutdown once they have finished, rather than holding a frame
--- still. Nothing here owns a channel: the thread closes its own when it sees the quit command.
----@class beat.AbandonedThreads
----@field handles threading.Handle[]
----@type beat.AbandonedThreads
-local abandoned = { handles = {} }
+-- Threads a shutdown could not wait for because their decoder was still in a read, and the
+-- channels they read and write. A channel may only lose this side's reference once the thread has
+-- attached to it -- a spawned function starts after this one returns -- or it could be freed just
+-- as the thread reaches for it. The records are joined on a later start or shutdown once the
+-- thread has finished; if the process ends first, the OS reclaims both.
+---@class beat.ClosingClient
+---@field handle threading.Handle
+---@field commands threading.Channel
+---@field events threading.Channel
 
+---@class beat.AbandonedThreads
+---@field records beat.ClosingClient[]
+---@type beat.AbandonedThreads
+local abandoned = { records = {} }
+
+-- Only once the audio thread has joined: then no state on the other side can still be reaching for
+-- the channels, and closing this side's reference is what frees them.
 local function reap()
-	local handles = abandoned.handles
-	for at = #handles, 1, -1 do
-		local handle = handles[at]
-		if handle:done() then
-			pcall(handle.join, handle)
-			table.remove(handles, at)
+	local records = abandoned.records
+	for at = #records, 1, -1 do
+		local record = records[at]
+		if record.handle:done() then
+			pcall(record.handle.join, record.handle)
+			record.commands:close()
+			record.events:close()
+			table.remove(records, at)
 		end
 	end
 end
@@ -114,6 +127,8 @@ function AudioClient.attach(commands, events, handle)
 		audioIndex = nil,
 		loading = false,
 		loadingId = 0,
+		released = false,
+		unjoined = false,
 		dead = false,
 		error = nil,
 		onTrackEnd = nil,
@@ -382,6 +397,9 @@ function AudioClient:update(now)
 	if handle ~= nil and handle:done() then
 		self.handle = nil
 		local ok, err = pcall(handle.join, handle)
+		self.closed = true
+		self.commands:close()
+		self.events:close()
 		self.dead = true
 		self.loading = false
 		self.at = self:position()
@@ -434,29 +452,51 @@ function AudioClient:pcmState()
 	return self.written, self.floor
 end
 
---- Stops the audio thread and gives the channels back. Joining waits only so long: a decoder still
---- blocked on a network mount must not hold the window open while the app closes.
+--- Asks the audio thread to stop and gives the channels back. Joining waits only so long: a
+--- decoder still blocked on a network mount must not hold the window open. Answers whether the
+--- thread was joined; when it was not, the channels are kept alive for it and the caller must not
+--- give back the PCM ring the thread may still be writing.
+---@return boolean joined
 function AudioClient:shutdown()
-	if self.closed then return end
+	if self.closed then return not (self.released or self.unjoined) end
 	self.closed = true
 
-	self.commands:push({ kind = "quit" })
+	local commands, events = self.commands, self.events
+	commands:push({ kind = "quit" })
 	local handle = self.handle
 	self.handle = nil
-	if handle ~= nil then
-		for _ = 1, 10 do
-			if handle:done() then break end
-			threading.sleep(5)
-		end
-		if handle:done() then
-			pcall(handle.join, handle)
-		else
-			abandoned.handles[#abandoned.handles + 1] = handle
-		end
+	if handle == nil then
+		commands:close()
+		events:close()
+		return true
 	end
 
-	self.commands:close()
-	self.events:close()
+	for _ = 1, 10 do
+		if handle:done() then break end
+		threading.sleep(5)
+	end
+	if handle:done() then
+		pcall(handle.join, handle)
+		commands:close()
+		events:close()
+		return true
+	end
+
+	abandoned.records[#abandoned.records + 1] = { handle = handle, commands = commands, events = events }
+	self.unjoined = true
+	return false
+end
+
+--- Asks every thread to stop without waiting and without giving anything back. What the app calls
+--- as its window closes: the OS reclaims the threads and memory, and no Lua finalizer runs on an
+--- object a thread may still be using.
+function AudioClient:release()
+	if self.closed then return end
+	self.closed = true
+	self.released = true
+	self.unjoined = true
+	local commands = self.commands
+	if commands ~= nil then commands:push({ kind = "quit" }) end
 end
 
 return AudioClient

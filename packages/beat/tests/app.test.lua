@@ -1409,6 +1409,119 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 	App.services.playback.player:close()
 end)
 
+test.skipIf(not canRender)("gives a longer album the height its tracks need", function()
+	App:init({ scan = false })
+	App.services.settings.values.root = "/beat-fixtures"
+	App.services.settings.values.sidebarWidth = 264
+	App.services.settings.values.sidebarCollapsed = false
+	local library = Library.new("/beat-fixtures")
+	for trackAt = 1, 2 do
+		library:add(
+			{ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "Short " .. trackAt, artist = "Artist", album = "Short Album", albumArtist = "Artist", track = trackAt } },
+			{ path = "/beat-fixtures/Short/" .. trackAt .. ".wav", dir = "/beat-fixtures/Short", name = trackAt .. ".wav", ext = "wav" }
+		)
+	end
+	for trackAt = 1, 60 do
+		library:add(
+			{ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = string.format("Long %02d", trackAt), artist = "Artist", album = "Long Album", albumArtist = "Artist", track = trackAt } },
+			{ path = "/beat-fixtures/Long/" .. trackAt .. ".wav", dir = "/beat-fixtures/Long", name = trackAt .. ".wav", ext = "wav" }
+		)
+	end
+	library:finish()
+
+	local short, long
+	for _, album in ipairs(library.albums) do
+		if album.title == "Short Album" then short = album end
+		if album.title == "Long Album" then long = album end
+	end
+	test.truthy(short ~= nil, "the short album is in the library")
+	test.truthy(long ~= nil, "the long album is in the library")
+	App.services.library.current = library
+	App.services.scan.job = nil
+
+	App.page = { kind = "album", id = short.id }
+	local screen = wonderland.headless.new(function(window, assets)
+		App.window = window
+		App.assets = assets
+		App.services.covers:use(assets)
+		return require("beat.app.shell").view(App, window)
+	end, { width = 1200, height = 720 })
+
+	-- The page shares the collection record with the album opened after it at the same width.
+	screen:draw()
+	App.page = { kind = "album", id = long.id }
+	screen:draw()
+
+	local limit = App.services.scroll:limit(App:pageKey())
+	test.truthy(limit ~= nil and limit > 0, "the longer album publishes a scroll limit")
+
+	local elements = require("wonderland.element")
+	local function currentContext()
+		local layout = screen:getPlugin("layout")
+		local ctx
+		for _, value in pairs(layout.contexts) do ctx = value end
+		return ctx
+	end
+
+	-- The tallest box on the path to the table's heading is the collection's own column: its
+	-- height must be the long album's, not the height the short one left in the shared record.
+	local function columnHeight()
+		local ctx = currentContext()
+		local tree = ctx.screen
+		local function walk(index)
+			local node = tree:node(index)
+			local element = elements.pointers[node.element]
+			local value = element ~= nil and elements.textOf(element) or nil
+			if value == "TITLE" then return node.height end
+			local found = 0
+			for child = 0, node.childCount - 1 do
+				local nextIndex = tree.childIndices[node.firstChild + child - 1]
+				if nextIndex ~= nil then
+					local height = walk(nextIndex)
+					if height > found then found = height end
+				end
+			end
+			if found > 0 and node.height > found then return node.height end
+			return found
+		end
+		return walk(ctx.root)
+	end
+
+	local theme = App.services.appearance.theme
+	local metrics = require("beat.app.components.helpers.metrics")
+	local viewport = metrics.viewportHeight(App, screen.window.width, screen.window.height)
+	local contentHeight = limit + viewport - theme:space(20) - theme:space(32)
+	test.truthy(
+		columnHeight() >= contentHeight - 1,
+		"the rendered column is as tall as the long album's tracks need"
+	)
+
+	App:act({ type = "scroll", key = App:pageKey(), to = 1000000 })
+	screen:draw()
+	test.equal(App.services.scroll:offset(App:pageKey()), limit, "the page stops at its last row")
+
+	local function hasText(wanted)
+		local ctx = currentContext()
+		local tree = ctx.screen
+		local found = false
+		local function walk(index)
+			local node = tree:node(index)
+			local element = elements.pointers[node.element]
+			if element ~= nil and elements.textOf(element) == wanted then found = true end
+			for child = 0, node.childCount - 1 do
+				local nextIndex = tree.childIndices[node.firstChild + child - 1]
+				if nextIndex ~= nil and not found then walk(nextIndex) end
+			end
+		end
+		walk(ctx.root)
+		return found
+	end
+	test.truthy(hasText("Long 60"), "the last row is drawn at the scroll limit")
+
+	screen:close()
+	App.services.playback.player:close()
+end)
+
 --- A scan job whose tracks are already there, so a test drives the service's ingestion without
 --- waiting for a folder to be walked or a thread to start.
 ---@param events table[] # What the job still has to hand over

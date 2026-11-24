@@ -331,6 +331,87 @@ test.it("is loading until the requested track is heard", function()
 	client:shutdown()
 end)
 
+test.it("releases a blocked audio thread without waiting or closing its channels", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local commandAddress, eventAddress = commands:address(), events:address()
+
+	local handle = threading.spawn(function()
+		local threading = require("threading")
+		local inbox = threading.channelFromAddress(commandAddress)
+		local outbox = threading.channelFromAddress(eventAddress)
+		outbox:push({ kind = "ready" })
+		threading.sleep(300)
+		while true do
+			local command = inbox:pop() --[[@as any]]
+			if command == nil then
+				inbox:wait(20)
+			elseif type(command) == "table" and command.kind == "quit" then
+				break
+			end
+		end
+		outbox:push({ kind = "stopped" })
+		inbox:close()
+		outbox:close()
+	end)
+
+	test.truthy(events:wait(2000))
+	test.equal(events:pop() --[[@as table]].kind, "ready")
+
+	local client = AudioClient.attach(commands, events, handle)
+	local started = time.now()
+	client:release()
+	test.truthy(time.now() - started < 0.1, "release does not wait for the thread")
+
+	-- The channels are still open: the thread has not finished with them.
+	test.truthy(commands:push({ kind = "still-open" }), "release leaves the channels to the thread")
+
+	test.truthy(events:wait(2000))
+	test.equal(events:pop() --[[@as table]].kind, "stopped")
+	handle:join()
+	commands:close()
+	events:close()
+end)
+
+test.it("does not close the channels of a thread it could not join", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local commandAddress, eventAddress = commands:address(), events:address()
+
+	local handle = threading.spawn(function()
+		local threading = require("threading")
+		local inbox = threading.channelFromAddress(commandAddress)
+		local outbox = threading.channelFromAddress(eventAddress)
+		outbox:push({ kind = "ready" })
+		threading.sleep(500)
+		while true do
+			local command = inbox:pop() --[[@as any]]
+			if command == nil then
+				inbox:wait(20)
+			elseif type(command) == "table" and command.kind == "quit" then
+				break
+			end
+		end
+		outbox:push({ kind = "stopped" })
+		inbox:close()
+		outbox:close()
+	end)
+
+	test.truthy(events:wait(2000))
+	test.equal(events:pop() --[[@as table]].kind, "ready")
+
+	local client = AudioClient.attach(commands, events, handle)
+	local joined = client:shutdown()
+	test.falsy(joined, "a thread still sleeping could not be joined")
+	test.truthy(commands:push({ kind = "kept" }), "the channels are kept for the thread")
+
+	test.truthy(events:wait(3000))
+	test.equal(events:pop() --[[@as table]].kind, "stopped")
+	handle:join()
+	commands:close()
+	events:close()
+end)
+
 -- A source on a slow network mount blocks the thread reading it. The app thread must be free while
 -- that happens: it drains events and interpolates the position nothing else can move.
 test.it("does not block the app thread while the audio thread is stuck reading", function()

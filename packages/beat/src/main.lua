@@ -17,6 +17,14 @@ local function main()
 	platform.useMediaVolumeKeys()
 	platform.followUserRotation()
 	App:run()
+
+	-- The window is gone. Write what the services were holding, tell the audio and scan threads to
+	-- stop without waiting for a read that may take seconds, and leave. `os.exit` with a false
+	-- second argument skips the Lua finalizers: the threads are still alive, and giving back their
+	-- channels or rings from here is what used to freeze or crash the close.
+	App:flush()
+	App:releaseThreads()
+	os.exit(0, false)
 end
 
 local ok, err = xpcall(main, debug.traceback)
@@ -25,5 +33,7 @@ if not ok then
 	pcall(function()
 		require("beat.log").write("fatal", err)
 	end)
-	error(err, 0)
+	-- The same reason the close path skips finalizers: a fatal error must not wait on a thread.
+	io.stderr:write(tostring(err) .. "\n")
+	os.exit(1, false)
 end

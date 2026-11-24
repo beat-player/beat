@@ -608,13 +608,19 @@ end
 function Player:close()
 	endTrack(self, false)
 	if self.queue ~= nil then queueChanged(self) end
+	local joined = true
 	if self.player ~= nil then
 		if self.player.shutdown ~= nil then
-			self.player:shutdown()
+			joined = self.player:shutdown() ~= false
 		else
 			self.player:close()
 		end
 		self.player = nil
+	end
+	-- An audio thread that could not be joined may still be writing the spectrum's ring. That ring
+	-- is left to it, and the next player this object makes gets one of its own.
+	if not joined and self.pcm ~= nil then
+		self.pcm = PcmRing.shared()
 	end
 	self.queue = nil
 	self.loaded = false
@@ -624,8 +630,17 @@ function Player:close()
 	self.startAt = nil
 end
 
+--- Tells the audio thread to stop without waiting and without giving any memory back. The window is
+--- closing and the process is about to end, so the OS reclaims the thread, its readers and the
+--- rings. Nothing a thread can still touch is closed or freed here.
+function Player:release()
+	local backend = self.player
+	if backend ~= nil and backend.release ~= nil then backend:release() end
+end
+
 --- Gives back everything the player owns, including the spectrum's ring: what the app calls when
---- it is torn down, rather than when it moves to another track.
+--- it is torn down, rather than when it moves to another track. A ring an unjoined audio thread
+--- may still write is not freed; it was already replaced in `close` and is left to that thread.
 function Player:destroy()
 	self:close()
 	if self.pcm ~= nil then

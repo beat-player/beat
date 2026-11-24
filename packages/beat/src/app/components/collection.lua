@@ -22,6 +22,10 @@ local collection = {}
 ---@field phoneHero boolean
 ---@field stacked boolean
 ---@field hasSubtitle boolean
+---@field contentHeight number
+---@field heroHeight number
+---@field coverSize number
+---@field infoHeight number
 ---@field cover wonderland.StyleBuilder
 ---@field play wonderland.StyleBuilder
 ---@field info wonderland.StyleBuilder
@@ -59,6 +63,7 @@ local collection = {}
 ---@field metaText string
 ---@field subtitleText string?
 ---@field phoneHero boolean
+---@field mobile boolean
 ---@field title wonderland.StyleBuilder
 ---@field meta wonderland.StyleBuilder
 ---@field subtitle wonderland.StyleBuilder?
@@ -167,15 +172,23 @@ function collection.view(app, props)
 
 	-- The boxes and the header's cells depend on the window, the theme and the collection's shape,
 	-- not on anything that moves: they are kept for that shape and handed over again on the next
-	-- frame, rather than a fresh builder being interned for every scroll step.
+	-- frame, rather than a fresh builder being interned for every scroll step. The heights are part
+	-- of the shape -- two albums of different lengths share this record, and a column kept at the
+	-- first album's height is one the next album's rows cannot be scrolled down past.
 	local style = styles.of(theme, "collection", content) --[[@as beat.components.CollectionStyles]]
 	if
 		style.mobile ~= mobile
 		or style.phoneHero ~= phoneHero
 		or style.stacked ~= stacked
 		or style.hasSubtitle ~= hasSubtitle
+		or style.contentHeight ~= contentHeight
+		or style.heroHeight ~= heroHeight
+		or style.coverSize ~= coverSize
+		or style.infoHeight ~= infoHeight
 	then
 		style.mobile, style.phoneHero, style.stacked, style.hasSubtitle = mobile, phoneHero, stacked, hasSubtitle
+		style.contentHeight, style.heroHeight = contentHeight, heroHeight
+		style.coverSize, style.infoHeight = coverSize, infoHeight
 		style.cover = sty():size(coverSize, coverSize):radius(theme:radius("lg"))
 		style.play = sty()
 			:size(theme:px(52), theme:px(52)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
@@ -213,13 +226,18 @@ function collection.view(app, props)
 	-- each of them is as wide as its own ink rather than the page's width.
 	local lines = styles.of(theme, "collectionLines", content) --[[@as beat.components.CollectionLines]]
 	local subtitleText = props.subtitle
+	-- The title size follows the phone breakpoint, not the content width alone: a desktop and a
+	-- phone can share this record at the same content width, and the lines measured for one
+	-- breakpoint are the wrong width for the other.
 	if
 		lines.titleText ~= props.title
 		or lines.metaText ~= props.meta
 		or lines.subtitleText ~= subtitleText
 		or lines.phoneHero ~= phoneHero
+		or lines.mobile ~= mobile
 	then
 		lines.titleText, lines.metaText, lines.subtitleText, lines.phoneHero = props.title, props.meta, subtitleText, phoneHero
+		lines.mobile = mobile
 		local titleStyle = theme:s():text(titleSize):weight("bold"):fg(theme:color("text")):ellipsis()
 		local metaStyle = theme:s():text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
 		if phoneHero then

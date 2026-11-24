@@ -58,15 +58,20 @@ end
 local function dots(theme, size, colour)
 	---@type table<string, any>
 	local cache = theme:cache()
-	local kept = cache.trackRowDots --[[@as table<number, beat.components.TrackRowDots>?]]
-	if kept == nil then
-		kept = {}
-		cache.trackRowDots = kept
+	local bySize = cache.trackRowDots --[[@as table<number, table<string, beat.components.TrackRowDots>>?]]
+	if bySize == nil then
+		bySize = {}
+		cache.trackRowDots = bySize
 	end
-	local mark = kept[size]
+	local byColour = bySize[size]
+	if byColour == nil then
+		byColour = {}
+		bySize[size] = byColour
+	end
+	local mark = byColour[colour]
 	if mark == nil then
 		mark = { style = sty():size(size, size), draw = dotsDraw(size, colour) }
-		kept[size] = mark
+		byColour[colour] = mark
 	end
 	return div():style(mark.style):canvas(mark.draw)
 end

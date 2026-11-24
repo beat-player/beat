@@ -143,7 +143,10 @@ end
 --- device and the spectrum go with it.
 function Playback:reset()
 	self.player:close()
-	self.spectrum:clear()
+	-- `close` replaces the ring when the old audio thread could not be joined, so the spectrum is
+	-- made again around whatever ring the player will use next rather than left on the old one.
+	local pcm = assert(self.player.pcm)
+	self.spectrum = Spectrum.new(pcm.pointer)
 end
 
 -- Media controls
@@ -483,6 +486,12 @@ function Playback:close()
 	self.player.onQueueChanged = nil
 	self.player:destroy()
 	self.spectrum:clear()
+end
+
+--- The window is closing: tell the audio thread to stop without waiting for it or giving back
+--- what it may still use. The process ending is what reclaims the thread and its memory.
+function Playback:release()
+	self.player:release()
 end
 
 return Playback

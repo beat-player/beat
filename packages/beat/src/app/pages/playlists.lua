@@ -67,6 +67,7 @@ end
 --- was measured for: the page is built again on every scroll step.
 ---@class beat.pages.PlaylistsPillStyles
 ---@field theme beat.Theme
+---@field mix number
 ---@field mobile boolean
 ---@field content number
 ---@field nameSize number
@@ -403,6 +404,7 @@ function playlists.view(app, page, window)
 		if
 			kept == nil
 			or kept.theme ~= theme
+			or kept.mix ~= theme.mix
 			or kept.mobile ~= mobile
 			or kept.content ~= content
 			or kept.nameSize ~= nameSize
@@ -433,6 +435,7 @@ function playlists.view(app, page, window)
 			local editWidth = math.min(content, math.max(estimatedWidth, theme:px(mobile ? 240 : 190)))
 			built = {
 				theme = theme,
+				mix = theme.mix,
 				mobile = mobile,
 				content = content,
 				nameSize = nameSize,
@@ -509,7 +512,7 @@ function playlists.view(app, page, window)
 	-- The last pill makes a new tag: accent-edged like the New playlist tile, so the two ways to
 	-- make something look alike, and placed where the tag it makes will appear.
 	local newLabel = "New tag"
-	local newLabelStyles = styles.of(theme, "playlistsNewLabel", nameSize) --[[@as { base: wonderland.StyleBuilder?, label: wonderland.StyleBuilder? }]]
+	local newLabelStyles = styles.of(theme, "playlistsNewLabel", nameSize) --[[@as { base: wonderland.StyleBuilder?, label: wonderland.StyleBuilder?, width: number? }]]
 	local labelBase = newLabelStyles.base
 	if labelBase == nil then
 		labelBase = theme:s():text(nameSize):weight("semibold")
@@ -519,9 +522,9 @@ function playlists.view(app, page, window)
 		math.max(measure.width(app, newLabel, assert(labelBase)) or 0, measure.estimate(newLabel, nameSize, 0.54)) + 1
 	)
 	local labelText = newLabelStyles.label
-	if labelText == nil then
+	if labelText == nil or newLabelStyles.width ~= newLabelWidth then
 		labelText = theme:s():w(newLabelWidth):text(nameSize):weight("semibold"):fg(theme:color("accent"))
-		newLabelStyles.label = labelText
+		newLabelStyles.width, newLabelStyles.label = newLabelWidth, labelText
 	end
 	local newIconSize = theme:px(mobile and 18 or 15)
 	local newWidth = pillPadLeft + newIconSize + theme:px(6) + newLabelWidth + theme:px(14)

@@ -5,21 +5,27 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local cover = {}
 
--- The letter an album without a picture shows, kept per album: a cover is asked for on every
--- frame, and matching and upper-casing its title each time is a string the frame did not need.
----@type table<beat.Album, string>
+-- The letter an album without a picture shows, kept per album with the title it was made from: a
+-- cover is asked for on every frame, and matching and upper-casing its title each time is a string
+-- the frame did not need. The title is checked too, because an album record outlives the scan
+-- that filled it and a cache keyed by the record alone would keep the first title's letter.
+---@class beat.components.CoverInitial
+---@field title string
+---@field initial string
+
+---@type table<beat.Album, beat.components.CoverInitial>
 local initials = setmetatable({}, { __mode = "k" })
 
 ---@param album beat.Album
 ---@return string
 local function initialOf(album)
 	local known = initials[album]
-	if known == nil then
+	if known == nil or known.title ~= album.title then
 		local first = album.title:match("^[%z\1-\127\194-\244][\128-\191]*") or ""
-		known = first:upper()
+		known = { title = album.title, initial = first:upper() }
 		initials[album] = known
 	end
-	return known
+	return known.initial
 end
 
 ---@class beat.components.CoverProps
