@@ -10,8 +10,11 @@ local TONE = FIXTURES .. "/tone.wav"
 local TAGGED = FIXTURES .. "/tagged.flac"
 local COVER = FIXTURES .. "/cover.png"
 
+---@return string
 local function tempDir()
-	local dir = os.tmpname() .. "-beat-scan"
+	-- Normalized, as the scanner normalizes the root it is given: macOS's TMPDIR ends in a
+	-- separator, and a path built from a doubled one is not the path the scan reports.
+	local dir = path.normalize(os.tmpname() .. "-beat-scan")
 	fs.mkdirAll(dir)
 	assert(fs.isdir(dir))
 	return dir

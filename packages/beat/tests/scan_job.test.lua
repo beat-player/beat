@@ -4,6 +4,7 @@
 -- walk, the inspector threads and the job that the service polls -- not an output format.
 local test = require("lde-test")
 local fs = require("fs")
+local path = require("path")
 local threading = require("threading")
 local ScanJob = require("beat.app.services.scan.job")
 local time = require("wonderland.time")
@@ -13,7 +14,10 @@ local TONE = assert(fs.read("tests/fixtures/tone.wav"))
 ---@param suffix string
 ---@return string
 local function folder(suffix)
-	local root = os.tmpname() .. suffix
+	-- Normalized, as the scanner normalizes the root it is given: a temporary directory can come
+	-- back with a doubled separator (macOS's TMPDIR ends in one), and a path built from it would
+	-- not be the path the scan reports for the same file.
+	local root = path.normalize(os.tmpname() .. suffix)
 	os.remove(root)
 	fs.mkdirAll(root)
 	return root
@@ -178,8 +182,10 @@ end)
 
 test.it("takes a file whose modification time has not changed from the records it was given", function()
 	local root = folder("-beat-scan-reuse")
-	local unchanged = root .. "/unchanged.wav"
-	local changed = root .. "/changed.wav"
+	-- Joined with the platform's separator, as the scanner joins the paths it reports: a record is
+	-- matched to a file by its path, and Windows's is written with backslashes.
+	local unchanged = path.join(root, "unchanged.wav")
+	local changed = path.join(root, "changed.wav")
 	assert(fs.write(unchanged, TONE))
 	assert(fs.write(changed, TONE))
 

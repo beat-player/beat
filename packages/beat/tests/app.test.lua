@@ -228,6 +228,9 @@ test.skipIf(not canRender)("reuses the page-transition styles", function()
 end)
 
 test.it("wakes the ticker when navigation starts an animation", function()
+	-- Made here rather than left from the test before: that one draws, and is skipped where no
+	-- GPU device can be made, which left this one with no app at all.
+	App:init({ scan = false })
 	local ticker = App.ticker
 	App.page = { kind = "home" }
 	App.ticker = { due = 99 }

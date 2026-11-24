@@ -302,14 +302,19 @@ jobs:
           name: ${{ matrix.binary }}
           path: packaging/flatpak
 
+      # flatpak-builder is run directly rather than through flatpak/flatpak-github-actions: that
+      # action always passes --install-deps-from, which updates the image's runtimes in place, and
+      # an update inside this container fails ("Invalid cross-device link"). The image already has
+      # the SDK and platform the manifest names, and the bundle only packs a prebuilt binary, so
+      # nothing needs installing or updating.
       - name: Build the bundle
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: ${{ matrix.bundle }}
-          manifest-path: packaging/flatpak/io.github.beat_player.Beat.yml
-          arch: ${{ matrix.arch }}
-          cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
-          upload-artifact: false
+        shell: bash
+        run: |
+          flatpak-builder --repo=repo --disable-rofiles-fuse --force-clean --default-branch=master \
+            --arch="${{ matrix.arch }}" flatpak_app packaging/flatpak/io.github.beat_player.Beat.yml
+          flatpak build-bundle --arch="${{ matrix.arch }}" \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo "${{ matrix.bundle }}" io.github.beat_player.Beat master
 
       - name: Upload nightly release
         if: inputs.channel == 'nightly'
