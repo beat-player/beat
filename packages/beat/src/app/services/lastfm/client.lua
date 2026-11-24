@@ -11,7 +11,7 @@ local curlOk, curl = pcall(require, "curl-sys")
 
 local API_ROOT = protocol.API_ROOT
 local AUTH_PAGE = protocol.AUTH_PAGE
-local USER_AGENT = "beat/0.1.1"
+local USER_AGENT = "beat/0.1.2"
 local REQUEST_TIMEOUT = 15
 local AUTH_POLL = 3
 local AUTH_LIFETIME = 60 * 60

@@ -8,7 +8,7 @@
 -- LDE_RELEASE is still read for local scripts written before the name changed.
 local build = require("lde-build")
 
-local BASE_VERSION = "0.1.1"
+local BASE_VERSION = "0.1.2"
 
 -- Either flag turns a build into a release. An empty value is not a flag, so a script that sets
 -- only one of them still names what it means.

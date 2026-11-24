@@ -11,7 +11,9 @@ local version = require("beat.version")
 
 local time = wonderland.time
 
-local RELEASES_URL = "https://api.github.com/repos/bycruz/beat/releases?per_page=20"
+local RELEASES_URL = "https://api.github.com/repos/beat-player/beat/releases?per_page=20"
+-- Which way two commits lie: `status` is "ahead" when the second comes after the first.
+local COMPARE_URL = "https://api.github.com/repos/beat-player/beat/compare/%s...%s"
 -- A launch checks once, a little after the window is up, rather than while the library is being
 -- read and the first page is still being built.
 local CHECK_DELAY = 8
@@ -358,6 +360,53 @@ function Update:checked(response, manual)
 	end
 
 	local offer = Update.pick(releases, self:channel(), self.installed)
+	local installed = self.installed
+	if offer ~= nil and offer.commit ~= nil and installed.nightly and installed.hash ~= nil then
+		-- A nightly names only its commit, and a different commit is not a newer one: a build made
+		-- from a later commit than the last nightly -- this machine's own, or one whose nightly is
+		-- still being built -- would be offered the older one. GitHub says which way the two lie.
+		self:compare(offer, manual)
+		return
+	end
+	self:present(offer, manual)
+end
+
+---@param self beat.UpdateService
+---@param response beat.HttpResponse
+---@param offer beat.UpdateOffer
+---@param manual boolean
+local function compared(self, response, offer, manual)
+	self.request = nil
+	local newer = false
+	if response.error == nil and response.status == 200 and type(response.body) == "string" then
+		local body = response.body --[[@as string]]
+		local ok, decoded = pcall(|| -> json.decode(body):unpack())
+		-- "ahead": the nightly's commit is the installed one with more after it.
+		newer = ok and type(decoded) == "table" and decoded.status == "ahead"
+	end
+	self:present(newer and offer or nil, manual)
+end
+
+--- Asks GitHub whether the nightly's commit comes after the installed one, and offers it only
+--- when it does. Anything else -- the same history, an older nightly, a commit GitHub has never
+--- seen (an unpushed build) -- leaves the build as it is.
+---@param offer beat.UpdateOffer
+---@param manual boolean
+function Update:compare(offer, manual)
+	self.request = self.http:request({
+		url = COMPARE_URL:format(self.installed.hash, offer.commit),
+		headers = {
+			["Accept"] = "application/vnd.github+json",
+			["User-Agent"] = "beat/" .. self.installedVersion
+		},
+		onDone = |response| -> compared(self, response, offer, manual)
+	})
+end
+
+--- What a check found, shown: the offer and the dialog for an automatic check, or up to date.
+---@param offer beat.UpdateOffer?
+---@param manual boolean
+function Update:present(offer, manual)
 	self.offer = offer
 	if offer == nil then
 		self.status = "upToDate"

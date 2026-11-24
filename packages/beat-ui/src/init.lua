@@ -26,7 +26,7 @@ local ui = {}
 ---@field listRow fun(ctx: beat.ui.Context, props: beat.ui.ListRowProps): wonderland.Element
 ---@field rating fun(ctx: beat.ui.Context, props: beat.ui.RatingProps): wonderland.Element
 
-ui.version = "0.1.1"
+ui.version = "0.1.2"
 ui.Context = require("beat-ui.context")
 ui.button = require("beat-ui.button").view
 ui.icon = require("beat-ui.icon").view

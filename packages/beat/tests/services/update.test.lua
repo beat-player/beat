@@ -2,6 +2,7 @@
 -- string reads, how two versions order, which file a platform installs, and whether a release
 -- list has anything newer than the build that is running.
 local test = require("lde-test")
+local json = require("json")
 local jit = require("jit")
 local platform = require("beat.platform")
 local update = require("beat.app.services.update")
@@ -157,4 +158,23 @@ test.it("leaves a platform with no asset unoffered", function()
 	local installed = { base = "0.1.0", nightly = false, dev = false, platform = { os = "Plan9", arch = "x64" } }
 	test.equal(update.pick({ release("v0.2.0") }, "release", installed), nil)
 	test.equal(update.pick({ nightly(NIGHTLY_SHA) }, "nightly", installed), nil)
+end)
+
+test.it("reads GitHub's answer as the JSON text it arrives as", function()
+	-- The list reaches the service as a response body, not as tables: a check that read it
+	-- through the decoder's document handle saw no releases at all and said every build was up to
+	-- date. This goes through the same decode the service does.
+	local service = setmetatable({
+		installed = update.parseVersion("0.1.0-nightly+0000000"),
+		settings = { values = { updateChannel = "nightly" } },
+		toasts = { show = function() end },
+		offered = true,
+		dirty = false
+	}, { __index = update })
+
+	service:checked({ status = 200, body = json.encode({ nightly(NIGHTLY_SHA) }) }, true)
+
+	test.equal(service.error, nil)
+	test.equal(service.status, "available")
+	test.equal(service.offer and service.offer.commit, NIGHTLY_SHA:sub(1, 7))
 end)
