@@ -7,7 +7,7 @@
 # with `beat` (from beat-linux-<arch>.zip) placed in packaging/flatpak/ first.
 id: io.github.beat_player.Beat
 runtime: org.freedesktop.Platform
-runtime-version: "24.08"
+runtime-version: "26.08"
 sdk: org.freedesktop.Sdk
 command: beat
 finish-args:

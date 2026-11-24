@@ -300,13 +300,14 @@ test.it("gives back the C callback each download watches its status with", funct
 	-- A run of downloads that kept each one used them all up: an HTTP download then fails because
 	-- its status cannot be watched, and nothing else in the process can make a callback.
 	--
-	-- The downloads go to a port on this machine nothing listens on. They fail at once with a
-	-- refused connection, but each is still a libcurl transfer with its callbacks made and given
-	-- back, which is what is counted. A `file://` source would have kept this off the network too,
+	-- The downloads go to port 0 on this machine, which nothing can listen on. They fail at once
+	-- on every system -- no connection is ever attempted that a firewall could leave hanging --
+	-- but each is still a libcurl transfer with its callbacks made and given back, which is what
+	-- is counted. A `file://` source would have kept this off the network too,
 	-- but curl-sys builds libcurl without the file protocol, so every such download failed as
 	-- "Unsupported protocol" before this test could say anything about callbacks.
 	local dir = tempDir()
-	local url = "http://127.0.0.1:1/source.bin"
+	local url = "http://127.0.0.1:0/source.bin"
 
 	local service = Http.new({})
 	local count, done = 2000, 0

@@ -1,7 +1,7 @@
-# Each matrix job compiles, packages and uploads its own asset. There is deliberately no
-# aggregate job: a failed target must not block or remove the assets the others built. The test
-# job is the one gate in front of all of them: nothing is built, so nothing is uploaded over the
-# nightly or a release, unless the whole suite passes.
+# Each matrix job compiles, tests, packages and uploads its own asset. There is deliberately no
+# aggregate job: a failed target must not block or remove the assets the others built. Each job
+# runs the whole suite on its own platform after compiling and before anything is uploaded, so a
+# platform whose tests fail publishes nothing over the nightly or a release.
 name: Build Beat
 
 on:
@@ -23,33 +23,7 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 jobs:
-  test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - uses: lde-org/setup-lde@v2
-        with:
-          version: nightly
-
-      # The suite draws screens headless, so it needs a Vulkan driver: lavapipe draws on the CPU.
-      # Audio tests open ALSA's null device, and text is measured with a real font.
-      - name: Install test dependencies
-        run: >
-          sudo apt-get update && sudo apt-get install -y glslang-tools mesa-vulkan-drivers
-          libvulkan1 libasound2t64 fontconfig fonts-dejavu-core
-
-      - name: Install dependencies
-        run: lde sync -C packages/beat
-
-      - name: Run tests
-        run: lde test -C packages/beat
-
   build:
-    needs: test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -114,13 +88,16 @@ jobs:
           path: glslang
           key: glslang-16.6.0-windows-x86_64
 
-      - name: Install shader compiler (Linux)
+      # The suite draws screens headless and needs a Vulkan device for that: lavapipe draws on the
+      # CPU on Linux, MoltenVK on macOS. Where no device can be made (a Windows runner has none),
+      # the drawing tests skip themselves and everything else still runs.
+      - name: Install shader compiler and test driver (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools mesa-vulkan-drivers libvulkan1
 
-      - name: Install shader compiler (macOS)
+      - name: Install shader compiler and test driver (macOS)
         if: runner.os == 'macOS'
-        run: brew install glslang
+        run: brew install glslang molten-vk vulkan-loader
 
       - name: Install shader compiler (Windows)
         if: runner.os == 'Windows'
@@ -138,6 +115,10 @@ jobs:
       - name: Build ${{ matrix.target }}
         shell: bash
         run: lde compile -C packages/beat --outfile "$OUTFILE"
+
+      - name: Test ${{ matrix.target }}
+        shell: bash
+        run: lde test -C packages/beat
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
@@ -185,7 +166,6 @@ jobs:
           fail_on_unmatched_files: true
 
   android:
-    needs: test
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
@@ -247,11 +227,16 @@ jobs:
             packages/*/target/git2-sys
           key: native-deps-ubuntu-22.04-x64-${{ matrix.target }}
 
-      - name: Install shader compiler
-        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+      - name: Install shader compiler and test driver
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools mesa-vulkan-drivers libvulkan1
 
       - name: Install dependencies
         run: lde sync -C packages/beat
+
+      # An APK cannot run here, so the suite runs on this runner's Linux build of the same code:
+      # what the phone runs is the Lua it tests, and a failure stops the APK being published.
+      - name: Test
+        run: lde test -C packages/beat
 
       - name: Build ${{ matrix.target }}
         run: lde compile -C packages/beat --target "$TARGET" --outfile "$OUTFILE"
@@ -280,16 +265,18 @@ jobs:
           fail_on_unmatched_files: true
 
   # The Linux binary from the build job, packed as a Flatpak bundle. It runs once that job is done
-  # even when another platform failed: a Windows failure must not hold back the Linux packages. It
-  # still never runs when the tests failed, since `!cancelled()` alone would let it start with no
-  # build behind it.
+  # even when another platform failed: a Windows failure must not hold back the Linux packages. A
+  # Linux job whose tests failed uploaded no binary, so there is nothing for this one to pack.
   flatpak:
-    needs: [test, build]
-    if: ${{ !cancelled() && needs.test.result == 'success' }}
+    needs: build
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    # The image ships the SDK of the manifest's runtime already installed. Keep the two versions the
+    # same: a runtime the image does not carry is installed or updated inside the container, which
+    # fails there ("Invalid cross-device link") and takes the build down with it.
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
       options: --privileged
     strategy:
       fail-fast: false
@@ -344,10 +331,11 @@ jobs:
           fail_on_unmatched_files: true
 
   # The Linux binary from the build job, packed as an AppImage; see packaging/appimage/build.sh.
-  # Like the Flatpak, it does not wait on the other platforms succeeding, but needs the tests.
+  # Like the Flatpak, it does not wait on the other platforms succeeding, and has no binary to pack
+  # when the Linux job's tests failed.
   appimage:
-    needs: [test, build]
-    if: ${{ !cancelled() && needs.test.result == 'success' }}
+    needs: build
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
