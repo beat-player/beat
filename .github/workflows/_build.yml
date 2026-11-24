@@ -123,6 +123,16 @@ jobs:
           Remove-Item "packages/beat/$env:ARCHIVE" -Force -ErrorAction SilentlyContinue
           Compress-Archive -Path "packages/beat/$env:OUTFILE" -DestinationPath "packages/beat/$env:ARCHIVE"
 
+      # The Flatpak packs this same binary rather than building its own; see the flatpak job.
+      - name: Keep the Linux binary for the Flatpak
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: beat-${{ matrix.target }}
+          path: packages/beat/${{ matrix.outfile }}
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload nightly release
         if: inputs.channel == 'nightly'
         uses: softprops/action-gh-release@v3
@@ -238,4 +248,120 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           files: packages/beat/${{ matrix.outfile }}
+          fail_on_unmatched_files: true
+
+  # The Linux binary from the build job, packed as a Flatpak bundle. It runs once that job is done
+  # even when another platform failed: a Windows failure must not hold back the Linux packages.
+  flatpak:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            binary: beat-linux-x86-64
+            bundle: beat-linux-x86-64.flatpak
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            binary: beat-linux-aarch64
+            bundle: beat-linux-aarch64.flatpak
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Fetch the Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: packaging/flatpak
+
+      - name: Build the bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ${{ matrix.bundle }}
+          manifest-path: packaging/flatpak/io.github.beat_player.Beat.yml
+          arch: ${{ matrix.arch }}
+          cache-key: flatpak-builder-${{ matrix.arch }}-${{ github.sha }}
+          upload-artifact: false
+
+      - name: Upload nightly release
+        if: inputs.channel == 'nightly'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          overwrite_files: true
+          files: ${{ matrix.bundle }}
+          fail_on_unmatched_files: true
+
+      - name: Upload release asset
+        if: inputs.channel == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ matrix.bundle }}
+          fail_on_unmatched_files: true
+
+  # The Linux binary from the build job, packed as an AppImage; see packaging/appimage/build.sh.
+  # Like the Flatpak, it does not wait on the other platforms succeeding.
+  appimage:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            binary: beat-linux-x86-64
+            appimage: beat-linux-x86-64.AppImage
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            binary: beat-linux-aarch64
+            appimage: beat-linux-aarch64.AppImage
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Fetch the Linux binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: linux
+
+      - name: Build the AppImage
+        shell: bash
+        run: packaging/appimage/build.sh linux/beat "${{ matrix.arch }}" "${{ matrix.appimage }}"
+
+      - name: Upload nightly release
+        if: inputs.channel == 'nightly'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          prerelease: true
+          overwrite_files: true
+          files: ${{ matrix.appimage }}
+          fail_on_unmatched_files: true
+
+      - name: Upload release asset
+        if: inputs.channel == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: ${{ matrix.appimage }}
           fail_on_unmatched_files: true

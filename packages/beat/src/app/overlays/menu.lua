@@ -67,8 +67,15 @@ function menu.new(app, params)
 	local context = params.menu ~= nil and CONTEXT[params.menu] or nil
 	if context == nil or params.id == nil then return nil end
 	if context(app, params.id) == nil then return nil end
+	-- A right-click says where it was. A tap on a menu button does not, and is answered while the
+	-- finger is still down, so the pointer is where the button is and the menu opens beside it.
+	local x, y = params.x, params.y
+	if x == nil or y == nil then
+		local pointer = app.layoutPlugin ~= nil and app.window ~= nil and app.layoutPlugin:pointer(app.window) or nil
+		x, y = pointer?.x or 0, pointer?.y or 0
+	end
 	---@type beat.MenuState
-	return { menu = params.menu, id = params.id, x = params.x or 0, y = params.y or 0 }
+	return { menu = params.menu, id = params.id, x = x, y = y }
 end
 
 ---@param app beat.App

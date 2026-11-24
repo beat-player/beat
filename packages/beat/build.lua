@@ -4,13 +4,17 @@
 -- `lde compile`d executable alike.
 --
 -- The version is generated the same way: `require("beat.version")` is "0.1.0" in a release build
--- and "0.1.0-nightly+<short-hash>" in every other build. CI sets LDE_RELEASE=1 for a release.
+-- and "0.1.0-nightly+<short-hash>" in every other build. CI sets BEAT_RELEASE=1 for a release;
+-- LDE_RELEASE is still read for local scripts written before the name changed.
 local build = require("lde-build")
 
-local BASE_VERSION = "0.1.0"
+local BASE_VERSION = "0.1.1"
 
-local releaseEnv = os.getenv("LDE_RELEASE")
-local release = releaseEnv ~= nil and releaseEnv ~= ""
+-- Either flag turns a build into a release. An empty value is not a flag, so a script that sets
+-- only one of them still names what it means.
+local beatRelease = os.getenv("BEAT_RELEASE")
+local ldeRelease = os.getenv("LDE_RELEASE")
+local release = (beatRelease ~= nil and beatRelease ~= "") or (ldeRelease ~= nil and ldeRelease ~= "")
 
 local hash
 if not release then
@@ -42,9 +46,7 @@ local escapes = { [34] = '\\"', [92] = "\\\\", [9] = "\\t", [10] = "\\n", [13] =
 --- Escapes the bytes of a binary so they survive as a Lua string literal.
 ---@param data string
 local function toLuaLiteral(data)
-	return (data:gsub("[%z\1-\31\\\"]", function(char)
-		return escapes[char:byte()] or string.format("\\%03d", char:byte())
-	end))
+	return (data:gsub("[%z\1-\31\\\"]", char -> escapes[char:byte()] or string.format("\\%03d", char:byte())))
 end
 
 local icon = build:read("assets/icon-256.png")

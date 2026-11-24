@@ -5,7 +5,6 @@ local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local PlaylistArt = require("beat.app.components.playlist_art")
 local collection = require("beat.app.components.collection")
-local Smart = require("beat.app.services.collections.smart")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -47,7 +46,8 @@ function playlistPage.view(app, page, window)
 	local duration = 0
 	for _, track in ipairs(tracks) do duration += track.duration end
 
-	local subtitle = builtin and (Smart.subtitle(playlist) or "Smart playlist") or "Playlist"
+	-- A built-in list's name already says what it holds, so it has no line under it.
+	local subtitle = not builtin and "Playlist" or nil
 	if not builtin and playlist.autoTagId ~= nil then
 		subtitle = "Auto playlist"
 	elseif not builtin and playlist.smart and #tagNames > 0 then

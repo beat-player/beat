@@ -10,7 +10,7 @@
 			"path": "../beat-ui"
 		},
 		"wonderland": {
-			"version": "^0.1.18"
+			"version": "^0.1.19"
 		},
 		"fs": {
 			"version": "^0.3.2"
@@ -58,7 +58,16 @@
 		"permissions": [
 			"android.permission.INTERNET",
 			"android.permission.READ_MEDIA_AUDIO",
-			"android.permission.READ_EXTERNAL_STORAGE"
+			"android.permission.READ_EXTERNAL_STORAGE",
+			"android.permission.FOREGROUND_SERVICE",
+			"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+		],
+		"dex": "src/assets/media.dex",
+		"services": [
+			{
+				"name": "beat.PlaybackService",
+				"foregroundServiceType": "mediaPlayback"
+			}
 		]
 	},
 	"$schema": "https://raw.githubusercontent.com/lde-org/lde/master/schemas/lde.schema.json"

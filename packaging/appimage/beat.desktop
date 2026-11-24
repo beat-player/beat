@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=beat
+GenericName=Music Player
+Comment=A small, fast music player for your local library
+Exec=beat
+Icon=beat
+Terminal=false
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=music;player;audio;library;playlist;

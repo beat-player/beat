@@ -99,6 +99,7 @@ local TRAY_MESSAGES = {
 ---@field system beat.SystemService
 ---@field tasks beat.TasksService
 ---@field toasts beat.ToastsService
+---@field update beat.UpdateService
 
 --- The window calls the app makes that the layout's own window alias does not name: a backend may
 --- have them or not, and the app asks for them where it can. Optional fields keep a plain
@@ -530,6 +531,9 @@ function App:init(opts)
 	collection:provide("options", opts)
 	collection:provide("registry", self.registry)
 	collection:provide("settingsValues", settingsValues)
+	-- The app itself, for the one service that replaces the running program and must hand it the
+	-- whole app rather than a piece of the screen.
+	collection:provide("app", self)
 	collection:provide("window", || -> self.window)
 	collection:provide("pointer", function()
 		if self.window == nil or self.layoutPlugin == nil then return nil end

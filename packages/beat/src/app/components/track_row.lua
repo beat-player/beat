@@ -36,9 +36,9 @@ local TOGGLE_PLAY = { type = "togglePlay" }
 local menus = setmetatable({}, { __mode = "k" })
 ---@type table<beat.Track, fun(stars: number): table>
 local rates = setmetatable({}, { __mode = "k" })
--- The menu a phone's three dots open, by track and by the row's width: a tap has no pointer's
--- place to open a menu at, so it opens at the page's right edge and the overlay clamps it in.
----@type table<beat.Track, table<number, table>>
+-- The menu a phone's three dots open, one per track. The message names no place: the menu opens
+-- where the tap was (see `beat.MenuOverlay`), next to the dots.
+---@type table<beat.Track, table>
 local mores = setmetatable({}, { __mode = "k" })
 
 ---@param track beat.Track
@@ -59,22 +59,14 @@ local function menuFor(track)
 	return menu
 end
 
---- The track menu at a place a tap can give: the page's right edge at its top, which the overlay
---- clamps inside the window. A later frame at another width gets its own message rather than
---- moving this one.
+--- The track menu a tap on the dots opens.
 ---@param track beat.Track
----@param width number
 ---@return table
-local function moreFor(track, width)
-	local byWidth = mores[track]
-	if byWidth == nil then
-		byWidth = {}
-		mores[track] = byWidth
-	end
-	local more = byWidth[width]
+local function moreFor(track)
+	local more = mores[track]
 	if more == nil then
-		more = { type = "open", overlay = "menu", menu = "track", id = track.id, x = width, y = 0 }
-		byWidth[width] = more
+		more = { type = "open", overlay = "menu", menu = "track", id = track.id }
+		mores[track] = more
 	end
 	return more
 end
@@ -257,7 +249,7 @@ function trackRow.view(app, props)
 		local size = theme:px(44)
 		children[#children + 1] = ui.iconButton(
 			assert(props.ui),
-			{ size = size, onClick = moreFor(track, width), content = dots(size, theme:color("muted")) }
+			{ size = size, onClick = moreFor(track), content = dots(size, theme:color("muted")) }
 		)
 	end
 

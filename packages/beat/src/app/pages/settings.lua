@@ -343,10 +343,84 @@ function settings.view(app, page, window)
 		width = column
 	})
 
+	local updateService = app.services.update
+	local channelControl, channelWidth = segmented({
+		{
+			label = "Release",
+			message = { type = "updateChannel", value = "release" },
+			selected = updateService:channel() == "release"
+		},
+		{
+			label = "Nightly",
+			message = { type = "updateChannel", value = "nightly" },
+			selected = updateService:channel() == "nightly"
+		}
+	})
+
+	local updateStatus = updateService.status
+	local updateDescription
+	local updateLabel
+	local updateMessage
+	---@type "primary"|"secondary"|"quiet"
+	local updateVariant = "secondary"
+	if updateStatus == "checking" then
+		updateDescription = "Checking…"
+		updateLabel = "Checking…"
+		updateMessage = { type = "keep" }
+		updateVariant = "quiet"
+	elseif updateStatus == "downloading" then
+		local percent = updateService.progress ~= nil and math.floor(updateService.progress * 100) or nil
+		updateDescription = percent ~= nil and ("Downloading… " .. percent .. "%") or "Downloading…"
+		updateLabel = "Downloading…"
+		updateMessage = { type = "keep" }
+		updateVariant = "quiet"
+	elseif updateStatus == "ready" then
+		updateDescription = "Restart to finish updating"
+		updateLabel = "Restart"
+		updateMessage = { type = "relaunchUpdate" }
+		updateVariant = "primary"
+	elseif updateStatus == "available" then
+		local label = updateService.offer ~= nil and updateService.offer.label or "An update"
+		updateDescription = label .. " is available"
+		updateLabel = "Update"
+		updateMessage = { type = "applyUpdate" }
+		updateVariant = "primary"
+	elseif updateStatus == "upToDate" then
+		updateDescription = "Up to date"
+		updateLabel = "Check"
+		updateMessage = { type = "checkForUpdates" }
+	elseif updateStatus == "failed" then
+		updateDescription = "Could not check: " .. (updateService.error or "unknown error")
+		updateLabel = "Check"
+		updateMessage = { type = "checkForUpdates" }
+	elseif updateStatus == "unsupported" then
+		updateDescription = "Not available in this build"
+		updateLabel = "Check"
+		updateMessage = { type = "checkForUpdates" }
+	else
+		updateDescription = "Check for a new version"
+		updateLabel = "Check"
+		updateMessage = { type = "checkForUpdates" }
+	end
+	local updateButtonWidth = theme:px(narrow ? 104 : 112)
+	local updateButton = ui.button(
+		ctx,
+		{
+			label = updateLabel,
+			onClick = updateMessage,
+			variant = updateVariant,
+			height = theme:px(28),
+			width = updateButtonWidth
+		}
+	)
+	local autoUpdates, autoUpdatesWidth = settingsList.toggle(app, {
+		on = values.checkUpdates ~= false,
+		onClick = { type = "checkUpdates", value = values.checkUpdates == false }
+	})
+
 	local versionBadge, versionBadgeWidth = settingsList.badge(app, version)
 	local versionRow = settingsList.row(app, {
 		label = "beat",
-		description = "local files only · wonderland + treble · Ionicons",
 		badge = versionBadge,
 		badgeWidth = versionBadgeWidth,
 		width = column
@@ -388,6 +462,30 @@ function settings.view(app, page, window)
 		title = "About",
 		rows = {
 			versionRow,
+			settingsList.row(app, {
+				label = "Update channel",
+				description = "Release is stable; Nightly is every new build",
+				control = channelControl,
+				controlWidth = channelWidth,
+				controlHeight = theme:px(32),
+				width = column
+			}),
+			settingsList.row(app, {
+				label = "Updates",
+				description = updateDescription,
+				control = updateButton,
+				controlWidth = updateButtonWidth,
+				controlHeight = theme:px(28),
+				width = column
+			}),
+			settingsList.row(app, {
+				label = "Check automatically",
+				description = "Look for a new build once a launch",
+				control = autoUpdates,
+				controlWidth = autoUpdatesWidth,
+				controlHeight = theme:px(26),
+				width = column
+			}),
 			settingsList.row(app, {
 				label = "Project",
 				description = "Source code and issue tracker",

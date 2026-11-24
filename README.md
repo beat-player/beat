@@ -5,21 +5,21 @@
 <h1 align="center">beat</h1>
 
 <p align="center">
-  <strong>A small, fast desktop music player.</strong>
+  <strong>A small, fast and fully customizable music player.</strong>
 </p>
 
 ![beat playing the home screen](docs/screenshots/home.png)
 
 ## Features
 
-- **Executable size.** The native executable is 4.1 MB. It contains the application, the renderer, and the audio engine. You do not install a runtime or a browser.
-- **Memory use.** An empty window uses approximately 130 MB RSS. A library of 4,054 tracks uses approximately 166 MB RSS. Scan processes use approximately 60 MB RSS in total.
-- **Parallel scan.** The application does not scan the music folder in the window process. A scan coordinator starts four inspector processes. The inspectors read files at the same time. A network folder can keep several reads active. Tracks and covers appear during the scan.
-- **LuaJIT.** The application is written in Lua. LuaJIT compiles the Lua code. [lde](https://lde.sh) builds one native executable. You do not install Lua or a virtual machine.
-- **Last.fm.** You can connect a Last.fm account in Settings. The application sends now-playing data and scrobbles. Network requests do not block the user interface. Failed scrobbles are retried while the application runs.
-- **Tags and playlists.** A tag makes a smart playlist. You can add tracks to a playlist by hand. You can also combine tag rules and hand-added tracks. Search filters use the same tags. The application stores tags and playlists in JSON files next to the settings.
-
-> **Plugins** The application is one LuaJIT process. The pages, services, library, tags, and playback queue are Lua code. The renderer and audio engine are lde packages with Lua interfaces. A plugin loads into the same Lua state. It can call the same functions as the application and can extend any screen. There is no IPC boundary and no ABI. A plugin is one file made with `lde bundle` from its own lde package; put it in the `plugins` folder inside beat's config folder (Settings → Plugins has a button that opens it). A plugin found there is on. The Plugins page lists what loaded and can switch an outside plugin file off; a switched-off file is skipped before it is run, and a switch takes effect after beat is restarted, because plugins are part of the app from its first frame. A bundle carries copies of the modules it was built against, but it cannot replace one beat already ships, and a plugin that will not load is listed with the reason rather than stopping the app — and can still be switched off. A plugin is written as `return require("beat").plugin({ setup = function(handle) … end })`; `beat.plugin` types the definition, `beat.Message` is the tagged union every screen and service answers, and `ctx.message` writes one through its constructor. A plugin can add a destination to the sidebar and the phone's tabs with `handle.nav`, ask for the system folder dialog and get its answer as a message (`pickFolder`), add one folder to the library without rescanning the rest (`libraryAddFolder`), and make non-blocking HTTP requests or downloads through the shared `http` service. `handle.settings` gives the plugin a card on the Plugins page, with the values it names as defaults kept in settings.json under the plugin's name and read anywhere through `app.services.settings:plugin(name)`. `app.services.tasks:start` reports a long job in the top bar's task list, where its progress, failure and Cancel reach the owner through the task it returns.
+- **Tiny.** One 4 MB executable. No runtime, no browser.
+- **Fast scans.** Covers and tracks show up while the library is still scanning, even on network drives.
+- **Tags and smart playlists.** Tag tracks, build playlists from tags, or mix in tracks by hand.
+- **Five-band equalizer** and live spectrum.
+- **Last.fm scrobbling.**
+- **Plugins** in Lua. Settings → Plugins opens the folder to drop them in.
+- **Self-updating.** Pick release or nightly builds in Settings.
+- **Desktop and Android.**
 
 ## Screenshots
 
@@ -32,49 +32,46 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/mobile.png" width="260" alt="beat at phone width">
-  <br>
-  <em>The same application at phone width.</em>
+  <img src="docs/screenshots/mobile.png" width="260" alt="beat on a phone">
 </p>
 
 ## Install
 
-Download the archive for your platform from [Releases](https://github.com/bycruz/beat/releases). The [`nightly`](https://github.com/bycruz/beat/releases/tag/nightly) prerelease contains the newest build.
+Grab your platform's file from [Releases](https://github.com/beat-player/beat/releases), or [nightly](https://github.com/beat-player/beat/releases/tag/nightly) for the newest build.
 
-| Linux | Windows | macOS |
-| :---: | :---: | :---: |
-| x86-64, arm64 | x86-64, arm64 | Intel, Apple silicon |
+| Platform | Download                                       |
+| -------- | ---------------------------------------------- |
+| Windows  | `beat-windows-*.zip`                           |
+| macOS    | `beat-macos-*.zip`                             |
+| Linux    | `.AppImage`, `.flatpak`, or `beat-linux-*.zip` |
+| Android  | `beat-android-*.apk`                           |
 
-Extract the archive. Run `beat` on Linux or macOS. Run `beat.exe` on Windows. The first start asks for a music folder.
+Requires a Vulkan driver. Builds are unsigned: on macOS right-click → Open the first time; on Windows, click past SmartScreen.
 
-The application needs a Vulkan driver. The builds are not code-signed. On macOS, right-click the application and select Open at the first start. On Windows, SmartScreen can show a warning.
+Flatpak: `flatpak install --user beat-linux-x86-64.flatpak`. It updates by installing a newer bundle.
 
-**Controls:** `Space` play or pause. `Left` and `Right` seek. `/` search. `Ctrl+,` settings. `Ctrl+O` select a folder.
+**Shortcuts:** `Space` play/pause · `←` `→` seek · `/` search · `Ctrl+,` settings · `Ctrl+O` choose folder
 
 ## Build
 
-Install [lde](https://lde.sh/docs/general/setup/installation). Install a C compiler. Install `glslang` to compile the shaders. Then run these commands:
+Needs [lde](https://lde.sh/docs/general/setup/installation), a C compiler, and `glslang`.
 
 ```sh
-lde sync -C packages/beat
 lde run -C packages/beat      # run from source
-lde compile -C packages/beat  # build one executable
-lde test -C packages/beat     # run headless tests
+lde compile -C packages/beat  # build the executable
+lde test -C packages/beat     # run tests
 ```
 
-## Benchmarks
+## Performance
 
-These values are from a Linux x86-64 computer with an Intel i7-9700F processor. The library is on a Google Drive mount through rclone FUSE. The library contains 539 albums, 4,054 tracks, and 12 GB of data.
+4,054 tracks (12 GB) on a Google Drive mount, Intel i7-9700F, Linux.
 
-| Measurement | Result |
-| --- | --- |
-| Native executable | 4.1 MB |
-| Window, no library | approximately 130 MB RSS, approximately 65 MB PSS |
-| Window, full library | approximately 166 MB RSS, approximately 105 MB PSS |
-| Scan, 4 inspectors | 2.4 to 3.0 seconds, approximately 60 MB RSS total |
-| Scan, 1 inspector | 17.5 seconds, approximately 39 MB RSS |
-
-Scan times use a warm VFS cache. RSS includes shared libraries. PSS divides shared pages across processes. A full library adds approximately 35 MB PSS to an empty window.
+|                      |           |
+| -------------------- | --------- |
+| Executable           | 4.1 MB    |
+| Memory, empty        | ~130 MB   |
+| Memory, full library | ~166 MB   |
+| Full scan            | 2.4–3.0 s |
 
 ## Status
 

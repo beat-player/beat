@@ -185,7 +185,9 @@ function libraryPage.view(app, page, window)
 			s.rowHover = row():bg(theme:color("hover"))
 			s.coverSize = theme:px(48)
 			s.coverRadius = theme:radius("sm")
-			s.names = sty():column():w(content - (theme:px(mobile ? 80 : 190)))
+			-- As tall as the cover and laid from its top, so the title starts level with the
+			-- picture's top edge rather than with the row's.
+			s.names = sty():column():w(content - (theme:px(mobile ? 80 : 190))):h(s.coverSize):gap(theme:px(2))
 			s.title = theme:s():wrel(1.0):text(theme:type("base")):weight("semibold"):fg(theme:color("text")):ellipsis()
 			s.artist = theme:s():wrel(1.0):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
 			s.count = theme:s():text(theme:type("sm")):fg(theme:color("muted"))

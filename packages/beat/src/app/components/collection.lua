@@ -18,7 +18,7 @@ local collection = {}
 ---@field cover fun(size: number): wonderland.Element # The square above the title block
 ---@field coverMenu fun(x: number, y: number, width: number, height: number, modifiers: any?, windowX: number, windowY: number): any? # The menu a right-click on the cover opens
 ---@field title string
----@field subtitle string
+---@field subtitle string? # The line under the title; none leaves it out
 ---@field subtitleAction any? # The message a click on the subtitle sends
 ---@field meta string
 ---@field playAction any
@@ -64,10 +64,12 @@ function collection.view(app, props)
 	local titleSize = (theme:type(mobile ? "xxl" : "hero"))
 	local labelHeight = theme:px(16)
 	local titleHeight = math.floor(titleSize * 1.25)
-	local subtitleHeight = math.floor(theme:type("md") * 1.3)
+	-- A collection without a subtitle has no line for one, and the gap that would sit above it goes too.
+	local hasSubtitle = props.subtitle ~= nil
+	local subtitleHeight = hasSubtitle and math.floor(theme:type("md") * 1.3) or 0
 	local metaHeight = math.floor(theme:type("sm") * 1.3)
 	local actionsHeight = theme:px(52)
-	local infoHeight = labelHeight + titleHeight + subtitleHeight + metaHeight + actionsHeight + theme:px(8) * 4
+	local infoHeight = labelHeight + titleHeight + subtitleHeight + metaHeight + actionsHeight + theme:px(8) * (hasSubtitle and 4 or 3)
 	local heroHeight
 	if phoneHero then
 		-- The cover clears the top bar's shadow and the page's own padding before it begins.
@@ -109,14 +111,20 @@ function collection.view(app, props)
 		return math.min(content, math.max(1, math.ceil(known) + theme:px(2)))
 	end
 
-	local subtitleStyle = theme:s():text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis()
-	if phoneHero then
-		subtitleStyle:w(fitted(props.subtitle, subtitleStyle, theme:type("md")))
-	else
-		subtitleStyle:wrel(1.0)
+	---@type wonderland.Element?
+	local subtitle = nil
+	local subtitleText = props.subtitle
+	if subtitleText ~= nil then
+		local subtitleStyle = theme:s():text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis()
+		if phoneHero then
+			subtitleStyle:w(fitted(subtitleText, subtitleStyle, theme:type("md")))
+		else
+			subtitleStyle:wrel(1.0)
+		end
+		local line = text(subtitleText):style(subtitleStyle)
+		if props.subtitleAction ~= nil then line:onClick(props.subtitleAction) end
+		subtitle = line
 	end
-	local subtitle = text(props.subtitle):style(subtitleStyle)
-	if props.subtitleAction ~= nil then subtitle:onClick(props.subtitleAction) end
 
 	local actions = {
 		div()
@@ -146,34 +154,36 @@ function collection.view(app, props)
 	else
 		metaStyle:wrel(1.0)
 	end
+	--- The info column's lines in order, the subtitle only where there is one.
+	local function infoLines(labelRow, actionsRow)
+		local lines = { labelRow, text(props.title):style(titleStyle) }
+		if subtitle ~= nil then lines[#lines + 1] = subtitle end
+		lines[#lines + 1] = text(props.meta):style(metaStyle)
+		lines[#lines + 1] = actionsRow
+		return lines
+	end
 	local info
 	if phoneHero then
 		info = div()
 			:style(sty():column():h(infoHeight):justify("center"):align("center"):gap(theme:px(8)):w(content))
 			:children(
-				{
+				infoLines(
 					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center"):justify("center")):children(
 						labelChildren
 					),
-					text(props.title):style(titleStyle),
-					subtitle,
-					text(props.meta):style(metaStyle),
 					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center"):justify("center")):children(
 						actions
 					)
-				}
+				)
 			)
 	else
 		info = div()
 			:style(sty():column():h(stacked and infoHeight or heroHeight):justify("center"):gap(theme:px(8)):wrel(1.0))
 			:children(
-				{
+				infoLines(
 					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center")):children(labelChildren),
-					text(props.title):style(titleStyle),
-					subtitle,
-					text(props.meta):style(metaStyle),
 					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center")):children(actions)
-				}
+				)
 			)
 	end
 	local hero

@@ -7,3 +7,7 @@
 /packages/beat/dist/
 lde.lock
 *.apk
+/packaging/flatpak/beat
+.flatpak-builder/
+/flatpak-build/
+*.flatpak

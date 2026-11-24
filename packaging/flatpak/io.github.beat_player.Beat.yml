@@ -1,0 +1,47 @@
+# beat as a Flatpak. The app is the same single executable the Linux release ships: CI downloads
+# that build's zip, unpacks `beat` next to this file and builds the bundle from it, so the Flatpak
+# never compiles anything of its own and is always the binary the release already tested.
+#
+#   flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.beat_player.Beat.yml
+#
+# with `beat` (from beat-linux-<arch>.zip) placed in packaging/flatpak/ first.
+id: io.github.beat_player.Beat
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: beat
+finish-args:
+  # The window is an X11 window drawn with Vulkan.
+  - --socket=x11
+  - --share=ipc
+  - --device=dri
+  # Audio goes through ALSA, which the runtime routes to the session's sound server.
+  - --socket=pulseaudio
+  # Last.fm and the update check.
+  - --share=network
+  # The music. beat only reads it; a folder anywhere in home, or on a mounted drive, can be chosen.
+  - --filesystem=xdg-music:ro
+  - --filesystem=home:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --filesystem=/mnt:ro
+modules:
+  - name: beat
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 beat /app/bin/beat
+      - install -Dm644 io.github.beat_player.Beat.desktop /app/share/applications/io.github.beat_player.Beat.desktop
+      - install -Dm644 io.github.beat_player.Beat.metainfo.xml /app/share/metainfo/io.github.beat_player.Beat.metainfo.xml
+      - install -Dm644 icon.svg /app/share/icons/hicolor/scalable/apps/io.github.beat_player.Beat.svg
+      - install -Dm644 icon-256.png /app/share/icons/hicolor/256x256/apps/io.github.beat_player.Beat.png
+    sources:
+      - type: file
+        path: beat
+      - type: file
+        path: io.github.beat_player.Beat.desktop
+      - type: file
+        path: io.github.beat_player.Beat.metainfo.xml
+      - type: file
+        path: ../../packages/beat/assets/icon.svg
+      - type: file
+        path: ../../packages/beat/assets/icon-256.png

@@ -58,7 +58,6 @@ test.it("resolves the built-in ids through the taxonomy and names them like a pl
 	local mostPlayed = assert(taxonomy:playlist(-1))
 	test.equal(mostPlayed.name, "Most played")
 	test.truthy(mostPlayed.builtin, "the page can tell a built-in list from one that was saved")
-	test.equal(Smart.subtitle(mostPlayed), "What you have heard most")
 	test.equal(#taxonomy:playlistTracks(mostPlayed, lib), 0, "nothing has been heard yet")
 
 	taxonomy:recordListen(lib.tracks[1], lib)

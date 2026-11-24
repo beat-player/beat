@@ -28,8 +28,8 @@ import java.util.function.IntSupplier;
 /**
  * The media session, lock-screen controls and playback notification of a NativeActivity app.
  *
- * Lua cannot subclass MediaSession.Callback, so this class is loaded from a dex at run time and
- * driven only through framework interfaces Lua can call by name:
+ * Lua cannot subclass MediaSession.Callback, so this class is in the APK's classes.dex and driven
+ * only through framework interfaces Lua can call by name:
  *   accept(Context)  once, to set up on the main thread;
  *   accept(Bundle)   whenever what is playing changes (see the keys in `update`);
  *   getAsInt()       to take the next command a control sent, -1 when there is none. A seek is
@@ -149,6 +149,7 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		if (session == null) return;
 
 		if (!state.getBoolean("active")) {
+			PlaybackService.release();
 			notifications.cancel(NOTIFICATION);
 			session.setActive(false);
 			return;
@@ -197,7 +198,15 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 				.setMediaSession(session.getSessionToken())
 				.setShowActionsInCompactView(0, 1, 2));
 		if (open != null) builder.setContentIntent(open);
-		notifications.notify(NOTIFICATION, builder.build());
+		Notification shown = builder.build();
+		notifications.notify(NOTIFICATION, shown);
+		// While it plays the app has to keep running off screen, which only a foreground service
+		// earns it; paused, it gives that up and keeps the notification.
+		if (playing) {
+			PlaybackService.hold(context, shown);
+		} else {
+			PlaybackService.release();
+		}
 	}
 
 	private PendingIntent control(int command) {

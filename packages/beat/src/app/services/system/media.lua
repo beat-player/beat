@@ -54,32 +54,40 @@ function Media.new(deps)
 	}, Media)
 end
 
---- Writes the dex where only this app can reach it, loads MediaBridge from it and starts it on the
---- activity. Android 14 refuses to load a dex that can still be written, so the file is made
---- read-only first; a file left by the last launch is replaced, since it may be an older build's.
+--- The class loader MediaBridge comes from. An APK built with beat's `android.dex` carries the
+--- class itself, together with the playback service Android starts from it, and the activity's
+--- own loader finds it. An APK built without one does not: the dex embedded in the app is written
+--- where only this app can reach it and loaded at run time instead, which gives the lock-screen
+--- controls but no foreground service. Android 14 refuses to load a dex that can still be
+--- written, so the file is made read-only first; one left by the last launch is replaced.
+---@param jni androidapi.jni
+---@param activity androidapi.ffi.NativeActivity
+---@return ffi.cdata* loader
+local function bridgeLoader(jni, activity)
+	local own = jni.call(activity.clazz, "android/content/Context", "getClassLoader", "()Ljava/lang/ClassLoader;", "object")
+	local found = pcall(jni.call, own, "java/lang/ClassLoader", "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", "object", jni.string("beat.MediaBridge"))
+	if found then return own end
+
+	local files = jni.call(activity.clazz, "android/content/Context", "getFilesDir", "()Ljava/io/File;", "object")
+	local directory = jni.tostring(jni.call(files, "java/io/File", "getAbsolutePath", "()Ljava/lang/String;", "object"))
+	local file = directory .. "/media.dex"
+	os.remove(file)
+	local handle = assert(io.open(file, "wb"))
+	handle:write(require("beat.app.media_dex"))
+	handle:close()
+	local dex = jni.new("java/io/File", "(Ljava/lang/String;)V", jni.string(file))
+	jni.call(dex, "java/io/File", "setReadOnly", "()Z", "boolean")
+	return jni.new("dalvik/system/DexClassLoader", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V", jni.string(file), jni.string(directory), nil, own)
+end
+
+--- Loads MediaBridge and starts it on the activity.
 ---@return ffi.cdata* bridge
 local function loadBridge()
 	local android = require("androidapi")
 	local jni = android.jni
 	local activity = assert(android.activity())
-	local directory = jni.frame(function()
-		local files = jni.call(activity.clazz, "android/content/Context", "getFilesDir", "()Ljava/io/File;", "object")
-		return jni.tostring(jni.call(files, "java/io/File", "getAbsolutePath", "()Ljava/lang/String;", "object"))
-	end)
-	if directory == nil then error("the app has no files directory", 0) end
-	---@cast directory string
-	local file = directory .. "/media.dex"
-
-	os.remove(file)
-	local handle = assert(io.open(file, "wb"))
-	handle:write(require("beat.app.media_dex"))
-	handle:close()
-
 	local bridge, err = jni.frame(function()
-		local dex = jni.new("java/io/File", "(Ljava/lang/String;)V", jni.string(file))
-		jni.call(dex, "java/io/File", "setReadOnly", "()Z", "boolean")
-		local parent = jni.call(activity.clazz, "android/content/Context", "getClassLoader", "()Ljava/lang/ClassLoader;", "object")
-		local loader = jni.new("dalvik/system/DexClassLoader", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V", jni.string(file), jni.string(directory), nil, parent)
+		local loader = bridgeLoader(jni, activity)
 		local class = jni.call(loader, "java/lang/ClassLoader", "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", "object", jni.string("beat.MediaBridge"))
 		local instance = jni.call(class, "java/lang/Class", "newInstance", "()Ljava/lang/Object;", "object")
 		jni.call(instance, "java/util/function/Consumer", "accept", "(Ljava/lang/Object;)V", "void", activity.clazz)
