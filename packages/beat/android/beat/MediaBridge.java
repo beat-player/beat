@@ -13,6 +13,9 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.drawable.Icon;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
+import android.media.AudioManager;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
@@ -34,6 +37,7 @@ import java.util.function.IntSupplier;
  *   accept(Bundle)   whenever what is playing changes (see the keys in `update`);
  *   getAsInt()       to take the next command a control sent, -1 when there is none. A seek is
  *                    one value too, -2 - the position in milliseconds, so it is never read half.
+ *                    Audio focus changes and a media stream falling silent arrive the same way.
  * Every Android call happens on the main thread; the queue is the only state the Lua thread reads.
  */
 public final class MediaBridge extends MediaSession.Callback implements Consumer<Object>, IntSupplier {
@@ -42,10 +46,20 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	public static final int NEXT = 3;
 	public static final int PREVIOUS = 4;
 	public static final int STOP = 5;
+	/** Playback paused because another app took focus for a while; the gain that follows resumes it. */
+	public static final int FOCUS_PAUSE = 6;
+	/** The other app is done: play again what the transient loss paused. */
+	public static final int FOCUS_RESUME = 7;
+	/** Another app took focus for good: pause and stay paused. */
+	public static final int FOCUS_LOSS = 8;
+	/** The media volume reached zero while playing: pause and stay paused. */
+	public static final int VOLUME_ZERO = 9;
 
 	private static final String CHANNEL = "playback";
 	private static final int NOTIFICATION = 1;
 	private static final String ACTION = "beat.MEDIA_CONTROL";
+	/** How often the media stream's volume is read while playing, in milliseconds. */
+	private static final long VOLUME_INTERVAL = 500;
 	private static final long ACTIONS = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
 		| PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
 		| PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_STOP;
@@ -60,6 +74,35 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	private String artPath;
 	private Bitmap art;
 	private Icon mark;
+
+	private AudioManager audio;
+	private AudioFocusRequest focusRequest;
+	/** Whether the session currently holds audio focus, or believes it does. */
+	private boolean focusHeld;
+	/** Whether this bridge is the one that paused playback, so the next gain may resume it. */
+	private boolean pausedByFocus;
+	/** Whether losing focus and a silent media stream should pause, from "Pause for other audio". */
+	private boolean pauseForOtherAudio = true;
+	/** Whether playback is playing, as of the last report; the focus callback reads it. */
+	private boolean playing;
+	private boolean watchingVolume;
+	private int lastVolume;
+
+	private final AudioManager.OnAudioFocusChangeListener focusListener = this::onFocusChange;
+
+	/** Reads the media stream's volume twice a second while playing, and not at all otherwise. */
+	private final Runnable volumeWatch = new Runnable() {
+		@Override
+		public void run() {
+			if (!watchingVolume) return;
+			int volume = audio == null ? -1 : audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+			if (pauseForOtherAudio && playing && volume == 0 && lastVolume > 0) {
+				commands.add(VOLUME_ZERO);
+			}
+			if (volume >= 0) lastVolume = volume;
+			main.postDelayed(this, VOLUME_INTERVAL);
+		}
+	};
 
 	@Override
 	public int getAsInt() {
@@ -82,6 +125,18 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		if (session != null) return;
 		context = given.getApplicationContext();
 		notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+		audio = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+		if (Build.VERSION.SDK_INT >= 26 && audio != null) {
+			focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+				.setAudioAttributes(new AudioAttributes.Builder()
+					.setUsage(AudioAttributes.USAGE_MEDIA)
+					.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+					.build())
+				.setOnAudioFocusChangeListener(focusListener, main)
+				// Ducking is the system's job: it lowers this stream itself on API 26 and later.
+				.setWillPauseWhenDucked(false)
+				.build();
+		}
 		if (Build.VERSION.SDK_INT >= 26) {
 			NotificationChannel channel = new NotificationChannel(CHANNEL, "Playback", NotificationManager.IMPORTANCE_LOW);
 			channel.setShowBadge(false);
@@ -142,13 +197,19 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 
 	/**
 	 * Keys: "active" (boolean; false drops the notification and the session's controls), "title",
-	 * "artist", "album", "art" (a picture file), "duration" and "position" (milliseconds) and
-	 * "playing" (boolean).
+	 * "artist", "album", "art" (a picture file), "duration" and "position" (milliseconds),
+	 * "playing" (boolean) and "pauseForOtherAudio" (boolean).
 	 */
 	private void update(Bundle state) {
 		if (session == null) return;
 
+		pauseForOtherAudio = state.getBoolean("pauseForOtherAudio", true);
+		if (!pauseForOtherAudio) pausedByFocus = false;
 		if (!state.getBoolean("active")) {
+			playing = false;
+			pausedByFocus = false;
+			stopVolumeWatch();
+			abandonFocus();
 			PlaybackService.release();
 			notifications.cancel(NOTIFICATION);
 			session.setActive(false);
@@ -159,6 +220,16 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		String artist = state.getString("artist", "");
 		String album = state.getString("album", "");
 		boolean playing = state.getBoolean("playing");
+		// Playback starting from a stop means the listener asked for it, even if it was a focus
+		// pause; a repeat report while it already plays must not drop a pause a loss just made.
+		if (playing && !this.playing) pausedByFocus = false;
+		this.playing = playing;
+		applyFocus(playing);
+		if (playing && pauseForOtherAudio) {
+			startVolumeWatch();
+		} else {
+			stopVolumeWatch();
+		}
 		loadArt(state.getString("art"));
 
 		MediaMetadata.Builder metadata = new MediaMetadata.Builder()
@@ -207,6 +278,89 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		} else {
 			PlaybackService.release();
 		}
+	}
+
+	/**
+	 * Takes or gives back audio focus as playback starts and stops. A pause this bridge made itself
+	 * because of a transient loss keeps the focus request, so the gain that follows still arrives;
+	 * any other pause lets it go.
+	 */
+	private void applyFocus(boolean plays) {
+		if (plays) {
+			if (pauseForOtherAudio) {
+				requestFocus();
+			} else {
+				abandonFocus();
+			}
+		} else if (!pausedByFocus) {
+			abandonFocus();
+		}
+	}
+
+	private void requestFocus() {
+		if (audio == null || focusHeld || !pauseForOtherAudio) return;
+		int result;
+		if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+			result = audio.requestAudioFocus(focusRequest);
+		} else {
+			result = audio.requestAudioFocus(focusListener, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
+		}
+		focusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+	}
+
+	private void abandonFocus() {
+		if (audio == null || !focusHeld) return;
+		if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
+			audio.abandonAudioFocusRequest(focusRequest);
+		} else {
+			audio.abandonAudioFocus(focusListener);
+		}
+		focusHeld = false;
+	}
+
+	/** What the system says about focus. The queue carries it to Lua, which owns playback. */
+	private void onFocusChange(int change) {
+		if (!pauseForOtherAudio) return;
+		switch (change) {
+			case AudioManager.AUDIOFOCUS_LOSS:
+				// Gone for good: pause and do not ask again until the listener starts playback.
+				focusHeld = false;
+				pausedByFocus = false;
+				if (playing) commands.add(FOCUS_LOSS);
+				break;
+			case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+				// A call, navigation or a notification: pause, but hold the focus request so the
+				// gain that follows can resume it.
+				if (playing) {
+					pausedByFocus = true;
+					commands.add(FOCUS_PAUSE);
+				}
+				break;
+			case AudioManager.AUDIOFOCUS_GAIN:
+				if (pausedByFocus) {
+					pausedByFocus = false;
+					commands.add(FOCUS_RESUME);
+				}
+				break;
+			default:
+				// AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: the system lowers this stream itself on API
+				// 26 and later, so nothing here changes the volume. Before 26 it keeps playing.
+				break;
+		}
+	}
+
+	private void startVolumeWatch() {
+		if (watchingVolume || audio == null) return;
+		watchingVolume = true;
+		// Starting at zero is not a fall to zero: only a drop while playing pauses.
+		lastVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
+		main.postDelayed(volumeWatch, VOLUME_INTERVAL);
+	}
+
+	private void stopVolumeWatch() {
+		if (!watchingVolume) return;
+		watchingVolume = false;
+		main.removeCallbacks(volumeWatch);
 	}
 
 	private PendingIntent control(int command) {

@@ -8,6 +8,7 @@ local appearance = require("beat.app.services.appearance")
 local toasts = require("beat.app.services.toasts")
 local scroll = require("beat.app.services.scroll")
 local system = require("beat.app.services.system")
+local haptics = require("beat.app.services.system.haptics")
 local http = require("beat.app.services.http")
 local update = require("beat.app.services.update")
 
@@ -25,6 +26,7 @@ return beat.plugin({ name = "core", version = "1.0.0", author = "beat", descript
 	handle.service("toasts", toasts)
 	handle.service("scroll", scroll)
 	handle.service("system", system)
+	handle.service("haptics", haptics)
 	handle.service("http", http)
 	handle.service("update", update)
 

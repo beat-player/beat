@@ -19,12 +19,15 @@ local searchPage = {}
 
 --- A phone opens this page with its own field in the keyboard's way: the top bar has no field
 --- there, and a search screen that waits for a tap before taking a letter is a screen that asks
---- twice.
+--- twice. Opening it from a tab starts a new search, so the last one's words go with the page
+--- that showed them. A back from an album returns the page the history kept, which is the same
+--- search and never comes through here.
 ---@param app beat.App
 function searchPage.new(app)
 	local window = app.window
 	if window ~= nil and metrics.mobile(app, window.width) then
-		app:focusField("pageSearch", #app.services.search.query)
+		app.services.search:clear()
+		app:focusField("pageSearch", 0)
 	end
 	return {}
 end
@@ -302,6 +305,12 @@ function searchPage.view(app, page, window)
 	local albumLimit = math.min(#albums, columns * 2)
 	local artistLimit = math.min(#artists, 10)
 	local trackLimit = math.min(#tracks, 100)
+	-- Each row sends the whole list with its click, so a tap queues the results from that row on
+	-- rather than that one track alone.
+	local trackIds = {}
+	for at = 1, trackLimit do
+		trackIds[at] = tracks[at].id
+	end
 	-- The phone's rows are the collection table's taller two-line rows, so the page's own content
 	-- is that much taller too.
 	local trackRowHeight = theme:px(ctx.mobile and 64 or 48)
@@ -403,7 +412,7 @@ function searchPage.view(app, page, window)
 					index = at,
 					current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
 					playing = app.services.playback.player:isPlaying(),
-					onClick = { type = "playTrack", trackId = track.id },
+					onClick = { type = "playTrack", trackId = track.id, trackIds = trackIds },
 					width = content,
 					showAlbum = true,
 					showCover = true,

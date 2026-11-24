@@ -80,6 +80,27 @@ local albumB = {
 	hash = "second"
 }
 
+-- An album long enough for a row in the middle to have tracks on both sides of it.
+---@type beat.Album
+local albumC = {
+	id = 30,
+	key = "third",
+	title = "Third",
+	artist = "Artist",
+	artistId = 1,
+	tracks = {
+		track(5, 30, "/tmp/c1.wav"),
+		track(6, 30, "/tmp/c2.wav"),
+		track(7, 30, "/tmp/c3.wav"),
+		track(8, 30, "/tmp/c4.wav"),
+		track(9, 30, "/tmp/c5.wav")
+	},
+	duration = 600,
+	trackCount = 5,
+	modified = 0,
+	hash = "third"
+}
+
 ---@param albums beat.Album[]
 local function libraryOf(albums)
 	local service = LibraryService.new({ settings = { values = {} }, options = { scan = false }, emit = function() end })
@@ -362,6 +383,34 @@ test.it("puts an album next and plays it when the current track ends", function(
 	test.equal(messages[1].completed, true)
 	test.equal(kinds(messages)[2], "trackStarted")
 	test.equal(messages[2].track.id, 3, "the queued album starts at the boundary")
+end)
+
+test.it("plays an album's row with the rest of the album after it", function()
+	local service = start({ albumC })
+	local on = assert(Playback.on)
+
+	on.playTrack(service, { type = "playTrack", trackId = 7, albumId = albumC.id })
+
+	local queue = assert(service.player.queue)
+	test.equal(#queue.tracks, 5, "the queue is the whole album")
+	test.equal(queue.position, 3, "the play head is the row that was tapped")
+	test.equal(assert(queue:current()).id, 7, "it starts at the row that was tapped")
+	test.equal(queue.order[queue.position + 1], 4, "the next track is the one after it in the album")
+	test.equal(queue.source, "album", "the queue remembers it is the album")
+end)
+
+test.it("plays a listed row with the list in the order it was shown", function()
+	local service = start({ albumC })
+	local on = assert(Playback.on)
+
+	-- A search result's own order is not the album's: the list is what the page showed.
+	on.playTrack(service, { type = "playTrack", trackId = 7, trackIds = { 9, 5, 7, 6, 8 } })
+
+	local queue = assert(service.player.queue)
+	test.equal(#queue.tracks, 5, "the queue is the whole visible list")
+	test.equal(assert(queue:current()).id, 7, "it starts at the row that was tapped")
+	test.equal(assert(queue.tracks[queue.order[queue.position + 1]]).id, 6, "the row after it in the list comes next")
+	test.equal(queue.source, "search", "the queue remembers it is a search")
 end)
 
 test.it("adds an album to the end of the queue", function()

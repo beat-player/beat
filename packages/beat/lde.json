@@ -37,7 +37,7 @@
 			"version": "^0.1.2"
 		},
 		"winit": {
-			"version": "^0.1.21"
+			"version": "^0.1.22"
 		},
 		"threading": {
 			"version": "^0.2.1"
@@ -60,7 +60,8 @@
 			"android.permission.READ_MEDIA_AUDIO",
 			"android.permission.READ_EXTERNAL_STORAGE",
 			"android.permission.FOREGROUND_SERVICE",
-			"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+			"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+			"android.permission.VIBRATE"
 		],
 		"dex": "src/assets/media.dex",
 		"services": [

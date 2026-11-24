@@ -14,6 +14,7 @@ local settings = {}
 ---@field accent string # A preset name, or a custom #rrggbb colour
 ---@field volume number
 ---@field isMuted boolean
+---@field pauseForOtherAudio boolean # Pausing for another app's audio and for a silent media stream
 ---@field sort string
 ---@field view "grid"|"list"
 ---@field sidebarWidth number
@@ -40,6 +41,7 @@ local DEFAULTS = {
 	accent = "lime",
 	volume = 0.8,
 	isMuted = false,
+	pauseForOtherAudio = true,
 	sort = "title",
 	view = "grid",
 	sidebarWidth = 264,
@@ -188,6 +190,8 @@ function settings.load(dir)
 		accent = type(data.accent) == "string" and data.accent or DEFAULTS.accent,
 		volume = math.max(0, math.min(1, number(data.volume, DEFAULTS.volume))),
 		isMuted = data.isMuted == true,
+		-- A file written before the key existed, or by hand with anything but false, keeps pausing.
+		pauseForOtherAudio = data.pauseForOtherAudio ~= false,
 		sort = type(data.sort) == "string" and data.sort or DEFAULTS.sort,
 		view = data.view == "list" ? "list" : "grid",
 		sidebarWidth = math.max(200, math.min(360, number(data.sidebarWidth, DEFAULTS.sidebarWidth))),

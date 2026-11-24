@@ -216,26 +216,38 @@ function Playback:queueAlbum(albumId, asNext)
 	end
 end
 
---- A track row. Which album or artist it was clicked on decides what the queue holds after it.
---- The current track's row is its pause button, unless the message asks for a restart.
+--- A track row. What the row was listed in decides what the queue holds after it: an album's
+--- rows queue the album, an artist's the artist, and a list that only knows its own ids -- the
+--- search results -- queues them in the order it showed them. The current track's row is its
+--- pause button, unless the message asks for a restart.
 ---@param message beat.PlayTrackMessage
 function Playback:playTrack(message)
 	local library = self.library.current
 	local track = library ~= nil ? (library:track(message.trackId)) : nil
 	local tracks = nil
-	if message.albumId ~= nil and library ~= nil then
+	local source = "track"
+	if message.trackIds ~= nil and #message.trackIds > 0 and library ~= nil then
+		tracks = {}
+		for _, id in ipairs(message.trackIds) do
+			local listed = library:track(id)
+			if listed ~= nil then tracks[#tracks + 1] = listed end
+		end
+		source = "search"
+	elseif message.albumId ~= nil and library ~= nil then
 		local album = library:album(message.albumId --[[@as number]] )
 		tracks = album?.tracks
+		source = "album"
 	elseif message.artistId ~= nil and library ~= nil then
 		local artist = library:artist(message.artistId --[[@as number]] )
 		tracks = artist?.tracks
+		source = "artist"
 	end
 
 	local current = self.player:current()
 	if track ~= nil and not message.restart and current ~= nil and current.id == track.id then
 		self.player:toggle()
 	elseif track ~= nil then
-		self.player:playTrack(track, tracks)
+		self.player:playTrack(track, tracks, nil, source)
 	end
 end
 

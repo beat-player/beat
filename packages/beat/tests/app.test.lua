@@ -241,6 +241,30 @@ test.it("wakes the ticker when navigation starts an animation", function()
 	App.ticker = ticker
 end)
 
+test.it("closes the playing view when its album or artist link points at the page already showing", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	App.services.scan.job = nil
+	local album = library.albums[1]
+	App.page = { kind = "album", id = album.id, state = {} }
+	App:open("now_playing")
+	test.truthy(App:overlay("now_playing") ~= nil, "the playing view is open")
+
+	App:act({ type = "navigate", page = { kind = "album", id = album.id } })
+
+	test.equal(App:overlay("now_playing"), nil, "the link to the page underneath closes the playing view")
+	test.equal(App.page.kind, "album", "and the album is what is left showing")
+	test.equal(App.page.id, album.id)
+
+	local artist = library.artists[1]
+	App.page = { kind = "artist", id = artist.id, state = {} }
+	App:open("now_playing")
+	App:act({ type = "navigate", page = { kind = "artist", id = artist.id } })
+	test.equal(App:overlay("now_playing"), nil, "the artist link closes it over the artist page too")
+	test.equal(App.page.kind, "artist")
+end)
+
 test.it("opens the About link through the system service", function()
 	local system = App.services.system
 	local open, opened = system.open, nil
@@ -1018,12 +1042,23 @@ test.skipIf(not canRender)("draws the phone shell and switches tabs", function()
 	screen:draw()
 
 	-- The second row of the phone shell is the tab bar; Search is the fourth of five tabs.
+	App.services.search.query = "night"
 	local message = screen:event({ name = "mousePress", window = screen.window, x = 273, y = 815, button = 1 })
 	test.truthy(message ~= nil, "the bottom tab is a touch target")
 	App:act(message)
 	test.equal(App.page.kind, "search", "the tab switches the page")
+	test.equal(App.services.search.query, "", "the tab starts a new search")
 	screen:draw()
 	test.equal(layout:getFocusedId(screen.window), "pageSearch", "the page's own field has the keyboard")
+
+	-- Going into a page and coming back is the same search, so its words are still there.
+	App.services.search.query = "night"
+	App:act({ type = "navigate", page = { kind = "library" } })
+	test.equal(App.page.kind, "library")
+	App:act({ type = "back" })
+	test.equal(App.page.kind, "search")
+	test.equal(App.services.search.query, "night", "back returns to the same search")
+	screen:draw()
 
 	-- The fifth tab opens the menu the top bar's settings control moved into.
 	local more = screen:event({ name = "mousePress", window = screen.window, x = 351, y = 815, button = 1 })

@@ -28,10 +28,20 @@ local function seekTo(seconds)
 	return { type = "seek", seconds = seconds }
 end
 
+--- How tall the bar is. The phone's clocks are set in body type so they read at arm's length, and
+--- the row grows with them; the desktop keeps a caption line.
+---@param theme beat.Theme
+---@param mobile boolean?
+---@return number
+function progress.height(theme, mobile)
+	return mobile and theme:px(24) or theme:px(18)
+end
+
 --- What the theme keeps for one width of the bar: the two clocks, the row they sit in, and the way
 --- the slider asks the player where it is.
 ---@class beat.components.ProgressStyles
 ---@field width number
+---@field mobile boolean
 ---@field player beat.Player
 ---@field clock wonderland.StyleBuilder
 ---@field text wonderland.StyleBuilder
@@ -42,6 +52,7 @@ end
 ---@field track beat.Track
 ---@field player beat.Player # The player whose position the bar follows
 ---@field width number # Room for both clocks and the slider together
+---@field mobile boolean? # Set in body type for a phone, where the clocks are read from a distance
 
 ---@param app beat.App
 ---@param props beat.components.ProgressProps
@@ -49,9 +60,12 @@ end
 function progress.view(app, props)
 	local theme = app.services.appearance.theme
 	local track, player, width = props.track, props.player, props.width
+	local mobile = props.mobile == true
 	local duration = track.duration > 0 and track.duration or player:duration()
 	local position = player:position()
-	local clockWidth = theme:px(34)
+	local height = progress.height(theme, mobile)
+	-- Room for `12:34` at body size, and the same on the desktop for its caption.
+	local clockWidth = mobile and theme:px(48) or theme:px(34)
 	local gap = theme:px(8)
 	local trackWidth = width - clockWidth * 2 - gap * 2
 
@@ -62,13 +76,14 @@ function progress.view(app, props)
 	---@type table<string, any>
 	local cache = theme:cache()
 	local styles = cache.progress --[[@as beat.components.ProgressStyles?]]
-	if styles == nil or styles.width ~= width or styles.player ~= player then
+	if styles == nil or styles.width ~= width or styles.mobile ~= mobile or styles.player ~= player then
 		styles = {
 			width = width,
+			mobile = mobile,
 			player = player,
-			clock = sty():w(clockWidth):h(theme:px(18)):row():align("center"):justify("center"),
-			text = theme:s():text(theme:type("xs")):fg(theme:color("faint")),
-			row = sty():w(width):h(theme:px(18)):row():align("center"):gap(gap),
+			clock = sty():w(clockWidth):h(height):row():align("center"):justify("center"),
+			text = theme:s():text(theme:type(mobile and "md" or "xs")):fg(theme:color("faint")),
+			row = sty():w(width):h(height):row():align("center"):gap(gap),
 			liveValue = followPlayer(player)
 		}
 		cache.progress = styles

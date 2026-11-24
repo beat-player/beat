@@ -268,7 +268,8 @@ end
 ---@param track beat.Track
 ---@param tracks beat.Track[]?
 ---@param index number?
-function Player:playTrack(track, tracks, index)
+---@param source string? # What the queue is a list of; a lone track when not given
+function Player:playTrack(track, tracks, index, source)
 	if tracks == nil then tracks = { track } end
 	if index == nil then
 		for at, candidate in ipairs(tracks) do
@@ -279,7 +280,7 @@ function Player:playTrack(track, tracks, index)
 		end
 	end
 
-	self:playTracks(tracks, index or 1, { source = "track" })
+	self:playTracks(tracks, index or 1, { source = source or "track" })
 end
 
 function Player:play()

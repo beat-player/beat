@@ -2,6 +2,7 @@
 -- read from, volume, Last.fm, the plugins page and the About section, as rows in grouped lists.
 local wonderland = require("wonderland")
 local path = require("path")
+local platform = require("beat.platform")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local volume = require("beat.app.components.volume")
@@ -246,17 +247,34 @@ function settings.view(app, page, window)
 			text(tostring(math.floor((values.isMuted ? 0 : values.volume) * 100)) .. "%")
 				:style(theme:s():w(percentWidth):text(theme:type("xs")):fg(theme:color("faint")))
 		})
+	local audioRows = {
+		settingsList.row(app, {
+			label = "Volume",
+			control = audioControl,
+			controlWidth = audioControlWidth,
+			controlHeight = theme:px(22),
+			width = column
+		})
+	}
+	-- Only the phone has another app to take audio focus, or a media stream of its own to fall
+	-- silent; the setting would mean nothing on a desktop.
+	if platform.android then
+		local otherAudio, otherAudioWidth = settingsList.toggle(app, {
+			on = values.pauseForOtherAudio ~= false,
+			onClick = { type = "pauseForOtherAudio", value = values.pauseForOtherAudio == false }
+		})
+		audioRows[#audioRows + 1] = settingsList.row(app, {
+			label = "Pause for other audio",
+			description = "When another app plays, or the volume is at zero",
+			control = otherAudio,
+			controlWidth = otherAudioWidth,
+			controlHeight = theme:px(26),
+			width = column
+		})
+	end
 	local audio, audioHeight = settingsList.group(app, {
 		title = "Audio",
-		rows = {
-			settingsList.row(app, {
-				label = "Volume",
-				control = audioControl,
-				controlWidth = audioControlWidth,
-				controlHeight = theme:px(22),
-				width = column
-			})
-		},
+		rows = audioRows,
 		width = column
 	})
 

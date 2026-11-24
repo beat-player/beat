@@ -87,6 +87,7 @@ local TRAY_MESSAGES = {
 ---@field collections beat.CollectionsService
 ---@field covers beat.CoversService
 ---@field equalizer beat.EqualizerService
+---@field haptics beat.HapticsService
 ---@field lastfm beat.LastfmService
 ---@field library beat.LibraryService
 ---@field motion beat.MotionService
@@ -703,8 +704,10 @@ end
 ---@param keepFocus boolean? # Whether a field already being typed in keeps the keyboard across the page change
 function App:go(route, keepFocus)
 	if self:keyOf(route) == self:pageKey() then
-		-- A click on the page already showing does not navigate, but it must still not leave a
-		-- transition from a moment ago frozen on its first frame.
+		-- A click on the page already showing does not navigate, but a screen opened over it has
+		-- to go -- the album link in the playing view points at the album already underneath it --
+		-- and it must still not leave a transition from a moment ago frozen on its first frame.
+		self:closeOverlays()
 		self:wake()
 		return
 	end
@@ -884,6 +887,10 @@ end
 ---@param message any
 ---@param _window winit.Window
 function App:update(message, _window)
+	-- Only what the screen sent: a message a service emitted is the app talking to itself, and a
+	-- track starting or a scan reporting should not buzz the phone. The haptics service decides
+	-- which of these messages came from a press.
+	if self.services ~= nil then self.services.haptics:message(message) end
 	self:act(message)
 end
 

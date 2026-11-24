@@ -107,6 +107,12 @@ function searchAll.view(app, page, window)
 
 	local albums, artists, tracks = search:results()
 	local items = category == "albums" and albums or category == "artists" and artists or tracks
+	-- The track rows send the list with their click, so a tap queues every result from that row on
+	-- rather than that one track alone.
+	local trackIds = {}
+	for _, track in ipairs(tracks) do
+		trackIds[#trackIds + 1] = track.id
+	end
 	local width = metrics.contentWidth(app, window.width)
 	local filter, filterHeight = searchTagFilter(app, width)
 	local gap = theme:space(16)
@@ -214,7 +220,7 @@ function searchAll.view(app, page, window)
 									index = at,
 									current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
 									playing = app.services.playback.player:isPlaying(),
-									onClick = { type = "playTrack", trackId = track.id },
+									onClick = { type = "playTrack", trackId = track.id, trackIds = trackIds },
 									width = width,
 									showAlbum = true,
 									showCover = true,

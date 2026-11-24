@@ -61,6 +61,7 @@
 ---@field trackId number
 ---@field albumId number?
 ---@field artistId number?
+---@field trackIds number[]? # A list's tracks in the order it showed them, for a row with no album or artist
 ---@field restart boolean?
 ---@class beat.PlayArtistMessage: beat.MessageFields
 ---@field type "playArtist"
@@ -171,6 +172,9 @@
 ---@field value number
 ---@class beat.ReduceMotionMessage: beat.MessageFields
 ---@field type "reduceMotion"
+---@field value boolean
+---@class beat.PauseForOtherAudioMessage: beat.MessageFields
+---@field type "pauseForOtherAudio"
 ---@field value boolean
 ---@class beat.MinimizeToTrayMessage: beat.MessageFields
 ---@field type "minimizeToTray"
@@ -458,6 +462,7 @@
 --- | beat.ToggleSidebarMessage
 --- | beat.UiScaleMessage
 --- | beat.ReduceMotionMessage
+--- | beat.PauseForOtherAudioMessage
 --- | beat.MinimizeToTrayMessage
 --- | beat.ThemeMessage
 --- | beat.AccentMessage
