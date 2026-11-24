@@ -182,6 +182,7 @@ function albumPage.view(app, page, window)
 	props.window = window
 	props.playAction = thisAlbum and TOGGLE_PLAY or kept.playAction
 	props.playIcon = playing and thisAlbum and "pause" or "play"
+	props.loading = thisAlbum and app.services.playback.player:isLoading()
 	props.rating = ratings and app.services.collections.taxonomy:albumRating(album.key) or nil
 	return collection.view(app, props)
 end

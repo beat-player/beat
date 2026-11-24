@@ -6,13 +6,14 @@
 -- The FFT is iterative Cooley-Tukey, on tables because the window is short.
 local ffi = require("ffi")
 local bit = require("bit")
+local PcmRing = require("beat.app.services.playback.pcm")
 
 local N = 1024
 local BANDS = 48
 
 -- The ring holds this many mono frames: more than the staging buffer and the device's own latency
 -- put between a decoded frame and a heard one, at any sample rate the player opens.
-local RING = 32768
+local RING = PcmRing.CAPACITY
 local RING_MASK = RING - 1
 
 -- How a level is read: decibels under the loudest band lately, `RANGE` of them from the top of the
@@ -52,8 +53,9 @@ local STALE = 0.12
 local Spectrum = {}
 Spectrum.__index = Spectrum
 
+---@param ring ffi.cdata*? # The mono ring to read; by default one of this instance's own
 ---@return beat.Spectrum
-function Spectrum.new()
+function Spectrum.new(ring)
 	local window = {}
 	for at = 0, N - 1 do window[at] = 0.5 - 0.5 * math.cos(2 * math.pi * at / (N - 1)) end
 
@@ -64,7 +66,7 @@ function Spectrum.new()
 		real = {},
 		imag = {},
 		window = window,
-		ring = ffi.new("float[?]", RING),
+		ring = ring or ffi.new("float[?]", RING),
 		written = 0,
 		floor = 0,
 		analysedAt = nil,
@@ -148,6 +150,24 @@ function Spectrum:feed(samples, frames, channels, startFrame)
 	end
 
 	self.written = startFrame + frames
+end
+
+--- Moves the ring's timeline to what the audio thread last wrote. The samples themselves cross in
+--- the shared ring; this only carries the two frame counts a snapshot knows. A written frame
+--- going backwards is a new timeline -- a reload, a seek, a stop -- and what the ring held before
+--- it is not this track's audio.
+---@param written number?
+---@param floor number?
+function Spectrum:sync(written, floor)
+	if written == nil then return end
+	if written == self.written and (floor == nil or floor == self.floor) then return end
+
+	if written < self.written or (floor ~= nil and floor ~= self.floor) then
+		self.floor = floor or 0
+		self.analysedAt = nil
+		self.heardAt = nil
+	end
+	self.written = written
 end
 
 --- Turns the magnitudes into bands. The band edges are logarithmic, which is what makes a bass note

@@ -5,6 +5,7 @@ local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local playingBars = require("beat.app.components.playing_bars")
+local spinner = require("beat.app.components.spinner")
 local styles = require("beat.app.components.helpers.styles")
 local cover = require("beat.app.components.cover")
 
@@ -128,6 +129,7 @@ end
 ---@field index number # The number the row shows when it is not playing
 ---@field current boolean # Whether this track is the one playing
 ---@field playing boolean # Whether playback is running
+---@field loading boolean? # Whether the current track is still being opened
 ---@field onClick any # The message a click sends, unless the row is the current track
 ---@field width number? # Default theme:px(760)
 ---@field showAlbum boolean? # Default true, until the row gets too narrow for the column
@@ -174,6 +176,7 @@ function trackRow.view(app, props)
 
 	local width = props.width or theme:px(760)
 	local mobile = props.mobile == true
+	local loading = current and props.loading == true
 	-- A row asks the ratings plugin before spending a column on stars; the caller may still pass
 	-- a value, because the data is there whether the feature is on or not.
 	local ratings = app.registry:hasPlugin("ratings")
@@ -240,12 +243,17 @@ function trackRow.view(app, props)
 	if showCover and library ~= nil then album = library:album(track.albumId) end
 	if album ~= nil then
 		marker = div():style(s.coverBox):children({ cover.view(app, { album = album, size = s.coverSize, radius = theme:radius("sm") }) })
-		-- The playing track keeps its cover, dimmed under the moving bars.
+		-- The playing track keeps its cover, dimmed under the moving bars or the spinner.
 		if current then
-			marker:children({ div():style(s.coverShade):children({ playingBars.view(app, { playing = props.playing }) }) })
+			local mark = loading
+				and spinner.view(app, theme:px(18), theme:color("accent"))
+				or playingBars.view(app, { playing = props.playing })
+			marker:children({ div():style(s.coverShade):children({ mark }) })
 		end
 	elseif current then
-		marker = playingBars.view(app, { playing = props.playing })
+		marker = loading
+			and spinner.view(app, theme:px(18), theme:color("accent"))
+			or playingBars.view(app, { playing = props.playing })
 	else
 		marker = text(indexText(index)):style(s.index)
 	end

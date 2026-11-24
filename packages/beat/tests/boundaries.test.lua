@@ -1,18 +1,16 @@
--- The code a scan worker has to be able to load without the app: everything under `src/music/` is
--- what a music collection is on disk, and `src/workers/` runs in a copy of beat that never builds
--- a window. Neither may pull in the app or wonderland itself, or a worker would pay for a
--- renderer it cannot draw with. A wonderland module that draws nothing -- its clock -- is a
--- module like any other.
+-- What `src/music/` may load: it is what a music collection is on disk, and the scan's inspector
+-- threads and the audio thread read it without ever building a window. Nothing under it may pull
+-- in the app or wonderland itself, or a scan would pay for a renderer it cannot draw with. A
+-- wonderland module that draws nothing -- its clock -- is a module like any other.
 --
--- The guard follows the whole load, not only the module doing the requiring: a worker reaches
+-- The guard follows the whole load, not only the module doing the requiring: a scan reaches
 -- `beat.log`, and the log must not pull the app back in through a dependency of its own. While any
--- module under these two folders is loading, every require below it is judged by the same rule --
+-- module under this folder is loading, every require below it is judged by the same rule --
 -- so the check stays true however deep the chain goes.
 local test = require("lde-test")
-local env = require("env")
 local fs = require("fs")
 
-local ROOTS = { "music", "workers" }
+local ROOTS = { "music" }
 -- Prefixes forbidden with everything under them, and modules forbidden by exact name.
 local FORBIDDEN = { "beat.app" }
 local FORBIDDEN_EXACT = { wonderland = true }
@@ -107,38 +105,3 @@ test.it("loads every music module without the app or wonderland", function()
 	end
 end)
 
-test.it("loads every worker without the app or wonderland", function()
-	local root = env.tmpfile() .. "-boundary-root"
-	local manifest = env.tmpfile()
-	local output = env.tmpfile()
-	local cancel = env.tmpfile()
-
-	fs.mkdirAll(root)
-	assert(fs.write(manifest, ""))
-
-	local previous = { BEAT_SCAN_ROOT = env.var("BEAT_SCAN_ROOT"), BEAT_SCAN_MANIFEST = env.var("BEAT_SCAN_MANIFEST"), BEAT_SCAN_OUTPUT = env.var("BEAT_SCAN_OUTPUT"), BEAT_SCAN_CANCEL = env.var("BEAT_SCAN_CANCEL") }
-
-	-- A worker reads its paths from the environment as it loads, so an empty root and manifest is
-	-- what lets this test load one rather than start a scan.
-	env.set("BEAT_SCAN_ROOT", root)
-	env.set("BEAT_SCAN_MANIFEST", manifest)
-	env.set("BEAT_SCAN_OUTPUT", output)
-	env.set("BEAT_SCAN_CANCEL", cancel)
-
-	local names = modules("workers")
-	test.truthy(#names > 0, "the walk found the worker modules")
-
-	local failures = {}
-	for _, name in ipairs(names) do
-		local ok, err = loadModule(name)
-		if not ok then failures[#failures + 1] = name .. " loads: " .. tostring(err) end
-	end
-
-	for key, value in pairs(previous) do env.set(key, value) end
-	fs.delete(manifest)
-	fs.delete(output)
-	fs.delete(cancel)
-	fs.rmdir(root)
-
-	test.equal(#failures, 0, table.concat(failures, "\n"))
-end)

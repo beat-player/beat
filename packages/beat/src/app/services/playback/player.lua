@@ -3,12 +3,20 @@
 -- treble owns the device and the audio queue; this owns what the app means by next, previous,
 -- repeat and shuffle. A manual skip reloads the treble queue at the new position, which costs a
 -- short silence and keeps the two orders from drifting after a shuffle or a repeat.
-local treble = require("treble")
+--
+-- Playback runs on a thread of its own: the backend below is a client that sends commands and
+-- mirrors what the audio thread reports, instead of a treble player whose `update` reads files on
+-- this thread. Everything the rest of the app sees -- the queue, the fades, when a track starts and
+-- ends -- stays here, so a slow network mount cannot freeze a frame.
 local Queue = require("beat.app.services.playback.queue")
+local PcmRing = require("beat.app.services.playback.pcm")
+local AudioClient = require("beat.app.services.playback.audio_client")
 
 ---@class beat.Player
 ---@field queue beat.Queue?
----@field player treble.Player?
+---@field player beat.AudioClient?
+---@field pcm beat.PcmRing? # The spectrum's ring the audio thread writes
+---@field device string? # The output device the next player opens
 ---@field volume number
 ---@field lastVolume number
 ---@field isMuted boolean
@@ -23,7 +31,6 @@ local Queue = require("beat.app.services.playback.queue")
 ---@field fadeStart number?
 ---@field fadeActive boolean
 ---@field fadeDuration number
----@field onSamples fun(samples: any, frames: number, channels: number, startFrame: number)? # startFrame: the device frame the chunk will be heard at
 ---@field onTrackStarted fun(track: beat.Track, position: number)?
 ---@field onTrackEnded fun(track: beat.Track, completed: boolean)?
 ---@field onQueueChanged fun()?
@@ -39,6 +46,8 @@ function Player.new()
 	return setmetatable({
 		queue = nil,
 		player = nil,
+		pcm = PcmRing.shared(),
+		device = nil,
 		volume = 1,
 		lastVolume = 1,
 		isMuted = false,
@@ -104,28 +113,17 @@ end
 
 ---@param self beat.Player
 local function ensurePlayer(self)
-	if self.player == nil then
-		self.player = treble.Player.new({ stagingSeconds = 0.2 })
-		self.player.onTrackEnd = function()
-			self.pending = "ended"
-		end
-		self.player.onError = function(err)
-			self.error = err
-			self.pending = "error"
-		end
-		local tap = self.player
-		-- What the tap hands over is decoded ahead of the device: its first frame is heard after
-		-- everything written and staged before it. treble keeps that count private, so it is read
-		-- here, where the chunk is still the next thing staged.
-		local timeline = tap --[[@as { framesWritten: number, stagedFrames: number }]]
-		tap.onSamples = function(samples, frames, channels)
-			if self.onSamples ~= nil then
-				self.onSamples(samples, frames, channels, timeline.framesWritten + timeline.stagedFrames)
-			end
-		end
-		if self.equalizerBands ~= nil then self.player:setEqualizer(self.equalizerBands) end
-	end
-	return self.player
+	local player = self.player
+	if player ~= nil then return player end
+
+	player = AudioClient.new(assert(self.pcm).address)
+	self.player = player
+	player.onTrackEnd = function() self.pending = "ended" end
+	player.onError = function(err) self.error = tostring(err); self.pending = "error" end
+	if self.device ~= nil then player:setDevice(self.device) end
+	if self.equalizerBands ~= nil then player:setEqualizer(self.equalizerBands) end
+	applyVolume(self)
+	return player
 end
 
 --- Starts the queue at its current position.
@@ -154,11 +152,13 @@ function Player:reload(isPlaying, fade)
 	-- Repeat-one is the one order treble cannot express: it must have no track after this one, or
 	-- it will move on before the app can ask for the same track again.
 	if queue.repeatMode == "one" then
-		player:enqueue(track.path)
+		player:enqueue(track.path, track.sampleRate, track.channels, track.duration)
 	else
 		for at = queue.position, #queue.order do
 			local nextTrack = queue.tracks[queue.order[at]]
-			if nextTrack ~= nil then player:enqueue(nextTrack.path) end
+			if nextTrack ~= nil then
+				player:enqueue(nextTrack.path, nextTrack.sampleRate, nextTrack.channels, nextTrack.duration)
+			end
 		end
 	end
 
@@ -226,7 +226,7 @@ function Player:addToQueue(tracks)
 	self.queue:add(tracks, false)
 	if self.player ~= nil and self.queue.repeatMode ~= "one" then
 		for _, track in ipairs(tracks) do
-			self.player:enqueue(track.path)
+			self.player:enqueue(track.path, track.sampleRate, track.channels, track.duration)
 		end
 	end
 	queueChanged(self)
@@ -288,6 +288,13 @@ function Player:play()
 	local player = ensurePlayer(self)
 	if not self.loaded then
 		local startAt = self.startAt
+		-- An audio thread can open the source at the restored frame as it loads instead of
+		-- decoding the track from the top and throwing those frames away. A treble player in
+		-- process only takes the seek after the queue is staged.
+		if startAt ~= nil and player.setStartAt ~= nil then
+			player:setStartAt(startAt)
+			startAt = nil
+		end
 		self:reload(true)
 		if startAt ~= nil then self:seek(startAt) end
 	elseif not player:isPlaying() then
@@ -320,7 +327,8 @@ function Player:stop()
 end
 
 function Player:pause()
-	if self:isPlaying() then self.player:pause() end
+	local player = self.player
+	if player ~= nil and player:isPlaying() then player:pause() end
 end
 
 function Player:toggle()
@@ -401,8 +409,19 @@ function Player:setEqualizer(bands)
 		end
 		self.equalizerBands = copy
 	end
-	if self.player?.setEqualizer ~= nil then
-		self.player:setEqualizer(self.equalizerBands)
+	local player = self.player
+	if player ~= nil and player.setEqualizer ~= nil then
+		player:setEqualizer(self.equalizerBands)
+	end
+end
+
+--- The output the next audio player opens. An audio thread that is already playing moves to it
+--- without losing its place, which is what `setDevice` on a running player means.
+---@param device string?
+function Player:setDevice(device)
+	self.device = device
+	if self.player ~= nil and self.player.setDevice ~= nil then
+		self.player:setDevice(device)
 	end
 end
 
@@ -459,12 +478,31 @@ function Player:isPlaying()
 	return self.player ~= nil and self.player:isPlaying()
 end
 
+--- Whether the track the user asked for has yet to produce heard audio. The player is loading
+--- from the moment play, load, skip or seek asks for it until the audio thread reports frames of
+--- that track being heard; a pause, a stop or an error ends the wait.
+---@return boolean
+function Player:isLoading()
+	local backend = self.player
+	return backend ~= nil and backend.isLoading ~= nil and backend:isLoading()
+end
+
 --- The device frame being heard now, on the count `onSamples` numbers its chunks by; nil with no
 --- audio player.
 ---@return number?
 function Player:heardFrame()
 	if self.player == nil then return nil end
 	return self.player:playedFrames()
+end
+
+--- How far the audio thread has written the spectrum's ring, and from which frame its timeline
+--- starts. Nil before a player exists, or for a stand-in backend that has no ring of its own.
+---@return number? written
+---@return number? floor
+function Player:pcmState()
+	local backend = self.player
+	if backend == nil or backend.pcmState == nil then return nil end
+	return backend:pcmState()
 end
 
 ---@return string?
@@ -483,7 +521,7 @@ end
 function Player:update(now)
 	if self.player == nil then return false, false end
 
-	self.player:update()
+	self.player:update(now)
 
 	if self.fadeActive then
 		if now == nil then
@@ -557,9 +595,10 @@ function Player:update(now)
 		return false, true
 	end
 
-	if not self:isPlaying() then return false, false end
+	local player = self.player
+	if player == nil or not player:isPlaying() then return false, false end
 
-	local position = self.player:position()
+	local position = player:position()
 	if position == self.lastPosition then return false, false end
 	self.lastPosition = position
 
@@ -570,7 +609,11 @@ function Player:close()
 	endTrack(self, false)
 	if self.queue ~= nil then queueChanged(self) end
 	if self.player ~= nil then
-		self.player:close()
+		if self.player.shutdown ~= nil then
+			self.player:shutdown()
+		else
+			self.player:close()
+		end
 		self.player = nil
 	end
 	self.queue = nil
@@ -579,6 +622,16 @@ function Player:close()
 	self.fadeStart = nil
 	self.fadeActive = false
 	self.startAt = nil
+end
+
+--- Gives back everything the player owns, including the spectrum's ring: what the app calls when
+--- it is torn down, rather than when it moves to another track.
+function Player:destroy()
+	self:close()
+	if self.pcm ~= nil then
+		self.pcm:free()
+		self.pcm = nil
+	end
 end
 
 return Player

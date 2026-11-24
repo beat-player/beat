@@ -7,6 +7,7 @@ local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
+local spinner = require("beat.app.components.spinner")
 local styles = require("beat.app.components.helpers.styles")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
@@ -444,6 +445,10 @@ function nowPlaying.view(app, _overlay, window)
 		local sideHit = mobile and theme:px(48) or theme:px(28 * transport)
 		local playSize = theme:px(54 * transport)
 		if mobile then controlHeight = math.max(controlHeight, skipHit) end
+		local playing = app.services.playback.player:isPlaying()
+		local playMark = app.services.playback.player:isLoading()
+				and spinner.view(app, theme:px(24 * transport), theme.accentInk)
+			or ui.icon(ctx, { name = playing ? "pause" : "play", size = theme:px(24 * transport), colour = theme.accentInk })
 		local controlChildren = {
 			volumeButton(app, ctx, theme:px(28 * transport), sideHit),
 			div():style(sty():w("auto"):h(controlHeight)),
@@ -451,11 +456,7 @@ function nowPlaying.view(app, _overlay, window)
 				tapButton.view(ctx, { name = "previous", size = skipSize, hit = skipHit, onClick = { type = "previous" } }),
 				div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({
 					type = "togglePlay"
-				}):children(ui.icon(ctx, {
-					name = (app.services.playback.player:isPlaying()) ? "pause" : "play",
-					size = theme:px(24 * transport),
-					colour = theme.accentInk
-				})),
+				}):children(playMark),
 				tapButton.view(ctx, { name = "next", size = skipSize, hit = skipHit, onClick = { type = "next" } })
 			}),
 			div():style(sty():w("auto"):h(controlHeight)),

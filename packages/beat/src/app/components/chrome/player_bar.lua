@@ -11,6 +11,8 @@ local volume = require("beat.app.components.volume")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+local spinner = require("beat.app.components.spinner")
+
 local playerBar = {}
 
 -- The bar's pointer handler, one per app: moving off a playlist row in the rail drops the tooltip
@@ -138,6 +140,10 @@ function playerBar.view(app, props)
 	end
 
 	local isPlaying = player:isPlaying()
+	local loading = player:isLoading()
+	local playMark = loading
+			and spinner.view(app, theme:px(20), theme.accentInk)
+		or ui.icon(ctx, { name = isPlaying ? "pause" : "play", size = theme:px(20), colour = theme.accentInk })
 	local controls = div():style(styles.controls):children({
 		ui.iconButton(ctx, {
 			name = "shuffle",
@@ -146,11 +152,7 @@ function playerBar.view(app, props)
 			active = player.queue?.shuffle ?? false
 		}),
 		ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = PREVIOUS }),
-		div():style(styles.play):onClick(TOGGLE_PLAY):children(ui.icon(ctx, {
-			name = isPlaying ? "pause" : "play",
-			size = (theme:px(20)),
-			colour = theme.accentInk
-		})),
+		div():style(styles.play):onClick(TOGGLE_PLAY):children(playMark),
 		ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = NEXT }),
 		ui.iconButton(ctx, {
 			name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
@@ -287,13 +289,14 @@ local nextProps = {}
 ---@param ctx beat.ui.Context
 ---@param theme beat.Theme
 ---@param playing boolean
+---@param loading boolean
 ---@param styles beat.components.chrome.PlayerBarMobileStyles
----@return wonderland.Element
-local function playControl(ctx, theme, playing, styles)
+local function playControl(app, ctx, theme, playing, loading, styles)
+	local mark = loading
+			and spinner.view(app, theme:px(19), theme.accentInk)
+		or ui.icon(ctx, { name = playing ? "pause" : "play", size = theme:px(19), colour = theme.accentInk })
 	return div():style(styles.playHit):onClick(TOGGLE_PLAY):children(
-		div():style(styles.play):children(
-			ui.icon(ctx, { name = playing ? "pause" : "play", size = theme:px(19), colour = theme.accentInk })
-		)
+		div():style(styles.play):children(mark)
 	)
 end
 
@@ -305,8 +308,8 @@ end
 ---@param track beat.Track
 ---@param album beat.Album
 ---@param playing boolean
----@return wonderland.Element
-local function mobileRow(app, ctx, theme, styles, track, album, playing)
+---@param loading boolean
+local function mobileRow(app, ctx, theme, styles, track, album, playing, loading)
 	local playback = app.services.playback
 	progressDraw.playback, progressDraw.track = playback, track
 	progressDraw.lineHeight, progressDraw.line, progressDraw.played = styles.lineHeight, styles.line, styles.played
@@ -315,7 +318,7 @@ local function mobileRow(app, ctx, theme, styles, track, album, playing)
 	return div():style(styles.row):canvas(drawProgress):children(
 		cover.view(app, mobileCoverProps --[[@as beat.components.CoverProps]]),
 		div():style(styles.info):children(text(track.title):style(styles.title), text(track.artist):style(styles.artist)),
-		playControl(ctx, theme, playing, styles),
+		playControl(app, ctx, theme, playing, loading, styles),
 		tapButton.view(ctx, nextProps --[[@as beat.components.TapButtonProps]])
 	)
 end
@@ -330,6 +333,7 @@ function playerBar.mobile(app, props)
 	local styles = mobileStyles(theme, width)
 	local track = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
+	local loading = app.services.playback.player:isLoading()
 	if track == nil then return div():style(styles.empty) end
 
 	local album = app.services.library.current and app.services.library.current:album(track.albumId)
@@ -344,7 +348,7 @@ function playerBar.mobile(app, props)
 		}
 	end
 
-	local row = mobileRow(app, ctx, theme, styles, track, album, playing)
+	local row = mobileRow(app, ctx, theme, styles, track, album, playing, loading)
 
 	-- The meter is the desktop bar's own, put behind the row: it reads the levels when the frame
 	-- is drawn, so the app's repaints move it while the music plays and leave it still once it stops.

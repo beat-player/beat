@@ -1,93 +1,141 @@
+-- A scan runs on threads of the app's own process: the folder is walked a slice a tick, then
+-- inspected in four shards at once, and every track crosses back through a channel. These tests
+-- run real scans over the fixture tones, because what they check is the hand-off between the
+-- walk, the inspector threads and the job that the service polls -- not an output format.
 local test = require("lde-test")
 local fs = require("fs")
-local json = require("json")
+local threading = require("threading")
 local ScanJob = require("beat.app.services.scan.job")
 local time = require("wonderland.time")
 
----@param file string
----@param values table[] # JSON events, one line each
-local function writeLines(file, values)
-	local handle = assert(io.open(file, "w"))
-	for _, value in ipairs(values) do handle:write(json.encode(value), "\n") end
-	handle:close()
+local TONE = assert(fs.read("tests/fixtures/tone.wav"))
+
+---@param suffix string
+---@return string
+local function folder(suffix)
+	local root = os.tmpname() .. suffix
+	os.remove(root)
+	fs.mkdirAll(root)
+	return root
 end
 
---- A coordinator that has already exited: the job only ever calls `poll` on it.
----@param code number
----@return process.Child
-local function exited(code)
-	return { pid = 1, poll = function() return code end, wait = function() return code, "", "" end, kill = function() end }
+---@param root string
+local function removeFiles(root)
+	local iterator = fs.readdir(root)
+	if iterator == nil then return end
+	for entry in iterator do
+		if entry.type == "file" then fs.delete(root .. "/" .. entry.name) end
+	end
 end
 
-test.it("reads tracks, progress and completion in order", function()
-	local output = os.tmpname() .. "-beat-scan-test.jsonl"
-	local cancel = os.tmpname() .. "-beat-scan-test.cancel"
-	writeLines(output, { { type = "progress", phase = "inspect", files = 2, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = "/music/a.flac" }, { type = "track", info = { format = "FLAC", duration = 10 }, entry = { path = "/music/a.flac", dir = "/music", name = "a.flac", ext = "flac" }, cover = nil }, { type = "track", info = { format = "FLAC", duration = 11 }, entry = { path = "/music/b.flac", dir = "/music", name = "b.flac", ext = "flac" }, cover = "/music/cover.jpg" }, { type = "progress", phase = "done", files = 2, inspected = 2, tracks = 2, skipped = 0, errors = {}, current = nil }, { type = "done", skipped = 0, errors = {} } })
+--- Polls a job until it ends, collecting what it hands over. The threads need the scheduler
+--- between polls, so an empty poll waits a millisecond rather than spinning.
+---@param job beat.ScanJob
+---@return table[] events
+local function drain(job)
+	local events = {}
+	local started = time.now()
 
-	local job = ScanJob.new("/music", output, cancel)
-	local events = job:poll(1)
-	test.equal(#events, 1)
-	test.equal(events[1].entry.name, "a.flac")
-	test.equal(job:progress().inspected, 2, "progress is the latest progress line")
-	test.truthy(job:hasPending(), "the second track is queued behind the first")
-	test.truthy(job:isDone(), "the worker has already said it is done")
+	while (not job:isDone() or job:hasPending()) and time.now() - started < 30 do
+		local batch = job:poll(64)
+		for _, event in ipairs(batch) do events[#events + 1] = event end
+		if #batch == 0 then threading.sleep(1) end
+	end
 
-	local second = job:poll(1)
-	test.equal(second[1].entry.name, "b.flac")
-	local third = job:poll(1)
-	test.equal(#third, 0)
-	test.truthy(job:isDone())
-	test.equal(job:progress().phase, "done")
-	test.falsy(job:hasPending())
+	return events
+end
+
+test.it("reads a folder on inspector threads and reports every track", function()
+	local root = folder("-beat-scan-tracks")
+	assert(fs.write(root .. "/a.wav", TONE))
+	assert(fs.write(root .. "/b.wav", TONE))
+
+	local job = ScanJob.start(root)
+	local events = drain(job)
+	local progress = job:progress()
 	job:close()
+
+	removeFiles(root)
+	fs.rmdir(root)
+
+	test.equal(job.error, nil, "the scan finishes instead of failing")
+	test.equal(progress.phase, "done")
+	test.equal(progress.files, 2)
+	test.equal(progress.inspected, 2)
+	test.equal(progress.tracks, 2)
+	test.equal(progress.skipped, 0)
+	test.equal(#events, 2, "every track is handed to the service")
+
+	local names = {}
+	for _, event in ipairs(events) do
+		test.equal(event.type, "track")
+		test.equal(event.info.format, "WAV")
+		names[event.entry.name] = true
+	end
+	test.truthy(names["a.wav"])
+	test.truthy(names["b.wav"])
 end)
 
-test.it("keeps a partial JSON line for the next poll", function()
-	local output = os.tmpname() .. "-beat-scan-partial.jsonl"
-	local cancel = os.tmpname() .. "-beat-scan-partial.cancel"
-	local handle = assert(io.open(output, "w"))
-	handle:write('{"type":"track","info":{"duration":1},"entry":{"path":"/a","dir":"/","name":"a","ext":"wav"}}')
-	handle:close()
+test.it("finishes an empty folder without starting an inspector", function()
+	local root = folder("-beat-scan-empty")
 
-	local job = ScanJob.new("/", output, cancel)
-	test.equal(#job:poll(10), 0, "a line without its newline is not decoded")
-
-	handle = assert(io.open(output, "a"))
-	handle:write("\n")
-	handle:close()
-	test.equal(#job:poll(10), 1)
+	local job = ScanJob.start(root)
+	local events = drain(job)
+	local progress = job:progress()
 	job:close()
-end)
 
-test.it("fails a scan whose worker exits without finishing, once its output is read", function()
-	local output = os.tmpname() .. "-beat-scan-exit.jsonl"
-	local cancel = os.tmpname() .. "-beat-scan-exit.cancel"
-	writeLines(output, { { type = "track", info = { duration = 1 }, entry = { path = "/a", dir = "/", name = "a", ext = "wav" } } })
+	fs.rmdir(root)
 
-	local job = ScanJob.new("/", output, cancel)
-	job.child = exited(1)
-	local events = job:poll(10)
-	test.equal(#events, 1, "what the worker wrote before it exited is still delivered")
-	test.falsy(job:isDone(), "the output was still being read when the exit was seen")
-
-	job:poll(10)
-	test.truthy(job:isDone(), "a worker that exited is not waited on forever")
-	test.equal(job.error, "the scan stopped unexpectedly (exit code 1)")
-	job:close()
-end)
-
-test.it("does not fail a scan whose worker exited after saying it was done", function()
-	local output = os.tmpname() .. "-beat-scan-clean.jsonl"
-	local cancel = os.tmpname() .. "-beat-scan-clean.cancel"
-	writeLines(output, { { type = "done", skipped = 0, errors = {} } })
-
-	local job = ScanJob.new("/", output, cancel)
-	job.child = exited(0)
-	job:poll(10)
-	job:poll(10)
-	test.truthy(job:isDone())
 	test.equal(job.error, nil)
+	test.equal(progress.phase, "done")
+	test.equal(progress.files, 0)
+	test.equal(#events, 0)
+end)
+
+test.it("reports a file it cannot read and carries on", function()
+	local root = folder("-beat-scan-bad")
+	assert(fs.write(root .. "/broken.wav", "not audio"))
+	assert(fs.write(root .. "/good.wav", TONE))
+
+	local job = ScanJob.start(root)
+	local events = drain(job)
+	local progress = job:progress()
 	job:close()
+
+	removeFiles(root)
+	fs.rmdir(root)
+
+	test.equal(job.error, nil)
+	test.equal(progress.phase, "done")
+	test.equal(progress.tracks, 1)
+	test.equal(progress.skipped, 1)
+	test.equal(#events, 1)
+	test.equal(progress.errors[1] and progress.errors[1].message, "not an audio file this library reads")
+end)
+
+test.it("cancels a running scan and the next scan reuses its threads", function()
+	local root = folder("-beat-scan-cancel")
+	for at = 1, 32 do assert(fs.write(root .. "/tone-" .. at .. ".wav", TONE)) end
+
+	local job = ScanJob.start(root)
+	-- One poll walks the folder and starts the inspectors; the scan is then cut short while they
+	-- are reading, which is what a cancel during a scan looks like.
+	job:poll(0)
+	test.truthy(job:cancel())
+	test.truthy(job:isDone())
+	test.equal(#job:poll(64), 0, "a cancelled scan hands nothing more over")
+	job:close()
+
+	-- The cancelled threads are joined by the next scan rather than by the cancel itself.
+	local second = ScanJob.start(root)
+	local events = drain(second)
+	second:close()
+
+	removeFiles(root)
+	fs.rmdir(root)
+
+	test.equal(second.error, nil, "the scan after a cancel still runs")
+	test.equal(#events, 32)
 end)
 
 -- Whether a file can be named with bytes that are not UTF-8: upstream fs on Windows (narrow calls,
@@ -101,30 +149,21 @@ local function canNameNonUtf8()
 end
 
 test.skipIf(not canNameNonUtf8())("scans past a file whose name is not UTF-8 and reports it", function()
-	local time = require("wonderland.time")
-	local root = os.tmpname() .. "-beat-scan-names"
-	os.remove(root)
-	fs.mkdirAll(root)
-	local tone = assert(fs.read("tests/fixtures/tone.wav"))
+	local root = folder("-beat-scan-names")
 	-- "Antônio" as Windows-1252 spells it: the bytes upstream fs reads on Windows.
 	local foreign = root .. "/Ant\244nio.wav"
-	assert(fs.write(root .. "/plain.wav", tone))
-	assert(fs.write(foreign, tone))
+	assert(fs.write(root .. "/plain.wav", TONE))
+	assert(fs.write(foreign, TONE))
 
 	local job = ScanJob.start(root)
 	---@type string[]
 	local tracks = {}
-	local started = time.now()
-	while (not job:isDone() or job:hasPending()) and time.now() - started < 30 do
-		---@type beat.Message[]
-		local events = job:poll(64)
-		for _, event in ipairs(events) do
-			if event.type == "track" then tracks[#tracks + 1] = event.entry.name end
-		end
+	for _, event in ipairs(drain(job)) do
+		if event.type == "track" then tracks[#tracks + 1] = event.entry.name end
 	end
-
 	local progress = job:progress()
 	job:close()
+
 	fs.delete(root .. "/plain.wav")
 	fs.delete(foreign)
 	fs.rmdir(root)
@@ -138,14 +177,11 @@ test.skipIf(not canNameNonUtf8())("scans past a file whose name is not UTF-8 and
 end)
 
 test.it("takes a file whose modification time has not changed from the records it was given", function()
-	local root = os.tmpname() .. "-beat-scan-reuse"
-	os.remove(root)
-	fs.mkdirAll(root)
-	local tone = assert(fs.read("tests/fixtures/tone.wav"))
+	local root = folder("-beat-scan-reuse")
 	local unchanged = root .. "/unchanged.wav"
 	local changed = root .. "/changed.wav"
-	assert(fs.write(unchanged, tone))
-	assert(fs.write(changed, tone))
+	assert(fs.write(unchanged, TONE))
+	assert(fs.write(changed, TONE))
 
 	-- A record of the first file as an earlier scan read it. It says nothing true about the file,
 	-- so a reused event carrying this title proves the inspector did not open it.
@@ -168,17 +204,12 @@ test.it("takes a file whose modification time has not changed from the records i
 	local job = ScanJob.start(root, { record })
 	local reused, scanned = 0, 0
 	local reusedTitle = nil
-	local started = time.now()
-	while (not job:isDone() or job:hasPending()) and time.now() - started < 30 do
-		---@type beat.Message[]
-		local events = job:poll(64)
-		for _, event in ipairs(events) do
-			if event.type == "reused" then
-				reused += 1
-				reusedTitle = event.record and event.record.title
-			elseif event.type == "track" then
-				scanned += 1
-			end
+	for _, event in ipairs(drain(job)) do
+		if event.type == "reused" then
+			reused += 1
+			reusedTitle = event.record and event.record.title
+		elseif event.type == "track" then
+			scanned += 1
 		end
 	end
 	local progress = job:progress()

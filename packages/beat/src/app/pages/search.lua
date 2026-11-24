@@ -456,6 +456,7 @@ function searchPage.view(app, page, window)
 	local found = total > 0
 	local current = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
+	local loading = app.services.playback:isLoading()
 	local children = {}
 	if found then
 		-- The field already says what was searched for; this says how much it found.
@@ -548,6 +549,7 @@ function searchPage.view(app, page, window)
 			props.index = at
 			props.current = current ~= nil and current.id == track.id
 			props.playing = playing
+			props.loading = props.current and loading
 			props.width = content
 			props.showAlbum = true
 			props.showCover = true

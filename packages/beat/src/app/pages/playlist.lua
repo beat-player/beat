@@ -113,6 +113,7 @@ function playlistPage.view(app, page, window)
 			meta = meta,
 			playAction = thisPlaylist ? { type = "togglePlay" } : { type = "playPlaylist", id = playlist.id },
 			playIcon = playing and thisPlaylist ? "pause" : "play",
+			loading = thisPlaylist and app.services.playback.player:isLoading(),
 			shuffleAction = { type = "playPlaylist", id = playlist.id, shuffle = true },
 			addAction = builtin ? nil : { type = "open", overlay = "playlist_adder", playlistId = playlist.id },
 			tracks = tracks,

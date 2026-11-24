@@ -3,6 +3,7 @@
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 local trackRow = require("beat.app.components.track_row")
+local spinner = require("beat.app.components.spinner")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
 local names = require("beat.music.names")
@@ -92,6 +93,7 @@ end
 ---@field meta string
 ---@field playAction any
 ---@field playIcon string
+---@field loading boolean? # Whether the collection's hero play is waiting for a track to be heard
 ---@field shuffleAction any
 ---@field addAction any? # The extra control, when the collection can grow by hand
 ---@field rating number? # The collection's own stars, 0 to 5, drawn beside the buttons
@@ -161,6 +163,7 @@ function collection.view(app, props)
 	local contentHeight = heroHeight + trackListHeight
 	local current = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
+	local loading = app.services.playback:isLoading()
 
 	-- The boxes and the header's cells depend on the window, the theme and the collection's shape,
 	-- not on anything that moves: they are kept for that shape and handed over again on the next
@@ -246,10 +249,11 @@ function collection.view(app, props)
 		if props.subtitleAction ~= nil then subtitle:onClick(props.subtitleAction) end
 	end
 
+	local playMark = props.loading
+			and spinner.view(app, theme:px(24), theme.accentInk)
+		or ui.icon(ctx, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })
 	local actions = {
-		div()
-			:style(style.play):onClick(props.playAction)
-			:children(ui.icon(ctx, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })),
+		div():style(style.play):onClick(props.playAction):children(playMark),
 		ui.iconButton(ctx, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
 	}
 	if props.addAction ~= nil then
@@ -334,6 +338,7 @@ function collection.view(app, props)
 			kept.index = props.trackIndex ~= nil ? props.trackIndex(track, at) : at
 			kept.current = current?.id == track.id
 			kept.playing = playing
+			kept.loading = kept.current and loading
 			kept.onClick = props.trackAction(track, at)
 			kept.width = content
 			kept.titleOnly = props.titleOnly

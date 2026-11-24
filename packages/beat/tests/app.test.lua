@@ -7,7 +7,6 @@ local Library = require("beat.music.library")
 local names = require("beat.music.names")
 local Queue = require("beat.app.services.playback.queue")
 local PlayerService = require("beat.app.services.playback.player")
-local ScanJob = require("beat.app.services.scan.job")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
 local App = require("beat.app")
 local TagStore = require("beat.app.services.collections.store")
@@ -1410,6 +1409,32 @@ test.skipIf(not canRender)("windows a long album as it scrolls", function()
 	App.services.playback.player:close()
 end)
 
+--- A scan job whose tracks are already there, so a test drives the service's ingestion without
+--- waiting for a folder to be walked or a thread to start.
+---@param events table[] # What the job still has to hand over
+---@param progress beat.ScanProgress
+---@return beat.ScanJob
+local function scriptedJob(events, progress)
+	local job = { latest = progress, closed = false, changed = false }
+
+	function job:poll(limit)
+		local batch = {}
+		local count = math.min(limit or 32, #events)
+		for at = 1, count do batch[at] = table.remove(events, 1) end
+		local changed = count > 0 or self.changed
+		self.changed = false
+		return batch, changed
+	end
+
+	function job:isDone() return self.done == true end
+	function job:hasPending() return #events > 0 end
+	function job:progress() return self.latest end
+	function job:cancel() self.done = true end
+	function job:close() self.closed = true end
+
+	return job
+end
+
 test.it("adds tracks from a background scan as they arrive", function()
 	App:init({ scan = false })
 	App.services.settings.values.root = "/beat-fixtures"
@@ -1418,10 +1443,9 @@ test.it("adds tracks from a background scan as they arrive", function()
 
 	---@type table[]
 	local queued = { { type = "track", info = { format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "First", artist = "Artist", album = "Album", albumArtist = "Artist", track = 1 } }, entry = { path = "/beat-fixtures/1.wav", dir = "/beat-fixtures", name = "1.wav", ext = "wav" }, coverCache = "/tmp/beat-test-cover.jpg" } }
-	local job = ScanJob.new("/beat-fixtures", os.tmpname() .. "-beat-scan.jsonl", os.tmpname() .. "-beat-scan.cancel")
-	job.queued = queued
+	local progress = { phase = "inspect", files = 2, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/1.wav" }
+	local job = scriptedJob(queued, progress)
 	job.changed = true
-	job.latest = { phase = "inspect", files = 2, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/1.wav" }
 	local closed = false
 	function job:close() closed = true end
 	App.services.scan.job = job
@@ -1457,8 +1481,7 @@ test.it("adds a reused track from a background scan without reading it", functio
 	App.services.settings.values.root = "/beat-fixtures"
 	App.services.library.current = Library.new("/beat-fixtures")
 
-	local job = ScanJob.new("/beat-fixtures", os.tmpname() .. "-beat-scan.jsonl", os.tmpname() .. "-beat-scan.cancel")
-	job.queued = {
+	local job = scriptedJob({
 		{
 			type = "reused",
 			record = {
@@ -1476,9 +1499,8 @@ test.it("adds a reused track from a background scan without reading it", functio
 				modified = 0
 			}
 		}
-	}
+	}, { phase = "inspect", files = 1, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/2.wav" })
 	job.changed = true
-	job.latest = { phase = "inspect", files = 1, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/2.wav" }
 
 	test.truthy(App.services.scan:ingest(job, nil), "the reused record changed the library")
 	local track = App.services.library.current.tracks[1]

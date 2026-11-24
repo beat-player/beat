@@ -215,6 +215,7 @@ function artistPage.view(app, page, window)
 
 	local current = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
+	local loading = app.services.playback:isLoading()
 	local top = {}
 	for index, track in ipairs(artist.tracks) do
 		if index > 6 then break end
@@ -222,6 +223,7 @@ function artistPage.view(app, page, window)
 		props.index = index
 		props.current = current?.id == track.id
 		props.playing = playing
+		props.loading = props.current and loading
 		props.width = content
 		top[#top + 1] = trackRow.view(app, props)
 	end

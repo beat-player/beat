@@ -122,6 +122,10 @@ function searchAll.view(app, page, window)
 	local headerHeight = theme:px(58) + filterHeight
 	local listStart = headerHeight + gap + (filter ~= nil and gap or 0)
 	local rowHeight, perRow
+	local currentTrack = app.services.playback:current()
+	local playing = app.services.playback.player:isPlaying()
+	local loading = app.services.playback:isLoading()
+
 	if category == "albums" then
 		rowHeight = cardHeight + gap
 		perRow = columns
@@ -211,8 +215,9 @@ function searchAll.view(app, page, window)
 								{
 									track = track,
 									index = at,
-									current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
-									playing = app.services.playback.player:isPlaying(),
+									current = currentTrack ~= nil and currentTrack.id == track.id,
+									playing = playing,
+									loading = currentTrack ~= nil and currentTrack.id == track.id and loading,
 									onClick = { type = "playTrack", trackId = track.id, trackIds = trackIds },
 									width = width,
 									showAlbum = true,

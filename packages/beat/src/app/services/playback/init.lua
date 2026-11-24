@@ -28,6 +28,7 @@ local SESSION_STRIDE = 10
 ---@field shownSecond number? # The second of the track the bar's clock was last laid out for
 ---@field shownTrackId number? # And the track and whether it played, which the bar is laid out from
 ---@field shownPlaying boolean?
+---@field shownLoading boolean? # Whether the loading indicator was up in the frame last drawn
 local Playback = {}
 Playback.__index = Playback
 Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
@@ -48,20 +49,14 @@ function Playback.new(deps)
 		toasts = deps.toasts,
 		emit = deps.emit,
 		player = Player.new(),
-		spectrum = Spectrum.new(),
+		-- The audio thread writes the PCM the meter is made of into the ring the player made.
+		spectrum = nil,
+		shownLoading = nil,
 		lastListenedTrackId = nil
 	}, Playback)
 
-	-- The samples the audio device hands back are what the spectrum is made of; the player has no
-	-- other reason to know the spectrum exists.
-	---@param samples ffi.cdata*
-	---@param frames number
-	---@param channels number
-	---@param startFrame number
-	local function onSamples(samples, frames, channels, startFrame)
-		self.spectrum:feed(samples, frames, channels, startFrame)
-	end
-	self.player.onSamples = onSamples
+	local pcm = self.player.pcm --[[@as beat.PcmRing]]
+	self.spectrum = Spectrum.new(pcm.pointer)
 
 	local values = self.settings.values
 	self.player:setVolume(values.volume)
@@ -136,6 +131,12 @@ end
 ---@return beat.Track?
 function Playback:current()
 	return self.player:current()
+end
+
+--- Whether the player is still waiting for the track the user asked for to be heard.
+---@return boolean
+function Playback:isLoading()
+	return self.player:isLoading()
 end
 
 --- A new library invalidates what is playing: its ids and paths are gone, so the queue, the
@@ -405,6 +406,17 @@ function Playback:step(now)
 	if moved then repaint = true end
 	if structural then changed = true end
 
+	-- The spinner is a canvas: while a track is still being opened, every frame draws it a little
+	-- further round, so the app must keep asking for frames even when nothing else moves.
+	local loading = self.player:isLoading()
+	if loading then repaint = true end
+	if self.shownLoading == nil then
+		self.shownLoading = loading
+	elseif self.shownLoading ~= loading then
+		self.shownLoading = loading
+		changed = true
+	end
+
 	local current = self.player:current()
 	local playing = self.player:isPlaying()
 	-- A listen is counted once per track, when playback has actually started it: that is what the
@@ -437,6 +449,11 @@ function Playback:step(now)
 		changed = true
 	end
 
+	-- This brings the spectrum's frame count up to what the last snapshot reported. Before a
+	-- player exists there is nothing to ask, and the meter holds at rest.
+	local written, floor = self.player:pcmState()
+	if written ~= nil then self.spectrum:sync(written, floor) end
+
 	local meterChanged, meterEasing = self.spectrum:step(now, self.player:heardFrame())
 	if meterChanged then repaint = true end
 
@@ -452,9 +469,9 @@ function Playback:step(now)
 	end
 	if self.sessionDueAt ~= nil and now >= self.sessionDueAt then self:flush() end
 
-	-- The meter falling back to rest after the music stops is as much a reason to come back next
-	-- frame as a track that is playing is.
-	return changed, playing or meterEasing, repaint
+	-- The meter falling back to rest after the music stops, and a track still being opened, are as
+	-- much a reason to come back next frame as a track that is playing is.
+	return changed, playing or meterEasing or loading, repaint
 end
 
 --- The old player goes when the app is set up again, so a test that makes many apps does not keep
@@ -464,7 +481,7 @@ function Playback:close()
 	self.player.onTrackStarted = nil
 	self.player.onTrackEnded = nil
 	self.player.onQueueChanged = nil
-	self.player:close()
+	self.player:destroy()
 	self.spectrum:clear()
 end
 

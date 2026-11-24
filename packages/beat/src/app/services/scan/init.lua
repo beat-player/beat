@@ -1,17 +1,17 @@
--- Reading a folder into the library: where the library comes from, the worker that walks it, and
+-- Reading a folder into the library: where the library comes from, the job that walks it, and
 -- the two cards over the corner that say how far it has got. The scan is the only thing that makes
 -- a library appear, so it also owns the folder the library was chosen from and the question the
 -- first launch asks -- everything a view needs to say "no folder yet" comes from here.
 local Picker = require("beat.app.services.scan.picker")
--- The worker that walks a folder is read when a scan starts rather than when the app does: a
--- launch that only browses the cached library never needs it.
+-- The job that walks a folder is read when a scan starts rather than when the app does: a launch
+-- that only browses the cached library never needs it.
 local function scanJob() return require("beat.app.services.scan.job") end
 local path = require("path")
 local time = require("wonderland.time")
 local Log = require("beat.log")
 local platform = require("beat.platform")
 
--- How much of a worker's output one tick takes into the library. A fast local scan can write a
+-- How much of a scan's output one tick takes into the library. A fast local scan can produce a
 -- whole library in a fraction of a second: taking it a fixed handful of tracks a tick makes the
 -- scan last as many frames as the library has tracks, and taking all of it in one tick holds a
 -- frame for as long as the reading and adding take. A share of a frame per tick keeps both ends
@@ -26,9 +26,9 @@ local INGEST_BATCH = 128
 ---@field at number
 
 ---@class beat.ScanService: beat.Service
----@field job beat.ScanJob? # The worker reading the folder, while there is one
----@field addJob beat.ScanJob? # The worker reading one folder into the existing library, while there is one
----@field addFolderPath string? # The folder that worker is reading
+---@field job beat.ScanJob? # The job reading the folder, while there is one
+---@field addJob beat.ScanJob? # The job reading one folder into the existing library, while there is one
+---@field addFolderPath string? # The folder that job is reading
 ---@field pick beat.FolderPick? # The system folder dialog, while it is open
 ---@field pickRequest { reply: string? }? # Who the open dialog's answer goes to; nil reply is a library root
 ---@field pickQueue { reply: string? }[] # Dialogs asked for while one was open
@@ -206,7 +206,7 @@ function Scan:nextPick()
 end
 
 --- The tracks a job has produced, into the library, until the tick's share of a frame is spent.
---- The worker may have written them long ago: what bounds a tick is the reading and the adding,
+--- The inspectors may have pushed them long ago: what bounds a tick is the reading and the adding,
 --- not how much output is waiting.
 ---@param job beat.ScanJob
 ---@param errors { path: string, message: string }[]?
@@ -335,8 +335,9 @@ Scan.on = {
 	dismissScanSummary = function(self, message) self.summary = nil end
 }
 
---- The dialog is modal, so its answer is read back from a file; the tracks arrive the same way,
---- a chunk a tick, so a fast local scan cannot make one frame add thousands of rows.
+--- The dialog is modal, so its answer is read back from a file; the tracks arrive through the
+--- scan job's channel, a batch a tick, so a fast local scan cannot make one frame add thousands of
+--- rows.
 function Scan:step(now)
 	local changed = false
 
@@ -455,9 +456,9 @@ function Scan:step(now)
 end
 
 --- The app is being set up again, so nothing will read this job's events any more: tell the
---- worker to stop and drop it. Its temporary files are left to the temp directory rather than
---- deleted under a worker that may still be reading them. The dialog's answer file is dropped
---- too, since nobody will poll it.
+--- inspectors to stop and drop it. Their threads are joined on the next scan -- one of them is in
+--- the middle of a file read, and the app is being closed rather than made to wait for it. The
+--- dialog's answer file is dropped too, since nobody will poll it.
 function Scan:close()
 	if self.job ~= nil then
 		self.job:cancel()
