@@ -283,11 +283,28 @@ function Player:playTrack(track, tracks, index, source)
 	self:playTracks(tracks, index or 1, { source = source or "track" })
 end
 
+-- How close to its end a track's position counts as the end. A saved session or a pause that came
+-- in the last moment of a track leaves a position the decoder has nothing after.
+local END_MARGIN = 0.25
+
+---@param track beat.Track
+---@param seconds number?
+local function atEnd(track, seconds)
+	return seconds ~= nil and track.duration > 0 and seconds >= track.duration - END_MARGIN
+end
+
+--- Plays, or resumes. A track that has already played to its end starts again from the top: a
+--- play there would otherwise resume at a position with nothing left to hear, and nothing happens.
 function Player:play()
-	if self.queue == nil or self.queue:current() == nil then return end
+	local track = self.queue ~= nil and self.queue:current() or nil
+	if track == nil then return end
 	local player = ensurePlayer(self)
 	if not self.loaded then
 		local startAt = self.startAt
+		if atEnd(track, startAt) then
+			startAt = nil
+			self.startAt = nil
+		end
 		-- An audio thread can open the source at the restored frame as it loads instead of
 		-- decoding the track from the top and throwing those frames away. A treble player in
 		-- process only takes the seek after the queue is staged.
@@ -298,6 +315,10 @@ function Player:play()
 		self:reload(true)
 		if startAt ~= nil then self:seek(startAt) end
 	elseif not player:isPlaying() then
+		if atEnd(track, player:position()) then
+			self:reload(true)
+			return
+		end
 		beginFade(self)
 		applyVolume(self)
 		player:play()

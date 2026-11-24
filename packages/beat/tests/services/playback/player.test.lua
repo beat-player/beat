@@ -271,3 +271,27 @@ test.it("comes back paused where it was, and plays on from there", function()
 	test.equal(calls.enqueued[1], "/tmp/two.wav", "the queue is staged from the restored track")
 	test.equal(calls.seeks[1], 90, "and plays from the place it was left at")
 end)
+
+test.it("plays a track left at its end from the top again", function()
+	local player = Player.new()
+	-- A session saved as the last track finished: its place is the end of the track.
+	player:restore(Queue.new(album, 3), 120)
+	local calls = device(player)
+	player:play()
+	test.truthy(player:isPlaying())
+	test.equal(calls.enqueued[1], "/tmp/three.wav")
+	test.equal(#calls.seeks, 0, "nothing seeks to the end, where there is nothing left to hear")
+end)
+
+test.it("starts a paused track again when it was paused at its end", function()
+	local player = Player.new()
+	local calls = device(player)
+	player:playTracks(album, 1)
+	player:pause()
+	-- The device reports the end of the track, as it does once the last frame has been heard.
+	player.player.position = function() return 120 end
+	local closes = calls.closes
+	player:play()
+	test.truthy(player:isPlaying())
+	test.truthy(calls.closes > closes, "the queue is staged again rather than resumed at the end")
+end)
