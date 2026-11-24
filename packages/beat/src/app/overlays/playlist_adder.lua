@@ -12,6 +12,17 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@class beat.PlaylistAdderOverlay: beat.OverlaySurface
 local playlistAdder = {}
 
+-- The search field's handlers, made once rather than on every frame the panel is open.
+---@param value string
+---@return table
+local function searchTyped(value)
+	return { type = "playlistAdderQuery", value = value }
+end
+
+local function submitNothing()
+	return nil
+end
+
 ---@param params { playlistId: number }
 ---@param app beat.App
 function playlistAdder.new(app, params)
@@ -129,8 +140,8 @@ function playlistAdder.view(app, overlay, window)
 						name = "playlistAddSearch",
 						value = state.query,
 						placeholder = "Search albums",
-						oninput = |value| -> { type = "playlistAdderQuery", value = value },
-						onsubmit = || -> nil
+						oninput = searchTyped,
+						onsubmit = submitNothing
 					}
 				),
 				div():style(sty():column():wrel(1.0):h(theme:px(8 * 44)):gap(theme:px(2))):children(rows),

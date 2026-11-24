@@ -59,6 +59,19 @@ end
 
 --- What a service is made with: exactly what it listed. Asking for anything else is an error
 --- naming both, so `needs` cannot drift from what the code uses.
+-- The service each set of needs belongs to, so the error a missing dependency raises can name it
+-- without a closure made for every service.
+---@type table<table, string>
+local depsOwner = setmetatable({}, { __mode = "k" })
+
+---@param deps table
+---@param key any
+local function missingDependency(deps, key)
+	error((depsOwner[deps] or "a service") .. " uses " .. tostring(key) .. " but does not list it in needs", 2)
+end
+
+local DEPS_META = { __index = missingDependency }
+
 ---@param name string
 ---@param needs string[]
 ---@param built table<string, any>
@@ -66,9 +79,8 @@ end
 local function depsFor(name, needs, built)
 	local deps = {}
 	for _, dependency in ipairs(needs) do deps[dependency] = built[dependency] end
-	return setmetatable(deps, { __index = function(_, key)
-		error(name .. " uses " .. tostring(key) .. " but does not list it in needs", 2)
-	end })
+	depsOwner[deps] = name
+	return setmetatable(deps, DEPS_META)
 end
 
 ---@return beat.BuiltServices

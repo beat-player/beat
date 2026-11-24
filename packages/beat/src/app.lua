@@ -4,7 +4,17 @@
 -- the layout then ran interpreted for whole stretches, and a frame took ten times as long, on and
 -- off, depending on when the flush landed. Room for everything the app compiles keeps it compiled;
 -- what that keeps is the traces themselves, a few MiB of heap that a flush would only build again.
-jit.opt.start("maxtrace=4000", "maxmcode=8192")
+--
+-- LuaJIT's unroll factor of 15 unrolls a loop body fifteen times into the trace that records it,
+-- and a frame's loops -- the layout walk, the quad writer, a render pass's encoder -- are long
+-- enough that fifteen of them pass the 4000-instruction limit of one trace. Each of those then
+-- aborts with "trace too long", is retried, and aborts again: the whole walk runs interpreted
+-- because a trace that never fits is a trace that never covers it. Recording a handful of copies
+-- of a body keeps the frame's loops under the limit: a scroll of the library measured over three
+-- interleaved runs went from 63% of a frame compiled with the defaults to 85% with the six below,
+-- and its interpreted share from 18% to 8%. The same three runs put a frame of the home scroll a
+-- fifth faster (0.22 ms to 0.18 ms) and left the playing screen's where it was.
+jit.opt.start("maxtrace=4000", "maxmcode=8192", "loopunroll=6")
 
 -- What the collector lets the heap grow to before it runs again: 120% of what was live, rather than
 -- the default 200%. Memory LuaJIT has handed out is kept by the process once it has been, so a
@@ -16,7 +26,6 @@ collectgarbage("setpause", 120)
 local ffi = require("ffi")
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
-local artwork = require("beat.music.artwork")
 local fs = require("fs")
 
 local shell = require("beat.app.shell")
@@ -28,9 +37,6 @@ local settingsModel = require("beat.app.services.settings.model")
 local ServiceCollection = require("beat.app.service_collection")
 local Signal = require("beat.app.signal")
 local platform = require("beat.platform")
-
--- Written by build.lua from assets/icon-256.png, so a compiled binary carries it too.
-local iconData = require("beat.app.icon")
 
 -- The PNG decoded once: the window, its title bar and the tray all take the same bytes.
 local iconCache
@@ -337,6 +343,8 @@ end
 ---@return { width: number, height: number, rgba: string }?
 function App:icon()
 	if iconCache == nil then
+		local artwork = require("beat.music.artwork")
+		local iconData = require("beat.app.icon")
 		local icon = artwork.decodePNG(iconData)
 		if icon == nil then return nil end
 		iconCache = {

@@ -72,9 +72,20 @@ end
 -- The theme names the settings screen offers, in the order it shows them. `auto` is a choice
 -- rather than a palette, so it is put in front here and never reaches the palette module.
 ---@return string[]
+-- The page's own list, made once: the theme names are fixed, so an "auto" in front of them is
+-- the same list on every frame.
+---@type string[]?
+local namesWithAuto
+
 function Appearance:names()
-	local list = { "auto" }
-	for _, name in ipairs(theme.names()) do list[#list + 1] = name end
+	local list = namesWithAuto
+	if list == nil then
+		local names = theme.names()
+		list = { "auto" }
+		for at = 1, #names do list[#list + 1] = names[at] end
+		namesWithAuto = list
+	end
+	---@cast list string[]
 	return list
 end
 

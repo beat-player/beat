@@ -18,6 +18,16 @@ local HOME = os.getenv("HOME") or os.getenv("USERPROFILE") or "/"
 ---@type beat.PageSurface
 local folders = {}
 
+-- The path field takes typing and answers Enter. Neither handler needs the frame that drew it, so
+-- they are made once rather than on every frame the page is open.
+local function ignoreInput() end
+
+---@param value string
+---@return table
+local function goToFolder(value)
+	return { type = "folderGo", path = value }
+end
+
 --- Lists the folders inside `pathname`, sorted by name, leaving out hidden ones.
 ---@param app beat.App
 ---@param state beat.FoldersState

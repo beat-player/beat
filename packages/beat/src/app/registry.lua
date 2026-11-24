@@ -190,6 +190,7 @@ local Log = require("beat.log")
 ---@class beat.Registry
 ---@field app beat.App
 ---@field plugins beat.Plugin[]
+---@field pluginsByName table<string, beat.Plugin> # The loaded plugins, by name, so asking is a lookup
 ---@field services table<string, beat.Registration>
 ---@field pages table<string, beat.Registration>
 ---@field overlays table<string, beat.Registration>
@@ -219,6 +220,7 @@ function Registry.new(app)
 	registry = setmetatable({
 		app = app,
 		plugins = {},
+		pluginsByName = {},
 		services = {},
 		pages = {},
 		overlays = {},
@@ -245,10 +247,8 @@ end
 ---@param name string
 ---@return boolean
 function Registry:hasPlugin(name)
-	for _, plugin in ipairs(self.plugins) do
-		if plugin.name == name then return not plugin.disabled end
-	end
-	return false
+	local plugin = self.pluginsByName[name]
+	return plugin ~= nil and not plugin.disabled
 end
 
 ---@param text string
@@ -427,8 +427,11 @@ end
 ---@return fun() undo
 function Registry:addPage(kind, surface, plugin)
 	namespace(plugin, "page", kind)
-	local ok, err = pageShape(surface)
-	if not ok then error(err, 0) end
+	-- A module name defers reading the page until it is first asked for; a table is checked now.
+	if type(surface) ~= "string" then
+		local ok, err = pageShape(surface)
+		if not ok then error(err, 0) end
+	end
 	if self.pages[kind] ~= nil then error("page " .. kind .. " is registered twice", 0) end
 
 	local registration = { value = surface, plugin = plugin }
@@ -444,8 +447,10 @@ end
 ---@return fun() undo
 function Registry:addOverlay(name, surface, plugin)
 	namespace(plugin, "overlay", name)
-	local ok, err = overlayShape(surface)
-	if not ok then error(err, 0) end
+	if type(surface) ~= "string" then
+		local ok, err = overlayShape(surface)
+		if not ok then error(err, 0) end
+	end
 	if self.overlays[name] ~= nil then error("overlay " .. name .. " is registered twice", 0) end
 
 	local registration = { value = surface, plugin = plugin }
@@ -731,6 +736,14 @@ local function resolve(self, field, name)
 	local registration = self[field][name]
 	if registration == nil then return nil end
 	local value = registration.value
+	-- A page or overlay registered by module name is read the first time something asks for it,
+	-- so a launch does not compile every screen the app can open.
+	if type(value) == "string" then
+		value = require(value)
+		local ok, err = field == "pages" and pageShape(value) or overlayShape(value)
+		if not ok then error(err, 0) end
+		registration.value = value
+	end
 	-- The mods are kept by field and target, so a lookup a frame makes does not build `page:home`
 	-- from a string every time.
 	local list = self.modsByField[field][name]

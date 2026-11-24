@@ -63,11 +63,11 @@ end)
 test.it("formats the rate, the frame times and the memory", function()
 	test.equal(
 		Debug.format({ frames = 60, average = 8.34, max = 21.0 }, 44 * 1024, 180 * 1024),
-		"60 fps  avg 8.3 ms  max 21.0 ms\nlua 44.0 MB  rss 180 MB"
+		"60 fps  cpu 8.3 ms  max 21.0 ms\nlua 44.0 MB  rss 180 MB"
 	)
 	test.equal(
 		Debug.format({ frames = 60, average = 8.34, max = 21.0 }, 44 * 1024, nil),
-		"60 fps  avg 8.3 ms  max 21.0 ms\nlua 44.0 MB",
+		"60 fps  cpu 8.3 ms  max 21.0 ms\nlua 44.0 MB",
 		"a platform without /proc leaves the resident size out"
 	)
 	test.equal(

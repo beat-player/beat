@@ -12,13 +12,18 @@ local TOGGLE_PLAY = { type = "togglePlay" }
 ---@class beat.components.AlbumActions
 ---@field open table # Navigate to the album's page
 ---@field play table # Play the album
----@field menu fun(...): table # The right-click menu at where the click was
+---@field menu table # Open the album's menu where the pointer is
 
 -- What an album's card or row sends, made once per album rather than once per card per frame.
 ---@type table<beat.Album, beat.components.AlbumActions>
 local actions = setmetatable({}, { __mode = "k" })
 
 local albumCard = {}
+
+--- The props a card is built from, kept per album: every shelf builds its cards again on each
+--- frame of a scroll, and only the room the card has and the context it draws in change.
+---@type table<beat.Album, { album: beat.Album, cover: table<string, any> }>
+local propsOf = setmetatable({}, { __mode = "k" })
 
 --- The messages a card or a row of one album sends, shared by every view that shows the album.
 --- A message is read by whoever handles it, never changed, so the same table can be sent again.
@@ -28,17 +33,14 @@ function albumCard.actions(album)
 	local found = actions[album]
 	if found == nil then
 		local id = album.id
+		-- The menu opens where the pointer is, and a right-click is what asked for it: the
+		-- pointer was set to the click before the handler runs, so the message names no place and
+		-- the view keeps no closure to make one. A closure per album is what left the trace
+		-- compiler closing an upvalue on the frame that built the shelf.
 		found = {
 			open = { type = "navigate", page = { kind = "album", id = id } },
 			play = { type = "playAlbum", id = id },
-			menu = |_, _, _, _, _, windowX, windowY| -> {
-				type = "open",
-				overlay = "menu",
-				menu = "album",
-				id = id,
-				x = windowX,
-				y = windowY
-			}
+			menu = { type = "open", overlay = "menu", menu = "album", id = id }
 		}
 		actions[album] = found
 	end
@@ -67,21 +69,25 @@ end
 --- The card's cover plus the title block beneath it. The block's height comes from the type it
 --- sets, rather than a fixed guess: a type scale change must not cut an artist line in half.
 ---@param app beat.App
----@param props beat.components.AlbumCardHeightProps
+---@param width number
 ---@return number
-function albumCard.height(app, props)
+function albumCard.height(app, width)
 	local theme = app.services.appearance.theme
-	local width = props.width
 	return width + theme:px(11) + theme:type("base") + theme:px(2) + theme:type("sm")
 end
 
 ---@param app beat.App
----@param props beat.components.AlbumCardProps
+---@param album beat.Album
+---@param width number # The card's width; the cover is square
+---@param ctx beat.ui.Context
 ---@return wonderland.Element
-function albumCard.view(app, props)
+function albumCard.view(app, album, width, ctx)
+	local kept = propsOf[album]
+	if kept == nil then
+		kept = { album = album, cover = { album = album, sheen = true } }
+		propsOf[album] = kept
+	end
 	local theme = app.services.appearance.theme
-	local ctx = props.ui
-	local album, width = props.album, props.width
 	local actions = albumCard.actions(album)
 	local current = app.services.playback:current()
 	local thisAlbum = current?.albumId == album.id
@@ -91,7 +97,7 @@ function albumCard.view(app, props)
 
 	local s = styles.of(theme, "albumCard", width) --[[@as beat.components.AlbumCardStyles]]
 	if s.card == nil then
-		local height = albumCard.height(app, { width = width })
+		local height = albumCard.height(app, width)
 		local button = theme:px(36)
 		local inset = width - theme:px(44)
 		s.card = sty():w(width):h(height):column()
@@ -107,6 +113,12 @@ function albumCard.view(app, props)
 		s.radius = theme:radius("md")
 	end
 
+	-- The cover's props are kept with the card and only the size is written again: a cover is
+	-- asked for on every card of every frame, and a props table it is only read from is not one
+	-- the frame has to make.
+	local coverProps = kept.cover --[[@as table<string, any>]]
+	coverProps.album, coverProps.size, coverProps.radius = album, width, s.radius
+
 	-- The children are handed over one at a time rather than as a table: this runs for every card of
 	-- every frame, and a table a card is only a list of is a table that frame no longer needs.
 	return div()
@@ -116,7 +128,7 @@ function albumCard.view(app, props)
 			div()
 				:style(s.art)
 				:children(
-					cover.view(app, { album = album, size = width, radius = s.radius, sheen = true }),
+					cover.view(app, coverProps --[[@as beat.components.CoverProps]]),
 					div()
 						:style(s.play):onClick(onPlay)
 						:children(

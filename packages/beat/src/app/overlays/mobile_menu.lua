@@ -6,6 +6,19 @@ local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+-- The point under the open menu, and the one polygon that draws it: one menu is on the screen at
+-- a time, so its numbers live here and the draw is made once rather than on every frame.
+local arrowState = { pointX = 0, point = 0, colour = "" }
+
+---@param canvas wonderland.Canvas
+local function drawArrow(canvas)
+	local point = arrowState.point
+	canvas:polygon(
+		{ arrowState.pointX - point, -1, arrowState.pointX + point, -1, arrowState.pointX, point },
+		arrowState.colour
+	)
+end
+
 ---@class beat.MobileMenuOverlay: beat.OverlaySurface
 local mobileMenu = { light = true }
 
@@ -98,9 +111,8 @@ function mobileMenu.view(app, _overlay, window)
 	-- The point under the panel, over the tab: what says which control the menu belongs to.
 	local pointX = tabCentre - x
 	local colour = theme:color("elevated")
-	local arrow = div():style(sty():w(width):h(point)):canvas(function(canvas)
-		canvas:polygon({ pointX - point, -1, pointX + point, -1, pointX, point }, colour)
-	end)
+	arrowState.pointX, arrowState.point, arrowState.colour = pointX, point, colour
+	local arrow = div():style(sty():w(width):h(point)):canvas(drawArrow)
 
 	return div()
 		:style(sty():fill():offset(0, 0):z(130)):onClick({ type = "dismiss" })

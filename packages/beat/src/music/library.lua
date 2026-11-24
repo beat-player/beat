@@ -6,20 +6,29 @@
 local path = require("path")
 local names = require("beat.music.names")
 
+-- Track and album records keep only the fields a page reads for every row. The rest -- the audio
+-- details a scan writes and a plugin reads once, a cover path, a fingerprint -- live in columns on
+-- the library, one array per field indexed by the record's id, and a shared metatable answers the
+-- reads that would have found them (see `columnar`). A Lua table's hash part is sized by how many
+-- fields it holds rather than by how big they are, so a track with twenty fields costs more than
+-- three times the memory of one with eight, and most of those twenty are read once a launch at
+-- most. Reads through the metatable are a function call, which a row that draws a title or a
+-- length never pays.
+
 ---@class beat.Track
----@field id number
+---@field id number # In the record's own table, with the fields below it
 ---@field path string
 ---@field title string
 ---@field artist string
 ---@field album string
 ---@field albumId number
----@field artistId number
+---@field number number?
+---@field duration number
+---@field artistId number # In a column; still read as a field
 ---@field albumArtist string
 ---@field disc number
----@field number number?
 ---@field year number?
 ---@field genre string?
----@field duration number
 ---@field format string
 ---@field sampleRate number
 ---@field channels number
@@ -31,20 +40,20 @@ local names = require("beat.music.names")
 ---@field searchText string? # Folded title, artist and album, made on the first search
 
 ---@class beat.Album
----@field id number
+---@field id number # In the album's own table, with the fields below it
 ---@field key string
 ---@field title string
 ---@field artist string
----@field artistId number
----@field year number?
 ---@field tracks beat.Track[]
----@field duration number
----@field trackCount number
+---@field artistId number # In a column; still read as a field
+---@field year number?
 ---@field coverPath string?
 ---@field coverCache string?
 ---@field coverTrack beat.Track?
 ---@field modified number # The newest file in the album, in seconds
 ---@field single boolean? # True when the album is one file with no album tag, titled after it
+---@field trackCount number # Computed from `tracks` each read
+---@field duration number # Computed from the tracks' lengths each read
 ---@field searchText string? # Folded title and artist, made on the first search
 
 ---@class beat.Artist
@@ -64,6 +73,7 @@ local names = require("beat.music.names")
 ---@field tracks beat.Track[]
 
 ---@class beat.Library
+---@field recentAdded { limit: number?, version: number, count: number, list: beat.Album[] }?
 ---@field root string
 ---@field tracks beat.Track[]
 ---@field albums beat.Album[]
@@ -75,6 +85,10 @@ local names = require("beat.music.names")
 ---@field albumByKey table<string, beat.Album>
 ---@field artistByName table<string, beat.Artist>
 ---@field strings table<string, string> # Repeated tag values, one copy each
+---@field columns table<string, table<number, any>> # A track's rarely read fields, by field then id; never replaced, only written
+---@field albumColumns table<string, table<number, any>> # The same for an album
+---@field trackMeta table # Serves `columns` to the tracks this library made
+---@field albumMeta table # Serves `albumColumns` and the computed fields to the albums
 ---@field sweep beat.SearchSweep? # The last search, for a longer query to narrow
 ---@field nextTrackId number # The id the next track is given; ids are never reused
 ---@field nextAlbumId number
@@ -84,10 +98,50 @@ local names = require("beat.music.names")
 local Library = {}
 Library.__index = Library
 
+--- The metatable a record of a library is given: a read of a field it does not hold in its own
+--- table finds the column for that field, or a value computed from the record, and a write of such
+--- a field goes into the column rather than into the table (where it would grow the field count
+--- the table pays for). A field the record does hold -- a title, its list of tracks -- is read and
+--- written as before without coming here.
+---@param columns table<string, table<number, any>>
+---@param computed table<string, fun(record: any): any>?
+---@return table
+local function columnar(columns, computed)
+	local function read(record, key)
+		local column = columns[key]
+		if column ~= nil then return column[record.id] end
+		if computed ~= nil then
+			local compute = computed[key]
+			if compute ~= nil then return compute(record) end
+		end
+		return nil
+	end
+
+	local function write(record, key, value)
+		local column = columns[key]
+		if column == nil then
+			if value == nil then return end
+			column = {}
+			columns[key] = column
+		end
+		column[record.id] = value
+	end
+
+	return { __index = read, __newindex = write }
+end
+
+--- Forgets everything a record had in a column, so dropping it from the library also drops the
+--- strings only it held.
+---@param columns table<string, table<number, any>>
+---@param id number
+local function dropColumns(columns, id)
+	for _, column in pairs(columns) do column[id] = nil end
+end
+
 ---@param root string
 ---@return beat.Library
 function Library.new(root)
-	return setmetatable({
+	local library = setmetatable({
 		root = root,
 		tracks = {},
 		albums = {},
@@ -99,6 +153,8 @@ function Library.new(root)
 		albumByKey = {},
 		artistByName = {},
 		strings = {},
+		columns = {},
+		albumColumns = {},
 		sweep = nil,
 		version = 0,
 		ready = false,
@@ -108,6 +164,17 @@ function Library.new(root)
 		nextAlbumId = 1,
 		nextArtistId = 1
 	}, Library)
+
+	library.trackMeta = columnar(library.columns)
+	library.albumMeta = columnar(library.albumColumns, {
+		trackCount = function(album) return #album.tracks end,
+		duration = function(album)
+			local total = 0
+			for _, track in ipairs(album.tracks) do total += track.duration end
+			return total
+		end
+	})
+	return library
 end
 
 ---@param value string?
@@ -145,21 +212,19 @@ local function place(self, track, key)
 	if album == nil then
 		local albumId = self.nextAlbumId
 		self.nextAlbumId = albumId + 1
-		album = {
+		album = setmetatable({
 			id = albumId,
 			key = key,
 			title = track.album,
 			artist = track.albumArtist,
-			year = track.year,
-			tracks = {},
-			duration = 0,
-			trackCount = 0,
-			coverPath = track.coverPath,
-			coverCache = track.coverCache,
-			coverTrack = track.hasPicture and track or nil,
-			modified = track.modified,
-			single = names.isSingleKey(key) or nil
-		}
+			tracks = {}
+		}, self.albumMeta)
+		album.year = track.year
+		album.coverPath = track.coverPath
+		album.coverCache = track.coverCache
+		album.coverTrack = track.hasPicture and track or nil
+		album.modified = track.modified
+		album.single = names.isSingleKey(key) or nil
 
 		self.albums[#self.albums + 1] = album
 		self.albumById[albumId] = album
@@ -179,8 +244,6 @@ local function place(self, track, key)
 
 	album.tracks[#album.tracks + 1] = track
 	track.albumId = album.id
-	album.trackCount += 1
-	album.duration += track.duration
 
 	local artistKey = track.albumArtist
 	local profile = self.artistByName[artistKey]
@@ -258,29 +321,28 @@ function Library:add(info, entry, cover, coverCache)
 	if not single then coverPath = intern(self, cover) end
 
 	---@type beat.Track
-	local track = {
+	local track = setmetatable({
 		id = id,
 		path = entry.path,
 		title = title,
 		artist = artist,
 		album = albumTitle,
 		albumId = 0,
-		artistId = 0,
-		albumArtist = albumArtist,
-		disc = tags.disc or 1,
-		number = number,
-		year = names.yearOf(tags.date),
-		genre = intern(self, tags.genre),
 		duration = info.duration or 0,
-		format = intern(self, info.format) or "",
-		sampleRate = info.sampleRate,
-		channels = info.channels,
-		hasPicture = info.hasPicture,
-		coverPath = coverPath,
-		coverCache = intern(self, coverCache),
-		modified = entry.modifyTime or 0,
-		fingerprint = info.fingerprint
-	}
+		number = number
+	}, self.trackMeta)
+	track.albumArtist = albumArtist
+	track.disc = tags.disc or 1
+	track.year = names.yearOf(tags.date)
+	track.genre = intern(self, tags.genre)
+	track.format = intern(self, info.format) or ""
+	track.sampleRate = info.sampleRate
+	track.channels = info.channels
+	track.hasPicture = info.hasPicture
+	track.coverPath = coverPath
+	track.coverCache = intern(self, coverCache)
+	track.modified = entry.modifyTime or 0
+	track.fingerprint = info.fingerprint
 
 	return place(self, track, albumKeyOf(tags, entry.dir, entry.path, entry.key))
 end
@@ -355,29 +417,28 @@ function Library:addCached(record)
 	if names.isSingleKey(key) then coverPath = nil end
 
 	---@type beat.Track
-	local track = {
+	local track = setmetatable({
 		id = id,
 		path = file,
 		title = title,
 		artist = artist,
 		album = albumTitle,
 		albumId = 0,
-		artistId = 0,
-		albumArtist = albumArtist,
-		disc = numberOr(record.disc, 1),
-		number = numberOf(record.number),
-		year = numberOf(record.year),
-		genre = intern(self, textOf(record.genre)),
 		duration = numberOr(record.duration, 0),
-		format = intern(self, textOf(record.format)) or "",
-		sampleRate = numberOr(record.sampleRate, 0),
-		channels = numberOr(record.channels, 0),
-		hasPicture = record.hasPicture == true,
-		coverPath = coverPath,
-		coverCache = intern(self, textOf(record.coverCache)),
-		modified = numberOr(record.modified, 0),
-		fingerprint = textOf(record.fingerprint)
-	}
+		number = numberOf(record.number)
+	}, self.trackMeta)
+	track.albumArtist = albumArtist
+	track.disc = numberOr(record.disc, 1)
+	track.year = numberOf(record.year)
+	track.genre = intern(self, textOf(record.genre))
+	track.format = intern(self, textOf(record.format)) or ""
+	track.sampleRate = numberOr(record.sampleRate, 0)
+	track.channels = numberOr(record.channels, 0)
+	track.hasPicture = record.hasPicture == true
+	track.coverPath = coverPath
+	track.coverCache = intern(self, textOf(record.coverCache))
+	track.modified = numberOr(record.modified, 0)
+	track.fingerprint = textOf(record.fingerprint)
 
 	---@cast key string
 	return place(self, track, key)
@@ -409,9 +470,11 @@ function Library:removeUnder(folder)
 
 	local tracks = {}
 	local removed = false
+	local columns = self.columns
 	for _, track in ipairs(self.tracks) do
 		if under(base, prefix, fold, track.path) then
 			self.trackById[track.id] = nil
+			dropColumns(columns, track.id)
 			removed = true
 		else
 			tracks[#tracks + 1] = track
@@ -421,6 +484,7 @@ function Library:removeUnder(folder)
 	self.tracks = tracks
 
 	local albums = {}
+	local albumColumns = self.albumColumns
 	for _, album in ipairs(self.albums) do
 		local kept = {}
 		for _, track in ipairs(album.tracks) do
@@ -429,9 +493,6 @@ function Library:removeUnder(folder)
 
 		if #kept > 0 then
 			album.tracks = kept
-			album.trackCount = #kept
-			album.duration = 0
-			for _, track in ipairs(kept) do album.duration = album.duration + track.duration end
 			-- Rebuilt by `finish` from what is left, rather than left pointing into the folder
 			-- that is gone.
 			album.coverTrack = nil
@@ -440,6 +501,7 @@ function Library:removeUnder(folder)
 		else
 			self.albumById[album.id] = nil
 			self.albumByKey[album.key] = nil
+			dropColumns(albumColumns, album.id)
 		end
 	end
 	self.albums = albums
@@ -503,17 +565,19 @@ local function foldedAlbums(albums)
 	return titles, artists
 end
 
---- Closes the scan: sorts what was found and computes the values a screen reads in a loop.
+--- Closes the scan: sorts what was found and fills in the values a screen reads for an album --
+--- the first track that carries a picture, the first that names a folder picture. The album's
+--- length and track count are summed where they are read instead of being kept up to date here.
 function Library:finish()
 	for _, album in ipairs(self.albums) do
 		table.sort(album.tracks, trackOrder)
-		album.trackCount = #album.tracks
-		album.duration = 0
+		local coverTrack, coverPath = album.coverTrack, album.coverPath
 		for _, track in ipairs(album.tracks) do
-			album.duration += track.duration
-			if album.coverTrack == nil and track.hasPicture then album.coverTrack = track end
-			if album.coverPath == nil then album.coverPath = track.coverPath end
+			if coverTrack == nil and track.hasPicture then coverTrack = track end
+			if coverPath == nil then coverPath = track.coverPath end
 		end
+		album.coverTrack = coverTrack
+		album.coverPath = coverPath
 	end
 
 	local titles, artists = foldedAlbums(self.albums)
@@ -544,6 +608,11 @@ function Library:finish()
 	self.ready = true
 	self.sweep = nil
 	self.version += 1
+	-- The interning table is what makes a tag value that repeats by the thousand one string while
+	-- the scan reads it; once the scan is over, every value it holds is already on the track or
+	-- album that showed it, and the table itself is tens of kilobytes of hash. A later folder add
+	-- fills it again, from the folder it adds, which is the only strings it has to dedupe.
+	self.strings = {}
 end
 
 ---@param id number
@@ -583,18 +652,24 @@ end
 ---@param limit number?
 ---@return beat.Album[]
 function Library:recentlyAdded(limit)
+	local kept = self.recentAdded
+	if kept ~= nil and kept.limit == limit and kept.version == self.version and kept.count == #self.recent then
+		return kept.list
+	end
 	local list = {}
 	for index = #self.recent, 1, -1 do
 		list[#list + 1] = self.recent[index]
 		if limit ~= nil and #list >= limit then break end
 	end
+	self.recentAdded = { limit = limit, version = self.version, count = #self.recent, list = list }
 	return list
 end
 
 --- The folded text of everything a search looks in, made where it is missing. Only the first
 --- search of a library writes them; every later one finds the fields already there. They are kept
 --- on the album, artist and track because a title, an artist and an album do not change once the
---- item is in the library, so the text cannot go stale.
+--- item is in the library, so the text cannot go stale. `forgetSearch` drops them again when the
+--- field empties.
 ---@param self beat.Library
 local function prepareSearch(self)
 	for _, album in ipairs(self.albums) do
@@ -605,11 +680,29 @@ local function prepareSearch(self)
 	for _, artist in ipairs(self.artists) do
 		if artist.searchText == nil then artist.searchText = names.fold(artist.name) end
 	end
+	-- A track's folded text is a string of a hundred bytes and more, which is too much to keep on
+	-- thousands of track tables for a search nobody may type again: it lives in a column, so
+	-- dropping it is giving the column back.
+	local texts = self.columns.searchText
+	if texts == nil then
+		texts = {}
+		self.columns.searchText = texts
+	end
 	for _, track in ipairs(self.tracks) do
-		if track.searchText == nil then
-			track.searchText = names.fold(track.title .. "\0" .. track.artist .. "\0" .. track.album)
+		if texts[track.id] == nil then
+			texts[track.id] = names.fold(track.title .. "\0" .. track.artist .. "\0" .. track.album)
 		end
 	end
+end
+
+--- Drops the folded text the last search made. The search screen calls this when its query
+--- empties: it is a few hundred kilobytes of strings kept for a search nobody is looking at, and
+--- the next search folds the library again in one pass.
+function Library:forgetSearch()
+	for _, album in ipairs(self.albums) do album.searchText = nil end
+	for _, artist in ipairs(self.artists) do artist.searchText = nil end
+	self.columns.searchText = nil
+	self.sweep = nil
 end
 
 --- Every album, artist and track whose text holds `needle`, and the sweep to narrow from if the

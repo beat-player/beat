@@ -12,12 +12,13 @@ local haptics = require("beat.app.services.system.haptics")
 local http = require("beat.app.services.http")
 local update = require("beat.app.services.update")
 
-local settingsPage = require("beat.app.pages.settings")
-local accentPicker = require("beat.app.overlays.accent_picker")
-local menu = require("beat.app.overlays.menu")
-local mobileMenu = require("beat.app.overlays.mobile_menu")
-local confirmLeave = require("beat.app.overlays.confirm_leave")
-local updateDialog = require("beat.app.overlays.update")
+-- Pages and overlays are named by module, not read here: one is read when it is first shown.
+local settingsPage = "beat.app.pages.settings"
+local accentPicker = "beat.app.overlays.accent_picker"
+local menu = "beat.app.overlays.menu"
+local mobileMenu = "beat.app.overlays.mobile_menu"
+local confirmLeave = "beat.app.overlays.confirm_leave"
+local updateDialog = "beat.app.overlays.update"
 
 return beat.plugin({ name = "core", version = "1.0.0", author = "beat", description = "Settings, appearance and the app's own screens", setup = function(handle)
 	handle.service("settings", settings)

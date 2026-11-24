@@ -19,15 +19,25 @@
 --   BEAT_BENCH_PAGE=home|library|library-list|album|artist|playlists|search|settings
 --   BEAT_BENCH_WIDTH / HEIGHT / DENSITY   window geometry (default a Pixel 7: 1080×2400 at 2.625)
 --   BEAT_BENCH_FRAMES=240                 how many measured frames
+--   BEAT_BENCH_STEP=40                    pixels the `scroll` mode moves per frame
 --   BEAT_BENCH_COVERS=1                   also step the cover service every eighth frame, as the
 --                                         ticker does; off by default so the numbers are the
 --                                         frame's own allocations rather than image decoding
+--   BEAT_BENCH_WL=<dir>                    run against a wonderland tree at <dir>/wonderland
+--                                         instead of the published copy under target, for
+--                                         measuring a fix before it is synced
+local wonderlandRoot = os.getenv("BEAT_BENCH_WL")
+if wonderlandRoot ~= nil then
+	package.path = wonderlandRoot .. "/?.lua;" .. wonderlandRoot .. "/?/init.lua;" .. package.path
+end
 local fs = require("fs")
 local path = require("path")
 local wonderland = require("wonderland")
 local paths = require("beat.paths")
 
-local memprof = package.loaded["lde.memprof"]
+local memprof = package.loaded["lde.memprof"] --[[@as { snapshot: fun(label: string) }?]]
+local wonderlandElement = require("wonderland.element")
+local wonderlandStyle = require("wonderland.style")
 local now = wonderland.time.now
 
 local source = os.getenv("BEAT_BENCH_CONFIG") or paths.directory()
@@ -42,14 +52,20 @@ paths.directory = function() return config end
 
 -- The bench draws the cached library and never walks the music folder: a cache an older scan wrote
 -- is taken as current, and a scan that would start anyway is refused.
-do
-	local json = require("json")
-	local file = path.join(config, "library.json")
-	local decoded = json.decode(assert(fs.read(file), "the bench needs a library cache in " .. source)):unpack()
-	decoded.version = 7
-	fs.write(file, json.encode(decoded))
-	require("beat.app.services.scan.job").start = function() error("the bench does not scan") end
+--
+-- The version is the one field that changes, so the copy is bumped as text rather than read into
+-- Lua tables and written back: the document is two megabytes, and decoding it compiled several
+-- megabytes of traces and left tables the benchmark then measured as the app's own heap. The
+-- function keeps the strings out of this chunk's locals so the read copy can be collected.
+---@param file string
+local function bumpCacheVersion(file)
+	local bytes = assert(fs.read(file), "the bench needs a library cache in " .. source)
+	assert(bytes:find('"version":%s*%d+') ~= nil, "the benchmark cache has no version")
+	local bumped = bytes:gsub('"version":%s*%d+', '"version":7', 1)
+	fs.write(file, bumped)
 end
+bumpCacheVersion(path.join(config, "library.json"))
+require("beat.app.services.scan.job").start = function() error("the bench does not scan") end
 
 local mode = os.getenv("BEAT_BENCH_MODE")
 local phone = mode ~= nil
@@ -78,6 +94,10 @@ local function snapshot(label)
 end
 
 local viewTime = 0
+-- What the view function alone allocated, when `BEAT_BENCH_SPLIT=1`: the frame's tables and
+-- styles, without the layout solve and the draw a window also does.
+local viewKiB = 0
+local splitView = os.getenv("BEAT_BENCH_SPLIT") == "1"
 
 ---@param label string
 ---@param frames number
@@ -119,7 +139,9 @@ screen = wonderland.headless.new(function(window, assets)
 	App.window = window
 	App.assets = assets
 	App.services.covers:use(assets)
+	local before = splitView and collectgarbage("count") or 0
 	local element = require("beat.app.shell").view(App, window)
+	if splitView then viewKiB = viewKiB + (collectgarbage("count") - before) end
 	viewTime = viewTime + (now() - at)
 	return element
 end, { width = benchWidth, height = benchHeight })
@@ -175,7 +197,8 @@ local function installPlayer(album)
 		setVolume = function() end,
 		setEqualizer = function() end
 	}, { __index = function() return function() end end }) --[[@as treble.Player]]
-	App.services.playback.lastListenedTrackId = player:current().id
+	local current = assert(player:current())
+	App.services.playback.lastListenedTrackId = current.id
 	return state
 end
 
@@ -191,9 +214,10 @@ if mode then
 		search = { kind = "search" },
 		settings = { kind = "settings" }
 	}
-	local route = assert(routes[pageName], "unknown BEAT_BENCH_PAGE " .. pageName)
+	local route = assert(routes[pageName], "unknown BEAT_BENCH_PAGE " .. pageName) --[[@as beat.Route]]
 	local frames = tonumber(os.getenv("BEAT_BENCH_FRAMES") or "") or 240
 	local stepCovers = os.getenv("BEAT_BENCH_COVERS") == "1"
+	local scrollStep = tonumber(os.getenv("BEAT_BENCH_STEP") or "") or 40
 
 	App.services.settings.values.view = pageName == "library-list" and "list" or "grid"
 	App.page = App:pageFor(route)
@@ -215,7 +239,12 @@ if mode then
 
 	--- The allocations of `frame` over `count` frames, with the collector stopped so every byte
 	--- stays counted: the difference in `collectgarbage("count")` is what the frames made.
+	---@param label string
+	---@param count number
+	---@param before (fun(at: number): any)?
+	---@param frame fun(at: number): any
 	local function run(label, count, before, frame)
+		viewKiB = 0
 		local times = {}
 		for at = 1, count do times[at] = 0 end
 		collectgarbage()
@@ -240,36 +269,31 @@ if mode then
 			p95,
 			worst
 		))
+		if splitView then print(string.format("%-28s view only %7.2f KiB/frame", "", viewKiB / count)) end
+		-- How big the tree a frame builds is, and how many distinct styles have been interned: a
+		-- frame that interns a new style each time is a frame building a style from a value.
+		print(string.format("%-28s %d elements, %d styles interned", "", wonderlandElement.count(), wonderlandStyle.count()))
 	end
 
 	local window = screen.window
 
-	-- A temporary diagnostic: where the idling ticker's bytes go. Each service is stepped on its
-	-- own with the collector stopped, then the whole tick and one forced draw.
-	if os.getenv("BEAT_BENCH_SERVICES") == "1" then
-		local function allocatedBy(frames, fn)
-			collectgarbage()
-			collectgarbage("stop")
-			local startKiB = collectgarbage("count")
-			for at = 1, frames do fn(at) end
-			local allocated = collectgarbage("count") - startKiB
-			collectgarbage("restart")
-			collectgarbage()
-			return allocated / frames
+	-- Warm the frame before measuring it: the first runs of a font, a style and a cover are made
+	-- once and kept, and a steady-state measurement must not charge them to every frame. The cover
+	-- decodes finish on their workers while these frames are drawn.
+	local function warm(count)
+		for _ = 1, count do
+			App:tick(now(), window)
+			draw()
 		end
-		for _, service in ipairs(App.serviceOrder) do
-			if service.step ~= nil then
-				print(string.format("%-28s %7.2f KiB/frame", tostring(service.class or service), allocatedBy(frames, function() service:step(now()) end)))
-			end
-		end
-		print(string.format("%-28s %7.2f KiB/frame", "tick", allocatedBy(frames, function() App:tick(now(), window) end)))
-		print(string.format("%-28s %7.2f KiB/frame", "draw", allocatedBy(frames, function() draw() end)))
+		settleCovers()
 	end
+
+	warm(120)
 
 	if mode == "scroll" then
 		local key = App:pageKey()
 		run("scroll " .. pageName, frames, function(at)
-			App.services.scroll.offsets[key] = at * 40
+			App.services.scroll.offsets[key] = at * scrollStep
 			if stepCovers and at % 8 == 0 then App.services.covers:step(now()) end
 		end, draw)
 	elseif mode == "redraw" then
@@ -278,7 +302,7 @@ if mode then
 		local state = installPlayer(library.albums[1])
 		local spectrum = App.services.playback.spectrum
 		App.page = App:pageFor(route)
-		settleCovers()
+		warm(120)
 		run("playing " .. pageName, frames, function(at)
 			state.at = 30 + at / 60
 			for band = 1, #spectrum.levels do spectrum.levels[band] = 0.5 + 0.4 * math.sin(at / 7 + band) end
@@ -352,6 +376,13 @@ scenario("hover library grid", 240, function(frame)
 end, draw)
 screen:event({ name = "mouseLeave", window = window })
 
+-- The pointer down the desktop rail: the sidebar's hover hit test runs on every move, and a
+-- playlist row it lands on shows the name in a tooltip over the page.
+scenario("hover sidebar", 240, function(frame)
+	screen:event({ name = "mouseMove", window = window, x = 40 + (frame * 11) % 140, y = 120 + (frame * 17) % 640 })
+end, draw)
+screen:event({ name = "mouseLeave", window = window })
+
 -- Opening one album after another, as clicks on the grid do: each is a page the app has not shown.
 scenario("navigate albums", 60, function(frame)
 	local album = library.albums[(frame * 7) % #library.albums + 1]
@@ -399,6 +430,13 @@ do
 		if viewTime ~= before then builds = builds + 1 end
 	end, function() end)
 	results[#results].label = string.format("playing (%d builds)", builds)
+
+	-- The pointer along the player bar: its controls, the seek slider and the volume a phone's bar
+	-- does not have, all while a track plays.
+	scenario("hover player bar", 240, function(frame)
+		screen:event({ name = "mouseMove", window = window, x = 200 + (frame * 29) % 1000, y = window.height - 30 })
+	end, draw)
+	screen:event({ name = "mouseLeave", window = window })
 
 	App:open("now_playing")
 	App.services.motion.clock:set("nowPlaying", 1)

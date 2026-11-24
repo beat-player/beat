@@ -12,7 +12,7 @@ local Signal = require("beat.app.signal")
 ---@field library beat.LibraryService
 ---@field toasts beat.ToastsService
 ---@field changed beat.Signal # Fired after tags or playlists changed and were written
----@field playlistTracksCache table<number, beat.CollectionsService.PlaylistTracksEntry>
+---@field playlistTracksCache table<beat.Playlist, beat.CollectionsService.PlaylistTracksEntry> # By the playlist itself: its id is a number, and a table keyed by both the positive ids and the built-in lists' negative ones is mixed, which the trace compiler will not index
 ---@field recentPlaylistsCache beat.CollectionsService.RecentPlaylistsEntry?
 local Collections = {}
 Collections.__index = Collections
@@ -142,7 +142,7 @@ function Collections:playlistTracks(playlist)
 	if library == nil then return {} end
 
 	local taxonomy = self.taxonomy
-	local entry = self.playlistTracksCache[playlist.id]
+	local entry = self.playlistTracksCache[playlist]
 	if entry == nil or entry.taxonomy ~= taxonomy or entry.revision ~= taxonomy.revision or entry.library ~= library or entry.version ~= library.version then
 		entry = {
 			tracks = taxonomy:playlistTracks(playlist, library),
@@ -151,7 +151,7 @@ function Collections:playlistTracks(playlist)
 			library = library,
 			version = library.version
 		}
-		self.playlistTracksCache[playlist.id] = entry
+		self.playlistTracksCache[playlist] = entry
 	end
 
 	return entry.tracks

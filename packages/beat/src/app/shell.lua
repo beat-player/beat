@@ -169,6 +169,54 @@ local function frameStyle(ctx, pageHeight)
 	return sty():row():wrel(1.0):h(pageHeight)
 end
 
+-- What the chrome pieces are asked for, written again each frame: they read it and keep nothing,
+-- and the screen is built on every frame it scrolls.
+---@type table<string, any>
+local chromeProps = {}
+
+-- Where the shadow of a bottom bar falls: the scan cards and the tooltip are placed above the
+-- chrome rather than inside the page's scroll.
+--- The root's layers, bottom first: the frame, then the phone's player bar and tabs (or the
+-- desktop's tooltip), then the scan cards. Split out of `shell.view` so the trace that builds the
+-- page does not also carry every bar, and the bars' own traces stay short.
+---@param app beat.App
+---@param mobile boolean
+---@param bar number
+---@param width number
+---@param height number
+---@param pageHeight number
+---@param uiCtx beat.ui.Context
+---@param frame wonderland.Element
+---@return wonderland.Element
+local function rootView(app, mobile, bar, width, height, pageHeight, uiCtx, frame)
+	local rootChildren = { frame }
+	if mobile then
+		if bar > 0 then
+			chromeProps.width, chromeProps.ui = width, uiCtx
+			rootChildren[#rootChildren + 1] = playerBar.mobile(app, chromeProps --[[@as beat.components.chrome.PlayerBarProps]])
+		end
+		chromeProps.width, chromeProps.ui = width, uiCtx
+		rootChildren[#rootChildren + 1] = mobileNav.view(app, chromeProps --[[@as beat.components.chrome.MobileNavProps]])
+	elseif bar > 0 then
+		chromeProps.width, chromeProps.ui = width, uiCtx
+		rootChildren[#rootChildren + 1] = playerBar.view(app, chromeProps --[[@as beat.components.chrome.PlayerBarProps]])
+	end
+	chromeProps.width, chromeProps.ui = width, uiCtx
+	local scanIsland = scanStatus.island(app, chromeProps --[[@as beat.components.chrome.ScanStatusProps]])
+	if scanIsland ~= nil then rootChildren[#rootChildren + 1] = scanIsland end
+	chromeProps.width, chromeProps.ui = width, uiCtx
+	local scanSummary = scanStatus.summary(app, chromeProps --[[@as beat.components.chrome.ScanStatusProps]])
+	if scanSummary ~= nil then rootChildren[#rootChildren + 1] = scanSummary end
+	if not mobile then
+		chromeProps.width, chromeProps.height, chromeProps.ui = width, height, uiCtx
+		local tooltip = sidebar.tooltip(app, chromeProps --[[@as beat.components.chrome.SidebarTooltipProps]])
+		if tooltip ~= nil then rootChildren[#rootChildren + 1] = tooltip end
+	end
+
+	local rootBox = cache.of(uiCtx, rootStyle, "shellRoot") --[[@as wonderland.StyleBuilder]]
+	return div():style(rootBox):children(rootChildren)
+end
+
 ---@param app beat.App
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
@@ -290,24 +338,7 @@ function shell.view(app, window)
 	local frameBox = cache.of(uiCtx, frameStyle, "shellFrame", pageHeight) --[[@as wonderland.StyleBuilder]]
 	local frame = div():style(frameBox):children(shellChildren)
 
-	local rootChildren = { frame }
-	if mobile then
-		if bar > 0 then rootChildren[#rootChildren + 1] = playerBar.mobile(app, { width = width, ui = uiCtx }) end
-		rootChildren[#rootChildren + 1] = mobileNav.view(app, { width = width, ui = uiCtx })
-	elseif bar > 0 then
-		rootChildren[#rootChildren + 1] = playerBar.view(app, { width = width, ui = uiCtx })
-	end
-	local scanIsland = scanStatus.island(app, { width = width, ui = uiCtx })
-	if scanIsland ~= nil then rootChildren[#rootChildren + 1] = scanIsland end
-	local scanSummary = scanStatus.summary(app, { width = width, ui = uiCtx })
-	if scanSummary ~= nil then rootChildren[#rootChildren + 1] = scanSummary end
-	if not mobile then
-		local tooltip = sidebar.tooltip(app, { width = width, height = height, ui = uiCtx })
-		if tooltip ~= nil then rootChildren[#rootChildren + 1] = tooltip end
-	end
-
-	local rootBox = cache.of(uiCtx, rootStyle, "shellRoot") --[[@as wonderland.StyleBuilder]]
-	local root = div():style(rootBox):children(rootChildren)
+	local root = rootView(app, mobile, bar, width, height, pageHeight, uiCtx, frame)
 
 	-- The performance overlay is a plugin, so the shell draws nothing for it unless it is loaded:
 	-- a switch in Settings takes it out of the app at the next start. It is added under the toasts

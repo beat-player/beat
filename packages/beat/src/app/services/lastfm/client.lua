@@ -20,6 +20,15 @@ local SCROBBLE_LIMIT = 512
 local RETRY_INTERVAL = 60
 local RATE_LIMIT_RETRY = 120
 
+-- The transfers that finished are ordered by the place they were queued at, so a callback sees
+-- them in the order they were asked for. The comparator is one function rather than one per pump.
+---@param a { index: number }
+---@param b { index: number }
+---@return boolean
+local function byQueueIndex(a, b)
+	return a.index < b.index
+end
+
 ---@param value string?
 local function trim(value)
 	return (value or ""):match("^%s*(.-)%s*$")
@@ -126,6 +135,11 @@ function Client:newBatch()
 	end
 
 	---@cast batch table
+	-- libcurl calls back into Lua -- each response body -- from inside `curl_multi_perform`, and
+	-- LuaJIT cannot take a callback from C that compiled code called: the process panics with
+	-- "bad callback". The pump is kept out of every trace, so the call into C always comes from the
+	-- interpreter however hot the frame that reaches it is.
+	jit.off(batch.pump)
 	self.batch = batch
 	return true
 end
@@ -267,7 +281,7 @@ function Client:pump()
 		if result ~= nil then done[#done + 1] = { index = index, item = item, result = result } end
 	end
 
-	table.sort(done, |a, b| -> a.index < b.index)
+	table.sort(done, byQueueIndex)
 
 	for _, entry in ipairs(done) do
 		self.pending[entry.index] = nil

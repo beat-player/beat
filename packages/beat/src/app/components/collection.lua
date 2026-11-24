@@ -6,10 +6,79 @@ local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
 local names = require("beat.music.names")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local collection = {}
+
+--- The boxes of one collection's header and table, kept for the layout they were built from: the
+--- page is built again every time it is scrolled, and all of these depend on the window's geometry
+--- and the collection's shape rather than on a value that moves.
+---@class beat.components.CollectionStyles
+---@field content number
+---@field mobile boolean
+---@field phoneHero boolean
+---@field stacked boolean
+---@field hasSubtitle boolean
+---@field cover wonderland.StyleBuilder
+---@field play wonderland.StyleBuilder
+---@field info wonderland.StyleBuilder
+---@field labelRow wonderland.StyleBuilder
+---@field actionsRow wonderland.StyleBuilder
+---@field hero wonderland.StyleBuilder
+---@field artRow wonderland.StyleBuilder
+---@field list wonderland.StyleBuilder
+---@field headerRow wonderland.StyleBuilder
+---@field column wonderland.StyleBuilder
+---@field labelText wonderland.StyleBuilder
+---@field headerHash wonderland.StyleBuilder
+---@field headerTitle wonderland.StyleBuilder
+---@field headerRating wonderland.StyleBuilder
+---@field headerTime wonderland.StyleBuilder
+---@field moreBox wonderland.StyleBuilder
+---@field titleWidth number?
+---@field metaWidth number?
+---@field subtitleWidth number?
+
+--- The table's header cells, kept for the columns the table has room for.
+---@class beat.components.CollectionHeader
+---@field ratingWidth number?
+---@field mobile boolean
+---@field hash wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field rating wonderland.StyleBuilder?
+---@field time wonderland.StyleBuilder
+---@field more wonderland.StyleBuilder?
+---@field row wonderland.StyleBuilder
+
+--- The lines under the header, kept with the words they were measured for.
+---@class beat.components.CollectionLines
+---@field titleText string
+---@field metaText string
+---@field subtitleText string?
+---@field phoneHero boolean
+---@field title wonderland.StyleBuilder
+---@field meta wonderland.StyleBuilder
+---@field subtitle wonderland.StyleBuilder?
+
+--- The props a track's row is built from, kept per track: the rows are built again whenever the
+--- page is scrolled, and only the fields written in the loop below change between frames.
+---@type table<beat.Track, beat.components.TrackRowProps>
+local rowProps = setmetatable({}, { __mode = "k" })
+
+---@param app beat.App
+---@param content number
+---@param value string
+---@param style wonderland.StyleBuilder
+---@param size number
+local function fittedWidth(app, content, value, style, size)
+	local known = measure.width(app, value, style)
+	if known == nil then
+		known = measure.estimate(value, size, 0.52)
+	end
+	return math.min(content, math.max(1, math.ceil(assert(known)) + app.services.appearance.theme:px(2)))
+end
 
 ---@class beat.components.CollectionProps
 ---@field window wonderland.RenderWindow
@@ -93,46 +162,93 @@ function collection.view(app, props)
 	local current = app.services.playback:current()
 	local playing = app.services.playback.player:isPlaying()
 
-	local cover = div():style(sty():size(coverSize, coverSize):radius(theme:radius("lg")))
-	if props.coverMenu ~= nil then cover:onContextMenu(props.coverMenu) end
-	cover:children({ props.cover(coverSize) })
+	-- The boxes and the header's cells depend on the window, the theme and the collection's shape,
+	-- not on anything that moves: they are kept for that shape and handed over again on the next
+	-- frame, rather than a fresh builder being interned for every scroll step.
+	local style = styles.of(theme, "collection", content) --[[@as beat.components.CollectionStyles]]
+	if
+		style.mobile ~= mobile
+		or style.phoneHero ~= phoneHero
+		or style.stacked ~= stacked
+		or style.hasSubtitle ~= hasSubtitle
+	then
+		style.mobile, style.phoneHero, style.stacked, style.hasSubtitle = mobile, phoneHero, stacked, hasSubtitle
+		style.cover = sty():size(coverSize, coverSize):radius(theme:radius("lg"))
+		style.play = sty()
+			:size(theme:px(52), theme:px(52)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
+			:justify("center")
+		style.info = phoneHero
+				and (sty():column():h(infoHeight):justify("center"):align("center"):gap(theme:px(8)):w(content))
+			or (sty():column():h(stacked and infoHeight or heroHeight):justify("center"):gap(theme:px(8)):wrel(1.0))
+		style.labelRow = phoneHero
+				and (sty():row():h(theme:px(16)):gap(theme:px(7)):align("center"):justify("center"))
+			or (sty():row():h(theme:px(16)):gap(theme:px(7)):align("center"))
+		style.actionsRow = phoneHero
+				and (sty():row():h(theme:px(52)):gap(theme:px(10)):align("center"):justify("center"))
+			or (sty():row():h(theme:px(52)):gap(theme:px(10)):align("center"))
+		if phoneHero then
+			style.hero = sty():column():wrel(1.0):h(heroHeight):pad(theme:space(24), 0, 0, 0):gap(theme:space(16))
+		elseif stacked then
+			style.hero = sty():column():wrel(1.0):h(heroHeight):gap(theme:space(16))
+		else
+			style.hero = sty():row():wrel(1.0):h(heroHeight):pad(0, 0, 0, 0):gap(theme:space(28)):align("center")
+		end
+		style.artRow = sty():row():wrel(1.0):h(coverSize):justify("center")
+		style.list = sty():column():wrel(1.0):h(trackListHeight):pad(listPadTop, 0, listPadBottom, 0)
+		style.column = sty():column():wrel(1.0):h(contentHeight)
+		style.labelText = theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))
+	end
 
-	local labelChildren = {
-		text(props.label):style(theme:s():text(theme:type("xs")):weight("bold"):fg(theme:color("muted")))
-	}
+	local cover = div():style(style.cover)
+	if props.coverMenu ~= nil then cover:onContextMenu(props.coverMenu) end
+	cover:children(props.cover(coverSize))
+
+	local labelChildren = { text(props.label):style(style.labelText) }
 	if props.icons ~= nil then labelChildren[#labelChildren + 1] = props.icons end
 
-	-- A centred line is as wide as its own ink rather than the whole box: a text box of the
-	-- content's width draws from its left edge, which is not centred, and a small drop of room
-	-- keeps the ellipsis from cutting a line that only just fits.
-	local function fitted(value, style, size)
-		local known = measure.width(app, value, style)
-		if known == nil then known = measure.estimate(value, size, 0.52) end
-		return math.min(content, math.max(1, math.ceil(known) + theme:px(2)))
+	-- The title, subtitle and meta lines, kept with the words they were measured for: on a phone
+	-- each of them is as wide as its own ink rather than the page's width.
+	local lines = styles.of(theme, "collectionLines", content) --[[@as beat.components.CollectionLines]]
+	local subtitleText = props.subtitle
+	if
+		lines.titleText ~= props.title
+		or lines.metaText ~= props.meta
+		or lines.subtitleText ~= subtitleText
+		or lines.phoneHero ~= phoneHero
+	then
+		lines.titleText, lines.metaText, lines.subtitleText, lines.phoneHero = props.title, props.meta, subtitleText, phoneHero
+		local titleStyle = theme:s():text(titleSize):weight("bold"):fg(theme:color("text")):ellipsis()
+		local metaStyle = theme:s():text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+		if phoneHero then
+			titleStyle:w(fittedWidth(app, content, props.title, titleStyle, titleSize))
+			metaStyle:w(fittedWidth(app, content, props.meta, metaStyle, theme:type("sm")))
+		else
+			metaStyle:wrel(1.0)
+		end
+		lines.title, lines.meta = titleStyle, metaStyle
+		if subtitleText ~= nil then
+			local subtitleStyle = theme:s():text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis()
+			if phoneHero then
+				subtitleStyle:w(fittedWidth(app, content, subtitleText, subtitleStyle, theme:type("md")))
+			else
+				subtitleStyle:wrel(1.0)
+			end
+			lines.subtitle = subtitleStyle
+		else
+			lines.subtitle = nil
+		end
 	end
 
 	---@type wonderland.Element?
 	local subtitle = nil
-	local subtitleText = props.subtitle
 	if subtitleText ~= nil then
-		local subtitleStyle = theme:s():text(theme:type("md")):weight("semibold"):fg(theme:color("text")):ellipsis()
-		if phoneHero then
-			subtitleStyle:w(fitted(subtitleText, subtitleStyle, theme:type("md")))
-		else
-			subtitleStyle:wrel(1.0)
-		end
-		local line = text(subtitleText):style(subtitleStyle)
-		if props.subtitleAction ~= nil then line:onClick(props.subtitleAction) end
-		subtitle = line
+		subtitle = text(subtitleText):style(assert(lines.subtitle))
+		if props.subtitleAction ~= nil then subtitle:onClick(props.subtitleAction) end
 	end
 
 	local actions = {
 		div()
-			:style(
-				sty()
-					:size(theme:px(52), theme:px(52)):radius(theme:radius("full")):bg(theme:color("accent")):align("center")
-					:justify("center")
-			):onClick(props.playAction)
+			:style(style.play):onClick(props.playAction)
 			:children(ui.icon(ctx, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })),
 		ui.iconButton(ctx, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
 	}
@@ -146,93 +262,46 @@ function collection.view(app, props)
 		actions[#actions + 1] = ui.rating(ctx, { value = props.rating or 0, onRate = props.onRate, size = theme:px(20) })
 	end
 
-	local titleStyle = theme:s():text(titleSize):weight("bold"):fg(theme:color("text")):ellipsis()
-	local metaStyle = theme:s():text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
-	if phoneHero then
-		titleStyle:w(fitted(props.title, titleStyle, titleSize))
-		metaStyle:w(fitted(props.meta, metaStyle, theme:type("sm")))
-	else
-		metaStyle:wrel(1.0)
-	end
 	--- The info column's lines in order, the subtitle only where there is one.
-	local function infoLines(labelRow, actionsRow)
-		local lines = { labelRow, text(props.title):style(titleStyle) }
-		if subtitle ~= nil then lines[#lines + 1] = subtitle end
-		lines[#lines + 1] = text(props.meta):style(metaStyle)
-		lines[#lines + 1] = actionsRow
-		return lines
-	end
-	local info
-	if phoneHero then
-		info = div()
-			:style(sty():column():h(infoHeight):justify("center"):align("center"):gap(theme:px(8)):w(content))
-			:children(
-				infoLines(
-					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center"):justify("center")):children(
-						labelChildren
-					),
-					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center"):justify("center")):children(
-						actions
-					)
-				)
-			)
+	local info = div():style(style.info)
+	info:children(
+		div():style(style.labelRow):children(labelChildren),
+		text(props.title):style(lines.title)
+	)
+	if subtitle ~= nil then info:children(subtitle) end
+	info:children(text(props.meta):style(lines.meta), div():style(style.actionsRow):children(actions))
+
+	local hero = div():style(style.hero)
+	if phoneHero or stacked then
+		hero:children(div():style(style.artRow):children(cover), info)
 	else
-		info = div()
-			:style(sty():column():h(stacked and infoHeight or heroHeight):justify("center"):gap(theme:px(8)):wrel(1.0))
-			:children(
-				infoLines(
-					div():style(sty():row():h(theme:px(16)):gap(theme:px(7)):align("center")):children(labelChildren),
-					div():style(sty():row():h(theme:px(52)):gap(theme:px(10)):align("center")):children(actions)
-				)
-			)
-	end
-	local hero
-	if phoneHero then
-		hero = div()
-			:style(sty():column():wrel(1.0):h(heroHeight):pad(theme:space(24), 0, 0, 0):gap(theme:space(16)))
-			:children({ div():style(sty():row():wrel(1.0):h(coverSize):justify("center")):children({ cover }), info })
-	elseif stacked then
-		hero = div()
-			:style(sty():column():wrel(1.0):h(heroHeight):gap(theme:space(16)))
-			:children({ div():style(sty():row():wrel(1.0):h(coverSize):justify("center")):children({ cover }), info })
-	else
-		hero = div()
-			:style(sty():row():wrel(1.0):h(heroHeight):pad(0, 0, 0, 0):gap(theme:space(28)):align("center"))
-			:children({ cover, info })
+		hero:children(cover, info)
 	end
 
 	local rows = {}
 	local ratingWidth = props.ratings and ratings and trackRow.ratingWidth(app, content, mobile) or nil
 	if hasTracks then
-		local moreColumn = mobile and theme:px(44) + theme:px(12) or 0
-		local header = {
-			text("#"):style(theme:s():w(theme:px(24)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))),
-			text("TITLE")
-				:style(
-					theme:s()
-						:w(
-							content
-								- theme:px(122)
-								- moreColumn
-								- (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
-						)
-						:text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
-				)
-		}
-		if ratingWidth ~= nil then
-			header[#header + 1] = text("RATING")
-				:style(theme:s():w(ratingWidth):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
+		local head = styles.of(theme, "collectionHeader", content) --[[@as beat.components.CollectionHeader]]
+		if head.ratingWidth ~= ratingWidth or head.mobile ~= mobile then
+			head.ratingWidth, head.mobile = ratingWidth, mobile
+			local moreColumn = mobile and theme:px(44) + theme:px(12) or 0
+			head.hash = theme:s():w(theme:px(24)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
+			head.title = theme:s()
+				:w(content - theme:px(122) - moreColumn - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0))
+				:text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
+			head.rating = ratingWidth ~= nil
+				and (theme:s():w(ratingWidth):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
+				or nil
+			head.time = theme:s():w(theme:px(54)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint"))
+			head.more = mobile and sty():w(theme:px(44)) or nil
+			head.row = sty():row():w(content):h(tableHeaderHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12))
+				:align("center")
 		end
-		header[#header + 1] = text("TIME")
-			:style(theme:s():w(theme:px(54)):text(theme:type("xs")):weight("bold"):fg(theme:color("faint")))
-		if mobile then header[#header + 1] = div():style(sty():w(theme:px(44))) end
-		rows[#rows + 1] = div()
-			:style(
-				sty():row():w(content):h(tableHeaderHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align(
-					"center"
-				)
-			)
-			:children(header)
+		local headerRow = div():style(head.row):children(text("#"):style(head.hash), text("TITLE"):style(head.title))
+		if head.rating ~= nil then headerRow:children(text("RATING"):style(head.rating)) end
+		headerRow:children(text("TIME"):style(head.time))
+		if head.more ~= nil then headerRow:children(div():style(head.more)) end
+		rows[#rows + 1] = headerRow
 	end
 
 	local viewport = metrics.viewportHeight(app, window.width, window.height)
@@ -256,35 +325,27 @@ function collection.view(app, props)
 	for at = first, last do
 		local track = props.tracks[at]
 		if track ~= nil then
-			local number = props.trackIndex ~= nil ? props.trackIndex(track, at) : at
-			rows[#rows + 1] = trackRow.view(
-				app,
-				{
-					track = track,
-					index = number,
-					current = current?.id == track.id,
-					playing = playing,
-					onClick = props.trackAction(track, at),
-					width = content,
-					showAlbum = false,
-					titleOnly = props.titleOnly,
-					rating = props.ratings and ratings and app.services.collections.taxonomy:rating(names.trackKey(track)) or nil,
-					mobile = mobile,
-					ui = ctx
-				}
-			)
+			local kept = rowProps[track]
+			if kept == nil then
+				---@type beat.components.TrackRowProps
+				kept = { track = track, showAlbum = false }
+				rowProps[track] = kept
+			end
+			kept.index = props.trackIndex ~= nil ? props.trackIndex(track, at) : at
+			kept.current = current?.id == track.id
+			kept.playing = playing
+			kept.onClick = props.trackAction(track, at)
+			kept.width = content
+			kept.titleOnly = props.titleOnly
+			kept.rating = props.ratings and ratings and app.services.collections.taxonomy:rating(names.trackKey(track)) or nil
+			kept.mobile = mobile
+			kept.ui = ctx
+			rows[#rows + 1] = trackRow.view(app, kept --[[@as beat.components.TrackRowProps]])
 		end
 	end
 	if #props.tracks == 0 and props.empty ~= nil then rows[#rows + 1] = props.empty end
 
-	return div()
-		:style(sty():column():wrel(1.0):h(contentHeight))
-		:children(
-			{
-				hero,
-				div():style(sty():column():wrel(1.0):h(trackListHeight):pad(listPadTop, 0, listPadBottom, 0)):children(rows)
-			}
-		)
+	return div():style(style.column):children(hero, div():style(style.list):children(rows))
 end
 
 return collection

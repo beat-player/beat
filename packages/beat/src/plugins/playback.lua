@@ -5,12 +5,13 @@ local playback = require("beat.app.services.playback")
 local equalizer = require("beat.app.services.equalizer")
 local media = require("beat.app.services.system.media")
 
-local nowPlaying = require("beat.app.overlays.now_playing")
-local more = require("beat.app.overlays.more")
-local volume = require("beat.app.overlays.volume")
-local queue = require("beat.app.overlays.queue")
-local equalizerPanel = require("beat.app.overlays.equalizer")
-local equalizerRename = require("beat.app.overlays.equalizer_rename")
+-- Overlays are named by module, not read here: one is read when it is first opened.
+local nowPlaying = "beat.app.overlays.now_playing"
+local more = "beat.app.overlays.more"
+local volume = "beat.app.overlays.volume"
+local queue = "beat.app.overlays.queue"
+local equalizerPanel = "beat.app.overlays.equalizer"
+local equalizerRename = "beat.app.overlays.equalizer_rename"
 
 return beat.plugin({ name = "playback", version = "1.0.0", author = "beat", description = "Playback, the queue and the equalizer", requires = { core = "^1.0.0", library = "^1.0.0", collections = "^1.0.0" }, setup = function(handle)
 	handle.service("playback", playback)

@@ -5,15 +5,16 @@ local beat = require("beat")
 local collections = require("beat.app.services.collections")
 local sidebar = require("beat.app.services.sidebar")
 
-local playlistsPage = require("beat.app.pages.playlists")
-local playlistPage = require("beat.app.pages.playlist")
+-- Pages and overlays are named by module, not read here: one is read when it is first shown.
+local playlistsPage = "beat.app.pages.playlists"
+local playlistPage = "beat.app.pages.playlist"
 
-local playlistAdder = require("beat.app.overlays.playlist_adder")
-local playlistDialog = require("beat.app.overlays.playlist_dialog")
-local playlistPicker = require("beat.app.overlays.playlist_picker")
-local tagPicker = require("beat.app.overlays.tag_picker")
-local tagDialog = require("beat.app.overlays.tag_dialog")
-local tagDelete = require("beat.app.overlays.tag_delete")
+local playlistAdder = "beat.app.overlays.playlist_adder"
+local playlistDialog = "beat.app.overlays.playlist_dialog"
+local playlistPicker = "beat.app.overlays.playlist_picker"
+local tagPicker = "beat.app.overlays.tag_picker"
+local tagDialog = "beat.app.overlays.tag_dialog"
+local tagDelete = "beat.app.overlays.tag_delete"
 
 return beat.plugin({ name = "collections", version = "1.0.0", author = "beat", description = "Tags and playlists, with ratings' data", requires = { core = "^1.0.0", library = "^1.0.0" }, setup = function(handle)
 	handle.service("collections", collections)

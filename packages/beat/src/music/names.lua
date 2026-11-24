@@ -48,11 +48,14 @@ function names.pathKey(path)
 	return "path:" .. path
 end
 
--- The key a track is filed under is computed once per track: its path and fingerprint are set
--- when the track is built and never change, and every screen that rates or filters a row asks
--- for it. The table holds the tracks weakly so a library replaced by a scan is not kept alive.
+-- The key a track without a fingerprint is filed under, made once per track and kept until the
+-- library is replaced: it is its path with a prefix, which every screen that rates or filters a
+-- row asks for, and building it per row would be a string per row per frame. A track with a
+-- fingerprint needs nothing here -- its fingerprint is already the key, and one copy of it is one
+-- string the library holds either way. The table holds the tracks weakly so a library replaced by
+-- a scan is not kept alive.
 ---@type table<beat.Track, string>
-local trackKeys = setmetatable({}, { __mode = "k" })
+local pathKeys = setmetatable({}, { __mode = "k" })
 
 --- The key a track's own data is filed under. A fingerprint of the audio survives renaming, moving
 --- and retagging, so the listener's tags, rating and plays follow the file; a scan that cannot
@@ -60,10 +63,12 @@ local trackKeys = setmetatable({}, { __mode = "k" })
 ---@param track beat.Track
 ---@return string
 function names.trackKey(track)
-	local key = trackKeys[track]
+	local fingerprint = track.fingerprint
+	if fingerprint ~= nil and fingerprint ~= "" then return fingerprint end
+	local key = pathKeys[track]
 	if key ~= nil then return key end
-	key = track.fingerprint ~= nil and track.fingerprint ~= "" and track.fingerprint or names.pathKey(track.path)
-	trackKeys[track] = key
+	key = names.pathKey(track.path)
+	pathKeys[track] = key
 	return key
 end
 

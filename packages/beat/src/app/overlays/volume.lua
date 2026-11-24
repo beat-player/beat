@@ -18,6 +18,14 @@ local div, sty = wonderland.div, wonderland.sty
 ---@class beat.VolumeOverlay: beat.OverlaySurface
 local volume = { light = true, anchored = true }
 
+-- What moving the bubble's slider asks for, made once rather than on every frame the bubble is
+-- drawn.
+---@param value number
+---@return table
+local function volumeChanged(value)
+	return { type = "volume", value = value }
+end
+
 function volume.new()
 	---@type beat.VolumeState
 	return {}
@@ -75,7 +83,8 @@ function volume.view(app, overlay, window)
 						value = muted ? 0 : app.services.settings.values.volume,
 						min = 0,
 						max = 1,
-						onchange = |value| -> { type = "volume", value = value },
+						onchange = volumeChanged,
+						instance = app.services.settings,
 						trackColour = theme:color("text", 0.12),
 						fillColour = theme:color("muted"),
 						thumbColour = theme:color("text"),

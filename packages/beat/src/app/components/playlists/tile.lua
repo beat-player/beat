@@ -21,6 +21,7 @@ local tile = {}
 ---@field ui beat.ui.Context
 ---@field onOpen any
 ---@field onMenu fun(...): any? # The right-click menu at where it happened; built-in lists have none
+---@field art table? # The props the initial square is built from, kept for the next frame
 
 ---@class beat.components.playlists.NewTileProps
 ---@field width number
@@ -52,6 +53,15 @@ function tile.height(app, props)
 	return props.width + padTop + nameHeight + gap + metaHeight
 end
 
+--- The tile's own box: one width, one height, and the column its picture and block sit in. It is
+--- made by a function of its own so the styles builder makes no closure.
+---@param width number
+---@param height number
+---@return wonderland.StyleBuilder
+local function cardStyle(width, height)
+	return sty():w(width):h(height):column()
+end
+
 ---@param app beat.App
 ---@param width number
 ---@param mobile boolean
@@ -66,13 +76,9 @@ local function tileStyles(app, width, mobile)
 	local height = width + blockHeight
 	local radius = theme:radius("md")
 
-	local function card()
-		return sty():w(width):h(height):column()
-	end
-
 	return {
-		card = card(),
-		cardHover = card():bright(1.08),
+		card = cardStyle(width, height),
+		cardHover = cardStyle(width, height):bright(1.08),
 		art = sty():size(width, width),
 		-- An empty square edged in the accent: the one tile that makes something rather than opens it.
 		artNew = sty()
@@ -96,6 +102,31 @@ end
 --- playlist's initials only when there are none. A cell whose picture is still being decoded
 --- stays black rather than putting a second set of letters over the art. Cells sit apart in a
 --- gapped grid, so each cover keeps its own corners.
+-- The albums a mosaic's cells draw, written again per tile: the array is read and kept nowhere.
+---@type (beat.Album?)[]
+local albumCells = {}
+local EMPTY_TRACKS = {}
+
+-- What a cell reads while the grid builds it: the app whose covers it asks and the albums the last
+-- tile picked. The cell is made by a function of its own rather than one declared in the view, so
+-- the frame that draws a grid of tiles makes no closure.
+local cellState = { app = nil }
+-- The props a cell's cover is built from, written again for each cell: the cover reads them.
+local cellCoverProps = {}
+
+---@param slot number
+---@param cell number
+---@param cellRadius number
+---@return wonderland.Element
+local function cellAt(slot, cell, cellRadius)
+	local album = albumCells[slot]
+	if album ~= nil and cellState.app.services.covers:request(album, cell) ~= nil then
+		cellCoverProps.album, cellCoverProps.size, cellCoverProps.radius = album, cell, cellRadius
+		return cover.view(cellState.app, cellCoverProps --[[@as beat.components.CoverProps]])
+	end
+	return div():style(sty():size(cell, cell):radius(cellRadius):bg("#000000"))
+end
+
 ---@param app beat.App
 ---@param props beat.components.playlists.TileProps
 ---@return wonderland.Element
@@ -109,30 +140,25 @@ local function artView(app, props)
 	local gap = math.max(1, math.floor(size * 0.02))
 	local cellSize = single and size or math.floor((size - gap) / 2)
 	local slots = single and 1 or 4
-	---@type (beat.Album?)[]
-	local albums = {}
-	local pictures = 0
+	local pictureCount = 0
 	for slot = 1, slots do
 		local track = picked[slot]
 		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
-		albums[slot] = album
-		if album ~= nil and app.services.covers:request(album, cellSize) ~= nil then pictures += 1 end
+		albumCells[slot] = album
+		if album ~= nil and app.services.covers:request(album, cellSize) ~= nil then pictureCount += 1 end
 	end
 
-	if pictures == 0 then
-		return PlaylistArt.view(
-			app,
-			{ tracks = {}, size = size, radius = radius, name = props.playlist.name, ui = props.ui }
-		)
-	end
-
-	local function cellAt(slot, cell, cellRadius)
-		local album = albums[slot]
-		if album ~= nil and app.services.covers:request(album, cell) ~= nil then
-			return cover.view(app, { album = album, size = cell, radius = cellRadius })
+	if pictureCount == 0 then
+		local art = props.art
+		if art == nil then
+			art = {}
+			props.art = art
 		end
-		return div():style(sty():size(cell, cell):radius(cellRadius):bg("#000000"))
+		art.tracks, art.size, art.radius, art.name, art.ui = EMPTY_TRACKS, size, radius, props.playlist.name, props.ui
+		return PlaylistArt.view(app, art --[[@as beat.components.PlaylistArtProps]])
 	end
+
+	cellState.app = app
 	if single then
 		return cellAt(1, cellSize, radius)
 	end

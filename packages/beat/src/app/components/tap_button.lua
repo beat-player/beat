@@ -4,6 +4,11 @@ local ui = require("beat-ui")
 
 local tapButton = {}
 
+-- What the icon button under the mark is built from, written again each call: the button reads it
+-- and keeps nothing, and the phone's transport is built on every frame it is on.
+---@type beat.ui.IconButtonProps
+local buttonProps = { size = 0, onClick = nil }
+
 ---@class beat.components.TapButtonProps
 ---@field name string # The icon face's name
 ---@field size number # The mark's size: the glyph is drawn at a share of it
@@ -17,11 +22,9 @@ local tapButton = {}
 function tapButton.view(ctx, props)
 	local colour = props.active ? (ctx:color("text")) : (ctx:color("muted"))
 	local glyphSize = math.max(18, math.floor(props.size * 0.8 + 0.5))
-	return ui.iconButton(ctx, {
-		size = props.hit,
-		onClick = props.onClick,
-		content = ui.icon(ctx, { name = props.name, size = glyphSize, colour = colour })
-	})
+	buttonProps.size, buttonProps.onClick = props.hit, props.onClick
+	buttonProps.content = ui.icon(ctx, { name = props.name, size = glyphSize, colour = colour })
+	return ui.iconButton(ctx, buttonProps)
 end
 
 return tapButton

@@ -286,19 +286,41 @@ function Theme:cache()
 	return cache or {}
 end
 
+-- The theme and accent names are the module's two tables, so the sorted lists are built once and
+-- handed back: a settings page asks for them on every frame, and sorting them each time is a list
+-- and a sort the frame did not need.
+---@type string[]?
+local namesCache
+---@type string[]?
+local accentsCache
+
 ---@return string[]
 function theme.names()
-	local list = {}
-	for name in pairs(THEMES) do list[#list + 1] = name end
-	table.sort(list)
+	local list = namesCache
+	if list == nil then
+		---@type string[]
+		local made = {}
+		for name in pairs(THEMES) do made[#made + 1] = name end
+		table.sort(made)
+		namesCache = made
+		list = made
+	end
+	---@cast list string[]
 	return list
 end
 
 ---@return string[]
 function theme.accents()
-	local list = {}
-	for name in pairs(ACCENTS) do list[#list + 1] = name end
-	table.sort(list)
+	local list = accentsCache
+	if list == nil then
+		---@type string[]
+		local made = {}
+		for name in pairs(ACCENTS) do made[#made + 1] = name end
+		table.sort(made)
+		accentsCache = made
+		list = made
+	end
+	---@cast list string[]
 	return list
 end
 

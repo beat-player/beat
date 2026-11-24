@@ -4,7 +4,6 @@
 -- `build.lua` from `src/assets` and written as a Lua module, so a compiled binary carries it too.
 local utf8 = require("utf8")
 local wonderland = require("wonderland")
-local cache = require("beat-ui.cache")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -74,12 +73,36 @@ local function iconStyles(_ctx, size, colour)
 	}
 end
 
+-- One glyph's styles at one size and colour. An icon is drawn many times a frame and asks for
+-- the same few boxes and text styles, so they are kept here rather than walked out of the context
+-- cache: the sizes and colours are a handful and the builders never change.
+---@type table<number, table<string, beat.ui.IconStyles>>
+local styleCache = {}
+
+---@param ctx beat.ui.Context
+---@param size number
+---@param colour string
+---@return beat.ui.IconStyles
+local function stylesFor(ctx, size, colour)
+	local byColour = styleCache[size]
+	if byColour == nil then
+		byColour = {}
+		styleCache[size] = byColour
+	end
+	local styles = byColour[colour]
+	if styles == nil then
+		styles = iconStyles(ctx, size, colour)
+		byColour[colour] = styles
+	end
+	return styles
+end
+
 ---@param ctx beat.ui.Context
 ---@param props beat.ui.IconProps
 ---@return wonderland.Element
 function icon.view(ctx, props)
 	local glyph = UTF8_GLYPHS[props.name] or UTF8_GLYPHS.github
-	local styles = cache.of(ctx, iconStyles, "icon", props.size, props.colour) --[[@as beat.ui.IconStyles]]
+	local styles = stylesFor(ctx, props.size, props.colour)
 
 	return div():style(styles.box):children(wonderland.text(glyph):style(styles.glyph))
 end

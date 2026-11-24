@@ -286,6 +286,10 @@ function Http:openBatch()
 	local ok, batch, err = pcall(self.curl.batch)
 	if not ok then return false, tostring(batch) end
 	if batch == nil then return false, err or "curl-sys could not start" end
+	---@cast batch table
+	-- The curl pump calls back into Lua from C; see `pump` below. Turning compilation off for the
+	-- batch's own method as well keeps it from becoming a trace of its own once it is hot.
+	jit.off(batch.pump)
 	self.batch = batch
 	return true
 end

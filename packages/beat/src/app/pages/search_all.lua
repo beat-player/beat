@@ -118,7 +118,7 @@ function searchAll.view(app, page, window)
 	local gap = theme:space(16)
 	local columns = metrics.gridColumns(app, width)
 	local cardWidth = math.max(120, math.floor((width - gap * (columns - 1)) / columns))
-	local cardHeight = albumCard.height(app, { width = cardWidth })
+	local cardHeight = albumCard.height(app, cardWidth)
 	local headerHeight = theme:px(58) + filterHeight
 	local listStart = headerHeight + gap + (filter ~= nil and gap or 0)
 	local rowHeight, perRow
@@ -169,14 +169,7 @@ function searchAll.view(app, page, window)
 		for at = first, last do
 			local album = albums[at]
 			if album ~= nil then
-				row[#row + 1] = albumCard.view(
-					app,
-					{
-						album = album,
-						width = cardWidth,
-						ui = ctx
-					}
-				)
+				row[#row + 1] = albumCard.view(app, album, cardWidth, ctx)
 			end
 			if #row == columns or at == last then
 				list[#list + 1] = div():style(sty():row():wrel(1.0):h(rowHeight):gap(gap)):children(row)

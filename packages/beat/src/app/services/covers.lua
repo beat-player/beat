@@ -6,13 +6,17 @@
 -- releases every texture when the assets go away. Staying on a page does not decode anything
 -- twice. While the list is moving, nothing is uploaded or started: the frames a finger is waiting
 -- for carry only the cheap placeholder, and the queue of visible covers is decoded once it settles.
-local ffi = require("ffi")
 local threading = require("threading")
+local coverPixels = require("beat.music.cover_pixels")
 
 -- Covers stay across page changes: going home again, or back to an album, must not decode and
--- upload the same picture again. The cache is bounded, oldest first, so browsing does not grow
--- it without end.
-local CACHE_LIMIT = 48
+-- upload the same picture again. What is kept is what the last frame asked for plus a small
+-- margin, oldest first, so a page change gives back the pictures the new page does not show.
+-- A phone's cover is near a megabyte of texture, and a fixed limit of several dozen was tens of
+-- megabytes of GPU memory held for pages that had already gone. Four are enough that a scroll
+-- turned back over the rows it just left finds their pictures still here: the bench's own scroll,
+-- and one that goes down and back up, ask for no cover it had already decoded.
+local CACHE_MARGIN = 4
 
 -- How many covers decode at once. A decode is tens of milliseconds on a phone -- longer than a
 -- frame -- which on the window's own thread is a list that stutters every time a row of albums
@@ -51,24 +55,20 @@ Covers.__index = Covers
 Covers.needs = { "scroll" }
 
 --- What a worker decodes: the cached cover of one album, fitted for one size, handed back as the
---- pixels the window uploads and the colour its page tints with. The function takes its job as
---- arguments rather than closing over them, because one worker runs many covers: its Lua state,
---- the modules it requires and the traces JIT compiled for the image work all stay warm.
+--- address of pixels the window frees and the colour its page tints with. The function takes its
+--- job as arguments rather than closing over them, because one worker runs many covers: its Lua
+--- state, the modules it requires and the traces JIT compiled for the image work all stay warm.
+--- The pixels are a buffer the worker allocates rather than a Lua string, so crossing back into
+--- the window copies no picture onto its heap. See `beat.music.cover_pixels`.
 ---@param coverCache string
 ---@param size number
 ---@return number? width
 ---@return number? height
----@return string? pixels
+---@return string? address
 ---@return { r: number, g: number, b: number }? colour
 local function decodeCover(coverCache, size)
-	local ffi = require("ffi")
-	local artwork = require("beat.music.artwork")
-	local fitted, colour = artwork.forAlbum({ coverCache = coverCache }, size)
-	if fitted == nil then return nil end
-	local width, height = fitted.width, fitted.height
-	local pixels = ffi.string(fitted.pixels, width * height * 4)
-	fitted:close()
-	return width, height, pixels, colour
+	local pixels = require("beat.music.cover_pixels")
+	return pixels.decode(coverCache, size)
 end
 
 ---@param deps { scroll: beat.ScrollService }
@@ -98,6 +98,7 @@ function Covers:workers()
 		pool = threading.pool(WORKERS, decodeCover)
 		self.pool = pool
 	end
+	---@cast pool -nil
 	return pool
 end
 
@@ -137,9 +138,11 @@ function Covers:sweep()
 	end
 	for at = #jobs, kept + 1, -1 do jobs[at] = nil end
 
-	-- A frame where every cached cover is one this view asked for has nothing to evict: two
-	-- numbers settle it, without walking the cache.
-	if self.count <= CACHE_LIMIT or self.count == self.onScreen then return end
+	-- What the view is drawing plus a margin is what the cache may hold. A frame where every
+	-- cached cover is one this view asked for has nothing to evict: two numbers settle it,
+	-- without walking the cache.
+	local limit = self.onScreen + CACHE_MARGIN
+	if self.count <= limit or self.count == self.onScreen then return end
 
 	-- Only a frame that left covers behind while over the limit pays for a list of what could go
 	-- and the sort that picks the oldest of it.
@@ -155,7 +158,7 @@ function Covers:sweep()
 	if staleCount == 0 then return end
 	table.sort(stale, olderFirst)
 
-	local over = math.min(self.count - CACHE_LIMIT, staleCount)
+	local over = math.min(self.count - limit, staleCount)
 	local assets = self.assets
 	for at = 1, over do
 		local item = stale[at]
@@ -248,9 +251,13 @@ function Covers:step(now)
 	for at = 1, #decoding do
 		local item = decoding[at]
 		local keep = true
-		if item.handle:done() then
+		-- Taken out before the join, so a failure in the upload that follows cannot leave a handle
+		-- whose answer -- and with it the address of pixels already freed -- can be joined again.
+		local handle = item.handle
+		if handle ~= nil and handle:done() then
 			if not stored then
-				if self:finish(item.job, assets, pcall(item.handle.join, item.handle)) then
+				item.handle = nil
+				if self:finish(item.job, assets, pcall(handle.join, handle)) then
 					changed = true
 					stored = true
 				end
@@ -301,30 +308,43 @@ end
 --- A cover for a library that has since been replaced, an album that has since been forgotten, or
 --- one the view scrolled past before it finished is dropped: the decode is already spent, and
 --- uploading a texture nothing draws is the part that would cost the next frame.
+---
+--- Whatever happens here, the pixels the worker allocated are given back: the upload reads them
+--- once into the texture's staging memory, and a cover that is dropped or whose upload fails must
+--- not leave a buffer behind.
 ---@param job beat.CoverJob
 ---@param assets wonderland.Assets
 ---@param ok boolean
 ---@param width number?
 ---@param height number?
----@param pixels string?
+---@param address string?
 ---@param colour { r: number, g: number, b: number }?
 ---@return boolean stored # False when the cover was dropped without becoming an entry
-function Covers:finish(job, assets, ok, width, height, pixels, colour)
+function Covers:finish(job, assets, ok, width, height, address, colour)
 	local albumId, size = job.album.id, job.size
 	local pending = self.pending[albumId]
 	if pending ~= nil and pending[size] == job then
 		pending[size] = nil
 		if next(pending) == nil then self.pending[albumId] = nil end
 	end
-	if job.epoch ~= self.epoch or job.seen ~= self.frame then return false end
+	if job.epoch ~= self.epoch or job.seen ~= self.frame then
+		coverPixels.free(address)
+		return false
+	end
 
-	if ok and pixels ~= nil then
-		-- The texture reads the bytes through a pointer; `pixels` holds them until it has.
-		local bytes = ffi.cast("const uint8_t*", pixels)
-		local asset = assets:upload({ width = width, height = height, channels = 4, pixels = bytes })
+	if ok and address ~= nil then
+		local uploaded, asset = pcall(assets.upload, assets, {
+			width = width,
+			height = height,
+			channels = 4,
+			pixels = coverPixels.pointer(address)
+		})
+		coverPixels.free(address)
+		if not uploaded then error(asset, 0) end
 		self:store(albumId, size, { asset = asset, colour = colour, seen = job.seen })
 	else
 		-- A missing picture is normal; a broken one is only worth a single attempt.
+		coverPixels.free(address)
 		self:store(albumId, size, { failed = true, seen = job.seen })
 	end
 	return true
@@ -390,12 +410,23 @@ function Covers:releaseAll()
 end
 
 --- The app is going or being set up again: a warm worker state is no longer worth keeping. A
---- cover still decoding is dropped with the pool rather than uploaded into assets that are gone.
+--- cover still decoding is dropped with the pool rather than uploaded into assets that are gone;
+--- joining it here is what lets the pixels it allocated be given back, which the pool's own close
+--- cannot do because it only knows the answer as bytes it throws away.
 function Covers:close()
+	local decoding = self.decoding
+	for at = 1, #decoding do
+		local handle = decoding[at].handle
+		if handle ~= nil then
+			local ok, _, _, address = pcall(handle.join, handle)
+			if ok then coverPixels.free(address --[[@as string?]]) end
+		end
+	end
+	self.decoding = {}
+
 	local pool = self.pool
 	if pool ~= nil then
 		self.pool = nil
-		self.decoding = {}
 		pool:close()
 	end
 	self:releaseAll()

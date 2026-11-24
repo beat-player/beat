@@ -66,6 +66,9 @@ function volume.view(app, props)
 			min = 0,
 			max = 1,
 			onchange = volumeChanged,
+			-- Every volume control shows the one setting; naming the settings service lets the
+			-- two the desktop draws share a draw only where they show the same thing.
+			instance = app.services.settings,
 			trackColour = theme:color("text", 0.12),
 			fillColour = theme:color("muted"),
 			thumbColour = theme:color("text"),

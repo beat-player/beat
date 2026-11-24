@@ -1,8 +1,8 @@
--- The performance overlay's numbers: how many frames wonderland drew in the last second, what a
--- frame cost from its first measure to the gpu being handed it, and how much memory the process
--- holds. The service watches what is already being drawn rather than asking for frames of its
--- own: the line is rebuilt only while frames are coming, and a screen that has gone quiet is
--- redrawn once to say so and then left alone.
+-- The performance overlay's numbers: how many frames wonderland drew in the last second, how much
+-- main-thread CPU a frame took from its first measure to the gpu being handed it, and how much
+-- memory the process holds. The service watches what is already being drawn rather than asking for
+-- frames of its own: the line is rebuilt only while frames are coming, and a screen that has gone
+-- quiet is redrawn once to say so and then left alone.
 local wonderland = require("wonderland")
 local cache = require("beat-ui.cache")
 local metrics = require("beat.app.components.helpers.metrics")
@@ -36,6 +36,28 @@ local PAGE_KIB = 4096 / 1024
 -- a page size turns into the memory the process actually holds. Neither Windows nor macOS has
 -- it, so there the line has no resident size rather than a number made from another source.
 local HAS_RSS = jit ~= nil and jit.os == "Linux"
+
+-- What a frame costs is the main thread's own CPU time, not time on a wall clock: a frame waits
+-- for a swapchain image and for the display to take the last one, and that wait is the display's
+-- pace rather than work. Linux and Android keep a clock per thread that does not run while the
+-- thread sleeps; elsewhere the wall clock is what there is.
+local ffi = require("ffi")
+local threadClock = nil
+if HAS_RSS then
+	-- Declared under a name of its own, so a `clock_gettime` another module declared with its own
+	-- timespec type cannot clash with this one.
+	ffi.cdef([[
+		struct beat_timespec { long tv_sec; long tv_nsec; };
+		int beat_clock_gettime(int clock, struct beat_timespec *ts) __asm__("clock_gettime");
+	]])
+	local CLOCK_THREAD_CPUTIME_ID = 3
+	local spec = ffi.new("struct beat_timespec")
+	threadClock = function()
+		ffi.C.beat_clock_gettime(CLOCK_THREAD_CPUTIME_ID, spec)
+		return tonumber(spec.tv_sec) + tonumber(spec.tv_nsec) * 1e-9
+	end
+end
+local cpuNow = threadClock or time.now
 
 local function readRssKiB()
 	if not HAS_RSS then return nil end
@@ -95,7 +117,7 @@ function Debug:resolve()
 		---@param this wonderland.plugin.UI
 		---@param window wonderland.RenderWindow
 		wrapped = function(this, window)
-			debug.frameStart = time.now()
+			debug.frameStart = cpuNow()
 			frame(this, window)
 			debug.frameStart = nil
 		end
@@ -135,7 +157,7 @@ function Debug:presented(_ctx)
 	end
 
 	local started = self.frameStart
-	local duration = started ~= nil and (now - started) * 1000 or 0
+	local duration = started ~= nil and (cpuNow() - started) * 1000 or 0
 	self.samples:record(now, duration)
 	self.lastFrameAt = now
 	self.idleShown = false

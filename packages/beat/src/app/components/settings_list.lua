@@ -5,10 +5,42 @@
 -- a segmented choice, an on/off switch and a small badge.
 local wonderland = require("wonderland")
 local measure = require("beat.app.components.helpers.measure")
+local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local settingsList = {}
+
+--- The boxes of one group, kept for the width and the height the rows come to. A settings page is
+--- built again on every scroll step, and its rows do not change between them.
+---@class beat.components.SettingsGroupStyles
+---@field boxHeight number?
+---@field box wonderland.StyleBuilder
+---@field separator wonderland.StyleBuilder
+---@field height number?
+---@field heading wonderland.StyleBuilder
+---@field outer wonderland.StyleBuilder
+
+--- The boxes and the text styles of one row, kept for the shape of the row: its width, how much
+--- room the control takes, whether there is a line under the label, and whether it is drawn
+--- quieter. Each `beat.components.SettingsRowStyles` in `byShape` is one of those.
+---@class beat.components.SettingsRowStyles
+---@field textWidth number
+---@field textHeight number
+---@field height number
+---@field label wonderland.StyleBuilder
+---@field description wonderland.StyleBuilder?
+---@field words wonderland.StyleBuilder
+---@field element wonderland.StyleBuilder
+---@field hover wonderland.StyleBuilder?
+
+---@class beat.components.SettingsListStyles
+---@field separator wonderland.StyleBuilder?
+---@field groups table<number, beat.components.SettingsGroupStyles>
+---@field rows table<number, table<number, table<number, beat.components.SettingsRowStyles>>>
+---@field toggles table<number, { track: wonderland.StyleBuilder, knob: wonderland.StyleBuilder }>
+---@field badges table<string, { box: wonderland.StyleBuilder, text: wonderland.StyleBuilder, width: number }>
+---@field segments table<string, table>
 
 -- Below this many theme pixels of row width the control goes under the label rather than beside it.
 local STACK_BELOW = 520
@@ -33,6 +65,32 @@ function settingsList.stacked(app, width)
 	return width < app.services.appearance.theme:px(STACK_BELOW)
 end
 
+--- The height of a group's rows and the hairlines between them.
+---@param rows beat.components.SettingsItem[]
+---@param count number
+---@return number
+local function rowsHeight(rows, count)
+	local height = 0
+	for at = 1, count do
+		if at > 1 then height += 1 end
+		height += rows[at].height
+	end
+	return height
+end
+
+--- The rows added to a group's box, a hairline between each pair. The loop is its own function
+--- so it compiles even when the page that asked for the group is still being interpreted.
+---@param box wonderland.Element
+---@param rows beat.components.SettingsItem[]
+---@param count number
+---@param separator wonderland.StyleBuilder
+local function addRows(box, rows, count, separator)
+	for at = 1, count do
+		if at > 1 then box:children(div():style(separator)) end
+		box:children(rows[at].element)
+	end
+end
+
 ---@class beat.components.SettingsGroupProps
 ---@field title string? # The heading over the box
 ---@field rows beat.components.SettingsItem[]
@@ -46,32 +104,49 @@ end
 function settingsList.group(app, props)
 	local theme = app.services.appearance.theme
 	local width = props.width
-	local children = {}
-	local boxHeight = 0
-	for at, item in ipairs(props.rows) do
-		if at > 1 then
-			children[#children + 1] = div():style(sty():w(width - theme:px(32)):h(1):bg(theme:color("border")))
-			boxHeight += 1
-		end
-		children[#children + 1] = item.element
-		boxHeight += item.height
+	local kept = styles.of(theme, "settingsList", width) --[[@as beat.components.SettingsListStyles]]
+	local groups = kept.groups
+	if groups == nil then
+		groups = {}
+		kept.groups = groups
 	end
+	local separator = kept.separator
+	if separator == nil then
+		separator = sty():w(width - theme:px(32)):h(1):bg(theme:color("border"))
+		kept.separator = separator
+	end
+	separator = assert(separator)
+	local rowCount = #props.rows
+	local boxHeight = rowsHeight(props.rows, rowCount)
 
-	local box = div()
-		:style(
-			sty()
-				:column():w(width):h(boxHeight):pad(0, theme:px(16), 0, theme:px(16)):radius(theme:radius("md"))
-				:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
-		)
-		:children(children)
+	local group = groups[0]
+	if group == nil or group.boxHeight ~= boxHeight then
+		group = { boxHeight = boxHeight }
+		group.box = sty()
+			:column():w(width):h(boxHeight):pad(0, theme:px(16), 0, theme:px(16)):radius(theme:radius("md"))
+			:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
+		groups[0] = group
+	end
+	-- The rows are handed over one at a time: a group is built on every frame of a scroll, and a
+	-- table it is only a list of is a table the frame does not need.
+	local box = div():style(group.box)
+	addRows(box, props.rows, rowCount, separator)
 	if props.title == nil then return box, boxHeight end
 
 	local headingHeight = math.floor(theme:type("sm") * 1.4)
 	local gap = theme:px(8)
-	local heading = text(props.title)
-		:style(theme:s():w(width):h(headingHeight):text(theme:type("sm")):weight("semibold"):fg(theme:color("muted")):ellipsis())
 	local height = headingHeight + gap + boxHeight
-	return div():style(sty():column():w(width):h(height):gap(gap)):children({ heading, box }), height
+	local titled = groups[height]
+	if titled == nil then
+		titled = {
+			height = height,
+			heading = theme:s():w(width):h(headingHeight):text(theme:type("sm")):weight("semibold"):fg(theme:color("muted")):ellipsis(),
+			outer = sty():column():w(width):h(height):gap(gap)
+		}
+		groups[height] = titled
+	end
+	local heading = text(props.title):style(titled.heading)
+	return div():style(titled.outer):children(heading, box), height
 end
 
 ---@class beat.components.SettingsRowProps
@@ -86,11 +161,14 @@ end
 ---@field badge wonderland.Element? # Something small after the label, such as a version
 ---@field badgeWidth number?
 
---- One row. Returns the element and its height.
+--- One row from the props record, filling `item` when the caller keeps one: a page built again on
+--- every scroll step asks for its rows again, and the record a group reads is the caller's to hand
+--- back.
 ---@param app beat.App
 ---@param props beat.components.SettingsRowProps
+---@param item beat.components.SettingsItem?
 ---@return beat.components.SettingsItem
-function settingsList.row(app, props)
+local function buildRow(app, props, item)
 	local theme = app.services.appearance.theme
 	local inner = props.width - theme:px(32)
 	local labelSize = theme:type("base")
@@ -106,59 +184,141 @@ function settingsList.row(app, props)
 	local padY = theme:px(14)
 	local gap = theme:px(16)
 
-	local textWidth = stacked and inner or math.max(theme:px(80), inner - (controlWidth > 0 and (controlWidth + gap) or 0))
-	local labelColour = props.dim and theme:color("muted") or theme:color("text")
-	local descriptionColour = props.dim and theme:color("faint") or theme:color("muted")
+	-- The row's own boxes and text styles are a function of the shape built above and the room the
+	-- control takes: the same shape comes back on every frame of a page that is being scrolled.
+	local kept = styles.of(theme, "settingsList", props.width) --[[@as beat.components.SettingsListStyles]]
+	local rowsCache = kept.rows
+	if rowsCache == nil then
+		rowsCache = {}
+		kept.rows = rowsCache
+	end
+	local shape = (props.control ~= nil and 1 or 0) + (props.description ~= nil and 2 or 0) + (stacked and 4 or 0)
+	if props.dim then shape += 8 end
+	local byControl = rowsCache[shape]
+	if byControl == nil then
+		byControl = {}
+		rowsCache[shape] = byControl
+	end
+	local byHeight = byControl[controlWidth]
+	if byHeight == nil then
+		byHeight = {}
+		byControl[controlWidth] = byHeight
+	end
+	local s = byHeight[controlHeight]
+	if s == nil then
+		local textWidth = stacked and inner or math.max(theme:px(80), inner - (controlWidth > 0 and (controlWidth + gap) or 0))
+		local labelColour = props.dim and theme:color("muted") or theme:color("text")
+		local descriptionColour = props.dim and theme:color("faint") or theme:color("muted")
+		local height = stacked and (padY * 2 + textHeight + theme:px(10) + controlHeight)
+			or (padY * 2 + math.max(textHeight, controlHeight))
+		s = {
+			textWidth = textWidth,
+			height = height,
+			label = theme:s():w(textWidth):h(labelHeight):text(labelSize):weight("medium"):fg(labelColour):ellipsis(),
+			description = props.description ~= nil
+					and (theme:s():w(textWidth):h(descriptionHeight):text(descriptionSize):fg(descriptionColour):ellipsis())
+				or nil,
+			words = sty():column():w(textWidth):h(textHeight):gap(theme:px(2)),
+			element = stacked
+					and (sty():column():w(inner):h(height):pad(padY, 0, padY, 0):gap(theme:px(10)))
+				or (sty():row():w(inner):h(height):gap(gap):align("center"):justify("space-between")),
+			hover = props.onClick ~= nil
+					and (sty():w(inner):h(height):radius(theme:radius("sm")):bg(theme:color("hover", 0.5)))
+				or nil
+		}
+		byHeight[controlHeight] = s
+	end
 
 	local labelRow
 	if props.badge ~= nil then
 		local badgeWidth = props.badgeWidth or 0
-		local labelStyle = theme:s():text(labelSize):weight("medium")
-		local natural = math.ceil(measure.width(app, props.label, labelStyle) or textWidth) + 1
-		local labelWidth = math.max(theme:px(24), math.min(natural, textWidth - badgeWidth - theme:px(8)))
-		labelRow = div()
-			:style(sty():row():w(textWidth):h(labelHeight):gap(theme:px(8)):align("center"))
-			:children(
-				{
-					text(props.label):style(theme:s():w(labelWidth):text(labelSize):weight("medium"):fg(labelColour):ellipsis()),
-					props.badge
-				}
-			)
+		local badgeRow = kept.badges --[[@as table<string, { row: wonderland.StyleBuilder, label: wonderland.StyleBuilder, badgeWidth: number, textWidth: number }>?]]
+		if badgeRow == nil then
+			badgeRow = {}
+			kept.badges = badgeRow
+		end
+		local known = badgeRow[props.label]
+		if known == nil or known.badgeWidth ~= badgeWidth or known.textWidth ~= s.textWidth or known.dim ~= props.dim then
+			local labelStyle = theme:s():text(labelSize):weight("medium")
+			local natural = math.ceil(measure.width(app, props.label, labelStyle) or s.textWidth) + 1
+			local labelWidth = math.max(theme:px(24), math.min(natural, s.textWidth - badgeWidth - theme:px(8)))
+			known = {
+				badgeWidth = badgeWidth,
+				textWidth = s.textWidth,
+				dim = props.dim,
+				row = sty():row():w(s.textWidth):h(labelHeight):gap(theme:px(8)):align("center"),
+				label = theme:s():w(labelWidth):text(labelSize):weight("medium"):fg(theme:color("text")):ellipsis()
+			}
+			if props.dim then known.label = theme:s():w(labelWidth):text(labelSize):weight("medium"):fg(theme:color("muted")):ellipsis() end
+			badgeRow[props.label] = known
+		end
+		labelRow = div():style(known.row):children(text(props.label):style(known.label), props.badge)
 	else
-		labelRow = text(props.label)
-			:style(theme:s():w(textWidth):h(labelHeight):text(labelSize):weight("medium"):fg(labelColour):ellipsis())
+		labelRow = text(props.label):style(s.label)
 	end
 
-	local lines = { labelRow }
-	if props.description ~= nil then
-		lines[#lines + 1] = text(props.description)
-			:style(theme:s():w(textWidth):h(descriptionHeight):text(descriptionSize):fg(descriptionColour):ellipsis())
-	end
-	local words = div():style(sty():column():w(textWidth):h(textHeight):gap(theme:px(2))):children(lines)
+	local words = div():style(s.words):children(labelRow)
+	local description, descriptionStyle = props.description, s.description
+	if description ~= nil and descriptionStyle ~= nil then words:children(text(description):style(descriptionStyle)) end
 
-	local height, element
-	if stacked then
-		height = padY * 2 + textHeight + theme:px(10) + controlHeight
-		element = div()
-			:style(sty():column():w(inner):h(height):pad(padY, 0, padY, 0):gap(theme:px(10)))
-			:children({ words, props.control })
+	local element
+	local control = props.control
+	if stacked and control ~= nil then
+		element = div():style(s.element):children(words, control)
 	else
-		height = padY * 2 + math.max(textHeight, controlHeight)
-		local children = { words }
-		if props.control ~= nil then children[#children + 1] = props.control end
-		element = div()
-			:style(sty():row():w(inner):h(height):gap(gap):align("center"):justify("space-between"))
-			:children(children)
+		element = div():style(s.element):children(words)
+		if control ~= nil then element:children(control) end
 	end
 
 	if props.onClick ~= nil then
-		element = div()
-			:style(sty():w(inner):h(height):radius(theme:radius("sm")))
-			:hover(sty():w(inner):h(height):radius(theme:radius("sm")):bg(theme:color("hover", 0.5)))
-			:onClick(props.onClick)
-			:children({ element })
+		local boxes = styles.of(theme, "settingsRowBox", props.width) --[[@as table<number, { box: wonderland.StyleBuilder, hover: wonderland.StyleBuilder }>]]
+		local box = boxes[s.height]
+		if box == nil then
+			box = {
+				box = sty():w(inner):h(s.height):radius(theme:radius("sm")),
+				hover = sty():w(inner):h(s.height):radius(theme:radius("sm")):bg(theme:color("hover", 0.5))
+			}
+			boxes[s.height] = box
+		end
+		element = div():style(box.box):hover(box.hover):onClick(props.onClick):children(element)
 	end
-	return { element = element, height = height }
+	item = item or {}
+	item.element, item.height = element, s.height
+	return item
+end
+
+--- One row. Returns the element and its height.
+---@param app beat.App
+---@param props beat.components.SettingsRowProps
+---@return beat.components.SettingsItem
+function settingsList.row(app, props)
+	return buildRow(app, props, nil)
+end
+
+-- The props a positional row is built from, written for each row: the row reads them and keeps
+-- nothing, so one record serves every row of a page.
+---@type beat.components.SettingsRowProps
+local ROW = { label = "", width = 0 }
+
+--- One row without a props table. `item` is the caller's record to fill (one per row, kept across
+--- frames), so a page that builds the same rows every frame makes neither.
+---@param app beat.App
+---@param item beat.components.SettingsItem
+---@param width number
+---@param label string
+---@param description string?
+---@param control wonderland.Element?
+---@param controlWidth number?
+---@param controlHeight number?
+---@param onClick any?
+---@param badge wonderland.Element?
+---@param badgeWidth number?
+---@return beat.components.SettingsItem
+function settingsList.rowAt(app, item, width, label, description, control, controlWidth, controlHeight, onClick, badge, badgeWidth)
+	ROW.width, ROW.label, ROW.description = width, label, description
+	ROW.control, ROW.controlWidth, ROW.controlHeight = control, controlWidth, controlHeight
+	ROW.onClick, ROW.badge, ROW.badgeWidth = onClick, badge, badgeWidth
+	return buildRow(app, ROW, item)
 end
 
 ---@class beat.components.SettingsOption
@@ -171,6 +331,19 @@ end
 ---@field width number? # Fill this width, options sharing it equally; default each option's own width
 ---@field height number? # Default px(32)
 
+--- One option's fill in a segmented pill: a width, the height inside the pill's inset, and the
+--- colour the option is. It is a function of its own rather than one declared in the loop that
+--- builds the choices, so the frame that draws a settings row makes no closure.
+---@param theme beat.Theme
+---@param width number
+---@param height number
+---@param inset number
+---@param fill string
+---@return wonderland.StyleBuilder
+local function segmentShape(theme, width, height, inset, fill)
+	return sty():w(width):h(height - inset * 2):radius(theme:radius("full")):align("center"):justify("center"):bg(fill)
+end
+
 --- One choice of several, as a pill split into options: the chosen one is filled in the accent.
 --- Returns the element and its width.
 ---@param app beat.App
@@ -181,46 +354,77 @@ function settingsList.segmented(app, props)
 	local theme = app.services.appearance.theme
 	local height = props.height or theme:px(32)
 	local inset = theme:px(3)
-	local labelStyle = theme:s():text(theme:type("sm")):weight("semibold")
-	local widths = {}
-	local total = inset * 2
-	if props.width ~= nil then
-		local each = math.floor((props.width - inset * 2) / #props.options)
-		for at = 1, #props.options do widths[at] = each end
-		total = props.width
-	else
+	-- What the pill is drawn from depends on its options and which of them is chosen, not on the
+	-- frame: the options table and a bit per choice key the record, and both are numbers or a
+	-- table an option list already is, so asking again makes nothing.
+	local byHeight = styles.of(theme, "settingsSegment", props.width or 0) --[[@as table<number, table<table, table<number, table>>>]]
+	local byOptions = byHeight[height]
+	if byOptions == nil then
+		byOptions = {}
+		byHeight[height] = byOptions
+	end
+	local byChoice = byOptions[props.options]
+	if byChoice == nil then
+		byChoice = {}
+		byOptions[props.options] = byChoice
+	end
+	local mask = 0
+	for at = 1, #props.options do
+		if props.options[at].selected then mask += 2 ^ (at - 1) end
+	end
+	local kept = byChoice[mask] --[[@as { widths: number[]?, total: number?, box: wonderland.StyleBuilder?, cells: table[]? }]]
+	if kept == nil then
+		kept = {}
+		byChoice[mask] = kept
+	end
+	if kept.box == nil or kept.cells == nil then
+		local labelStyle = theme:s():text(theme:type("sm")):weight("semibold")
+		local widths = {}
+		local total = inset * 2
+		if props.width ~= nil then
+			local each = math.floor((props.width - inset * 2) / #props.options)
+			for at = 1, #props.options do widths[at] = each end
+			total = props.width
+		else
+			for at, option in ipairs(props.options) do
+				widths[at] = math.max(
+					theme:px(56),
+					math.ceil(measure.width(app, option.label, labelStyle) or theme:px(40)) + theme:px(24)
+				)
+				total += widths[at]
+			end
+		end
+
+		local cells = {}
 		for at, option in ipairs(props.options) do
-			widths[at] = math.max(theme:px(56), math.ceil(measure.width(app, option.label, labelStyle) or theme:px(40)) + theme:px(24))
-			total += widths[at]
+			local chosen = option.selected
+			cells[at] = {
+				base = segmentShape(theme, widths[at], height, inset, chosen and theme:color("accent") or "#00000000"),
+				hover = segmentShape(theme, widths[at], height, inset, chosen and theme:color("accent") or theme:color("hover")),
+				text = theme:s():text(theme:type("sm")):weight("semibold"):fg(chosen and theme.accentInk or theme:color("muted"))
+			}
 		end
+
+		kept.widths, kept.total, kept.cells = widths, total, cells
+		kept.box = sty()
+			:row():w(total):h(height):pad(inset):radius(theme:radius("full")):align("center")
+			:bg(theme:color("bg")):border(theme:px(1), theme:color("border"))
 	end
 
-	local children = {}
+	local cells = assert(kept.cells)
+	local pill = div():style(kept.box --[[@as wonderland.StyleBuilder]])
 	for at, option in ipairs(props.options) do
-		local chosen = option.selected
-		local function shape(fill)
-			return sty():w(widths[at]):h(height - inset * 2):radius(theme:radius("full")):align("center"):justify("center"):bg(fill)
-		end
-		children[at] = div()
-			:style(shape(chosen ? (theme:color("accent")) : "#00000000"))
-			:hover(shape(chosen ? (theme:color("accent")) : (theme:color("hover"))))
-			:onClick(option.message)
-			:children(
-				text(option.label)
-					:style(
-						theme:s():text(theme:type("sm")):weight("semibold")
-							:fg(chosen ? (theme.accentInk) : (theme:color("muted")))
-					)
-			)
+		local cell = assert(cells[at])
+		pill:children(
+			div()
+				:style(cell.base)
+				:hover(cell.hover)
+				:onClick(option.message)
+				:children(text(option.label):style(cell.text))
+		)
 	end
 
-	return div()
-		:style(
-			sty()
-				:row():w(total):h(height):pad(inset):radius(theme:radius("full")):align("center")
-				:bg(theme:color("bg")):border(theme:px(1), theme:color("border"))
-		)
-		:children(children), total
+	return pill, kept.total --[[@as number]]
 end
 
 ---@class beat.components.ToggleProps
@@ -235,23 +439,21 @@ end
 ---@return number
 function settingsList.toggle(app, props)
 	local theme = app.services.appearance.theme
-	local width, height = theme:px(44), theme:px(26)
-	local knob = height - theme:px(6)
-	local travel = width - knob - theme:px(6)
-	return div()
-		:style(
-			sty()
-				:w(width):h(height):radius(theme:radius("full")):pad(theme:px(3))
-				:bg(props.on ? (theme:color("accent")) : (theme:color("active")))
-		)
-		:onClick(props.onClick)
-		:children(
-			div():style(
-				sty()
-					:size(knob, knob):radius(theme:radius("full")):offset(props.on and travel or 0, 0)
-					:bg(props.on ? (theme.accentInk) : (theme:color("muted")))
-			)
-		), width
+	local on = props.on == true
+	local kept = styles.of(theme, "settingsToggle", on and 1 or 0) --[[@as { track: wonderland.StyleBuilder?, knob: wonderland.StyleBuilder?, width: number }]]
+	if kept.track == nil or kept.knob == nil then
+		local width, height = theme:px(44), theme:px(26)
+		local knob = height - theme:px(6)
+		local travel = width - knob - theme:px(6)
+		kept.width = width
+		kept.track = sty()
+			:w(width):h(height):radius(theme:radius("full")):pad(theme:px(3))
+			:bg(on and theme:color("accent") or theme:color("active"))
+		kept.knob = sty()
+			:size(knob, knob):radius(theme:radius("full")):offset(on and travel or 0, 0)
+			:bg(on and theme.accentInk or theme:color("muted"))
+	end
+	return div():style(assert(kept.track)):onClick(props.onClick):children(div():style(assert(kept.knob))), kept.width
 end
 
 --- A small outlined label, such as "Core" or a version. Returns the element and its width.
@@ -261,16 +463,18 @@ end
 ---@return number
 function settingsList.badge(app, label)
 	local theme = app.services.appearance.theme
-	local style = theme:s():text(theme:type("xs")):weight("semibold")
-	local width = math.ceil(measure.width(app, label, style) or theme:px(24)) + theme:px(16)
-	local height = theme:px(20)
-	return div()
-		:style(
-			sty()
-				:w(width):h(height):radius(theme:radius("full")):align("center"):justify("center")
-				:border(theme:px(1), theme:color("border"))
-		)
-		:children(text(label):style(theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("faint")))), width
+	local kept = styles.of(theme, "settingsBadge", label) --[[@as { box: wonderland.StyleBuilder?, text: wonderland.StyleBuilder?, width: number? }]]
+	if kept.box == nil or kept.text == nil then
+		local style = theme:s():text(theme:type("xs")):weight("semibold")
+		local width = math.ceil(measure.width(app, label, style) or theme:px(24)) + theme:px(16)
+		local height = theme:px(20)
+		kept.width = width
+		kept.box = sty()
+			:w(width):h(height):radius(theme:radius("full")):align("center"):justify("center")
+			:border(theme:px(1), theme:color("border"))
+		kept.text = theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("faint"))
+	end
+	return div():style(assert(kept.box)):children(text(label):style(assert(kept.text))), assert(kept.width)
 end
 
 return settingsList

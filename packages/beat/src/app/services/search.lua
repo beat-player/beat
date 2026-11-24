@@ -141,9 +141,18 @@ function Search:filterIds()
 	return ids
 end
 
+--- Gives back the folded text the last query built. The pages draw nothing while the field is
+--- empty, and the text is a few hundred kilobytes of strings kept for a search nobody is looking
+--- at; the next query makes it again in one pass over the library.
+function Search:releaseIndex()
+	local library = self.library.current
+	if library ~= nil and library.sweep ~= nil then library:forgetSearch() end
+end
+
 --- The search page clears the field itself when Escape is pressed before it leaves.
 function Search:clear()
 	self.query = ""
+	self:releaseIndex()
 end
 
 --- The bar and the tag chips on the search screen.
@@ -155,6 +164,8 @@ Search.on = {
 	---@param message beat.SearchMessage
 	search = function(self, message)
 		self.query = message.value or ""
+		-- Typing back to an empty field is the other way a query stops reading the text.
+		if self.query == "" then self:releaseIndex() end
 		self.emit({ type = "navigate", page = { kind = "search" }, keepFocus = true })
 	end,
 	---@param self beat.SearchService

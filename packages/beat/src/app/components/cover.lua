@@ -5,6 +5,23 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local cover = {}
 
+-- The letter an album without a picture shows, kept per album: a cover is asked for on every
+-- frame, and matching and upper-casing its title each time is a string the frame did not need.
+---@type table<beat.Album, string>
+local initials = setmetatable({}, { __mode = "k" })
+
+---@param album beat.Album
+---@return string
+local function initialOf(album)
+	local known = initials[album]
+	if known == nil then
+		local first = album.title:match("^[%z\1-\127\194-\244][\128-\191]*") or ""
+		known = first:upper()
+		initials[album] = known
+	end
+	return known
+end
+
 ---@class beat.components.CoverProps
 ---@field album beat.Album
 ---@field size number # Width and height of the square
@@ -113,18 +130,23 @@ function cover.view(app, props)
 				)
 			)
 
-			return div():style(style):children({ sheen })
+			local halo = div():style(style)
+			if sheen ~= nil then halo:children(sheen) end
+			return halo
 		end
 	end
 
 	if asset ~= nil then
-		return div():style(imageStyle(styles, size, radius, asset)):children({ sheen })
+		local art = div():style(imageStyle(styles, size, radius, asset))
+		if sheen ~= nil then art:children(sheen) end
+		return art
 	end
 
 	-- The first character, not the first byte: a title in Japanese or with an accent begins with a
 	-- character several bytes long, and its first byte alone draws as a broken glyph.
-	local initial = album.title:match("^[%z\1-\127\194-\244][\128-\191]*") or ""
-	return div():style(styles.placeholder):children({ text(initial:upper()):style(styles.initial), sheen })
+	local placeholder = div():style(styles.placeholder):children(text(initialOf(album)):style(styles.initial))
+	if sheen ~= nil then placeholder:children(sheen) end
+	return placeholder
 end
 
 return cover

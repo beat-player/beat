@@ -47,7 +47,7 @@ function iconButton.view(ctx, props)
 
 	local styles = cache.of(ctx, iconButtonStyles, "iconButton", props.size) --[[@as beat.ui.IconButtonStyles]]
 
-	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children({ content })
+	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children(content)
 end
 
 return { view = iconButton.view }

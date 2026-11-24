@@ -10,6 +10,21 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 -- checkerboard, but few enough that a frame of it is a few hundred shapes.
 local COLS, ROWS = 24, 16
 
+-- What moving one channel asks for, one handler per channel rather than one per slider per frame.
+---@type table<"h"|"s"|"v", fun(value: number): table>
+local channelHandlers = {}
+
+---@param field "h"|"s"|"v"
+---@return fun(value: number): table
+local function channelHandler(field)
+	local handler = channelHandlers[field]
+	if handler == nil then
+		handler = function(value) return { type = "pickHsv", [field] = value } end
+		channelHandlers[field] = handler
+	end
+	return handler
+end
+
 --- The colour a hue, saturation and brightness name, as the hex a style or a canvas draws.
 ---@param hue number # From nought to one
 ---@param saturation number
@@ -165,9 +180,10 @@ local function channelRow(app, theme, label, field, value, fillColour, sliderWid
 					{
 						width = sliderWidth,
 						value = value,
-						onchange = function(nextValue)
-							return { type = "pickHsv", [field] = nextValue }
-						end,
+						onchange = channelHandler(field),
+						-- The three channels are the same size; the channel is what tells their
+						-- draws apart.
+						instance = field,
 						trackColour = theme:color("text", 0.1),
 						fillColour = fillColour,
 						thumbColour = theme:color("text"),

@@ -33,12 +33,11 @@ end
 function section.view(ctx, props)
 	local styles = cache.of(ctx, sectionStyles, "section", props.action ~= nil) --[[@as beat.ui.SectionStyles]]
 
-	local children = { text(props.title):style(styles.title) }
+	local element = div():style(styles.row):children(text(props.title):style(styles.title))
 	if props.action ~= nil then
-		children[#children + 1] = text("See all"):style(styles.action):onClick(props.action)
+		element:children(text("See all"):style(styles.action):onClick(props.action))
 	end
-
-	return div():style(styles.row):children(children)
+	return element
 end
 
 return { view = section.view }

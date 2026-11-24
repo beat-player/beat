@@ -101,6 +101,9 @@ function progress.view(app, props)
 			-- once a second, so the bar follows the player when the frame is drawn: a
 			-- repaint shows where it is without laying the row out again.
 			liveValue = styles.liveValue,
+			-- The bar and the now-playing screen have a slider each for the same player; the
+			-- player is what says a slider is this one rather than another of the same size.
+			instance = player,
 			trackColour = theme:color("text", 0.12),
 			fillColour = theme:color("text"),
 			thumbColour = theme:color("text")

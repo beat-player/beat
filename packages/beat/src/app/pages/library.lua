@@ -67,6 +67,37 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@field contentHeight number?
 ---@field content wonderland.StyleBuilder
 
+--- The words a list row shows under its title and at its end, kept per album: an album's year,
+--- track count and length do not change while the library holds it, and the row is built again on
+--- every frame of a scroll.
+---@class beat.pages.LibraryRowText
+---@field subtitle string
+---@field count string
+---@field duration string
+
+---@type table<beat.Album, beat.pages.LibraryRowText>
+local rowTexts = setmetatable({}, { __mode = "k" })
+
+---@param album beat.Album
+---@return beat.pages.LibraryRowText
+local function rowText(album)
+	local known = rowTexts[album]
+	if known == nil then
+		known = {
+			subtitle = album.artist .. (album.year and (" · " .. album.year) or ""),
+			count = format.count(#album.tracks, "track"),
+			duration = format.duration(album.duration)
+		}
+		rowTexts[album] = known
+	end
+	return known
+end
+
+-- The props a list row's cover is built from, written again for each row: the cover reads them and
+-- keeps nothing, and the list is built again on every frame it is scrolled.
+---@type table<string, any>
+local listCoverProps = {}
+
 ---@type beat.PageSurface
 local libraryPage = {}
 
@@ -81,6 +112,33 @@ local SORT_LABELS = {
 -- The messages the header's controls send, made once rather than once per frame.
 local TOGGLE_VIEW = { type = "toggleView" }
 local OPEN_SORT = { type = "open", overlay = "sort_menu" }
+
+-- The mark's draw, made where the theme it is for is built rather than in the view: a closure
+-- declared in the view's own block closes its upvalues every frame, which is a block the trace
+-- compiler leaves the frame for, and a frame that draws the button then runs interpreted.
+---@param grid boolean
+---@param inner number
+---@param colour string
+---@param gap number
+---@return fun(canvas: wonderland.Canvas)
+local function markPaint(grid, inner, colour, gap)
+	return function(canvas)
+		if grid then
+			local tile = math.floor((canvas.width - gap) / 2)
+			for at = 0, 3 do
+				canvas:rect((at % 2) * (tile + gap), math.floor(at / 2) * (tile + gap), tile, tile, colour, math.max(1, math.floor(tile * 0.25)))
+			end
+		else
+			local line = math.max(2, math.floor(inner * 0.14))
+			local step = math.floor((canvas.height - line) / 2)
+			for at = 0, 2 do
+				local y = at * step
+				canvas:rect(0, y, line, line, colour, line / 2)
+				canvas:rect(line + gap, y, canvas.width - line - gap, line, colour, line / 2)
+			end
+		end
+	end
+end
 
 --- The view the shelf would switch to, drawn rather than taken from the icon face: the face has
 --- no grid, and a list from it next to a drawn grid would not match it in weight.
@@ -100,22 +158,7 @@ local function viewButton(app, ctx, size, grid)
 		local mark = sty():size(inner, inner)
 		local gap = math.max(2, math.floor(inner * 0.16))
 		kept.inner, kept.colour, kept.mark = inner, colour, mark
-		kept.paint = function(canvas)
-			if grid then
-				local tile = math.floor((canvas.width - gap) / 2)
-				for at = 0, 3 do
-					canvas:rect((at % 2) * (tile + gap), math.floor(at / 2) * (tile + gap), tile, tile, colour, math.max(1, math.floor(tile * 0.25)))
-				end
-			else
-				local line = math.max(2, math.floor(inner * 0.14))
-				local step = math.floor((canvas.height - line) / 2)
-				for at = 0, 2 do
-					local y = at * step
-					canvas:rect(0, y, line, line, colour, line / 2)
-					canvas:rect(line + gap, y, canvas.width - line - gap, line, colour, line / 2)
-				end
-			end
-		end
+		kept.paint = markPaint(grid, inner, colour, gap)
 	end
 
 	return ui.iconButton(ctx, { size = size, onClick = TOGGLE_VIEW, content = div():style(kept.mark):canvas(kept.paint) })
@@ -243,7 +286,7 @@ function libraryPage.view(app, page, window)
 		)
 	end
 
-	local cardHeight = albumCard.height(app, { width = cardWidth })
+	local cardHeight = albumCard.height(app, cardWidth)
 	local rowHeight = list ? (theme:px(64)) : cardHeight + (theme:space(12))
 	local totalRows = list and #albums or math.ceil(#albums / columns)
 	local contentHeight = headerHeight + theme:space(18) + totalRows * rowHeight
@@ -293,25 +336,24 @@ function libraryPage.view(app, page, window)
 		for at = first, last do
 			local album = albums[at]
 			local actions = albumCard.actions(album)
-			children[#children + 1] = div()
+			local words = rowText(album)
+			listCoverProps.album, listCoverProps.size, listCoverProps.radius = album, s.coverSize, s.coverRadius
+			local row = div()
 				:style(s.row)
 				:hover(s.rowHover):onClick(actions.open)
 				:onContextMenu(actions.menu)
 				:children(
-					{
-						cover.view(app, { album = album, size = s.coverSize, radius = s.coverRadius }),
-						div()
-							:style(s.names)
-							:children(
-								{
-									text(album.title):style(s.title),
-									text(album.artist .. (album.year and (" · " .. album.year) or "")):style(s.artist)
-								}
-							),
-						(not mobile) and text(format.count(#album.tracks, "track")):style(s.count) or div():style(s.none),
-						(not mobile) and text(format.duration(album.duration)):style(s.duration) or div():style(s.none)
-					}
+					cover.view(app, listCoverProps --[[@as beat.components.CoverProps]]),
+					div()
+						:style(s.names)
+						:children(text(album.title):style(s.title), text(words.subtitle):style(s.artist))
 				)
+			if mobile then
+				row:children(div():style(s.none), div():style(s.none))
+			else
+				row:children(text(words.count):style(s.count), text(words.duration):style(s.duration))
+			end
+			children[#children + 1] = row
 		end
 	else
 		if frameStyles.rowHeight ~= rowHeight or frameStyles.gap ~= gap then
@@ -322,14 +364,7 @@ function libraryPage.view(app, page, window)
 		local row = {}
 		for at = first, last do
 			local album = albums[at]
-			row[#row + 1] = albumCard.view(
-				app,
-				{
-					album = album,
-					width = cardWidth,
-					ui = ctx
-				}
-			)
+			row[#row + 1] = albumCard.view(app, album, cardWidth, ctx)
 			if #row == columns or at == last then
 				children[#children + 1] = div():style(gridRow):children(row)
 				row = {}

@@ -5,7 +5,6 @@ local ffi = require("ffi")
 local image = require("image")
 local fs = require("fs")
 local path = require("path")
-local audio = require("treble.audio")
 local artworkCache = require("beat.music.artwork_cache")
 
 local artwork = {}
@@ -167,6 +166,9 @@ function artwork.forTrack(track, maxSide)
 	local decoded, err
 
 	if track.hasPicture then
+		-- The tag reader is only needed by a track that carries a picture; a cover beside the
+		-- file is an image the app already has a reader for.
+		local audio = require("treble.audio")
 		local tags = audio.tags(track.path)
 		if tags?.picture ~= nil then
 			decoded, err = image.decode(tags.picture.data, { channels = 4 })

@@ -7,12 +7,116 @@ local cover = require("beat.app.components.cover")
 local tagPills = require("beat.app.components.tag_pills")
 local trackRow = require("beat.app.components.track_row")
 local metrics = require("beat.app.components.helpers.metrics")
+local styles = require("beat.app.components.helpers.styles")
 local searchField = require("beat.app.components.search_field")
 local measure = require("beat.app.components.helpers.measure")
 local format = require("beat.app.components.helpers.format")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
+
+--- The messages and props a result's row is built from, kept per track and per result list: the
+--- page is built again on every scroll step, and a row is the same row until the search changes.
+---@type table<beat.Track, table>
+local trackRows = setmetatable({}, { __mode = "k" })
+
+---@type { tracks: beat.Track[], ids: number[] }?
+local idsCache
+
+-- The words a result count becomes, kept by the count: the page is built again on every frame it
+-- is scrolled, and "3 results found" does not change between them.
+---@type table<number, string>
+local foundTexts = {}
+
+-- What a tag pill and an artist row send, made once per tag and per artist: a result list is
+-- built again on every frame, and the message names the thing rather than the frame.
+---@type table<beat.Tag, table>
+local tagActions = setmetatable({}, { __mode = "k" })
+---@type table<beat.Artist, table>
+local artistActions = setmetatable({}, { __mode = "k" })
+
+---@param tag beat.Tag
+---@return table
+local function tagAction(tag)
+	local known = tagActions[tag]
+	if known == nil then
+		known = { type = "toggleTagFilter", id = tag.id }
+		tagActions[tag] = known
+	end
+	return known
+end
+
+---@param artist beat.Artist
+---@return table
+local function artistAction(artist)
+	local known = artistActions[artist]
+	if known == nil then
+		known = { type = "navigate", page = { kind = "artist", id = artist.id } }
+		artistActions[artist] = known
+	end
+	return known
+end
+
+-- The props an artist result's cover is built from, written again for each row.
+local artistCoverProps = {}
+
+-- The section headings' props, written again for each heading: the component reads them and keeps
+-- nothing, so one table serves every heading of the page.
+local sectionProps = {}
+local SEE_ALL_ALBUMS = { type = "navigate", page = { kind = "searchAll", category = "albums" } }
+local SEE_ALL_ARTISTS = { type = "navigate", page = { kind = "searchAll", category = "artists" } }
+local SEE_ALL_TRACKS = { type = "navigate", page = { kind = "searchAll", category = "tracks" } }
+
+--- The title and the line under it, which never change with the frame.
+---@class beat.pages.SearchIntroStyles
+---@field title wonderland.StyleBuilder
+---@field copy wonderland.StyleBuilder
+
+---@param ctx beat.ui.Context
+---@return beat.pages.SearchIntroStyles
+local function introStyles(ctx)
+	return {
+		title = ctx:s():text(ctx:type("xxl")):weight("bold"):fg(ctx:color("text")),
+		copy = ctx:s():text(ctx:type("sm")):fg(ctx:color("muted"))
+	}
+end
+
+--- An artist result's row, kept for the theme: the same box, hover and words for every frame.
+---@class beat.pages.SearchArtistStyles
+---@field row wonderland.StyleBuilder
+---@field hover wonderland.StyleBuilder
+---@field art wonderland.StyleBuilder
+---@field name wonderland.StyleBuilder
+
+---@param ctx beat.ui.Context
+---@return beat.pages.SearchArtistStyles
+local function artistStyles(ctx)
+	local theme = ctx.theme
+	local size = theme:px(44)
+	return {
+		row = wonderland.sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")),
+		hover = wonderland.sty()
+			:row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover")),
+		art = wonderland.sty():size(size, size):radius(theme:radius("full")):bg(theme:color("elevated")),
+		name = theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text"))
+	}
+end
+
+-- The headings that never change.
+local RECENTLY_ADDED = { title = "Recently added" }
+
+---@class beat.pages.SearchFilterStyles
+---@field label wonderland.StyleBuilder
+---@field actions wonderland.StyleBuilder
+---@field head wonderland.StyleBuilder
+---@field allActive wonderland.StyleBuilder
+---@field allIdle wonderland.StyleBuilder
+---@field anyActive wonderland.StyleBuilder
+---@field anyIdle wonderland.StyleBuilder
+---@field clear wonderland.StyleBuilder
+---@field allMessage table
+---@field anyMessage table
+---@field clearMessage table
 
 ---@type beat.PageSurface
 local searchPage = {}
@@ -82,45 +186,57 @@ local function searchTagFilter(app, width)
 		{
 			tags = tags,
 			selected = search.tagFilter,
-			action = |tag| -> { type = "toggleTagFilter", id = tag.id },
+			action = tagAction,
 			width = width,
 			columns = columns
 		}
 	)
 	if pills == nil then return nil, 0 end
 
+	-- The words over the pills and the boxes they sit in do not change between frames: they are
+	-- kept with the theme rather than made again on every scroll step.
+	local filterStyles = styles.of(theme, "searchFilter") --[[@as beat.pages.SearchFilterStyles]]
+	if filterStyles.label == nil then
+		filterStyles.label = theme:s():wrel(1.0):text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))
+		filterStyles.actions = sty():row():w(theme:px(120)):gap(theme:px(8)):align("center"):justify("end")
+		filterStyles.head = sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")
+		filterStyles.allActive = theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("accent"))
+		filterStyles.allIdle = theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("muted"))
+		filterStyles.anyActive = filterStyles.allActive
+		filterStyles.anyIdle = filterStyles.allIdle
+		filterStyles.clear = theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("accent"))
+		filterStyles.allMessage = { type = "tagFilterMatch", value = "all" }
+		filterStyles.anyMessage = { type = "tagFilterMatch", value = "any" }
+		filterStyles.clearMessage = { type = "clearTagFilter" }
+	end
+
 	local headerActions = {}
 	if next(search.tagFilter) ~= nil then
 		headerActions[#headerActions + 1] = text("All")
-			:style(
-				theme:s()
-					:text(theme:type("xs")):weight("semibold")
-					:fg(search.match == "all" ? (theme:color("accent")) : (theme:color("muted")))
-			):onClick({ type = "tagFilterMatch", value = "all" })
+			:style(search.match == "all" and filterStyles.allActive or filterStyles.allIdle)
+			:onClick(filterStyles.allMessage)
 		headerActions[#headerActions + 1] = text("Any")
-			:style(
-				theme:s()
-					:text(theme:type("xs")):weight("semibold")
-					:fg(search.match == "any" ? (theme:color("accent")) : (theme:color("muted")))
-			):onClick({ type = "tagFilterMatch", value = "any" })
-		headerActions[#headerActions + 1] = text("Clear")
-			:style(theme:s():text(theme:type("xs")):weight("semibold"):fg(theme:color("accent")))
-			:onClick({ type = "clearTagFilter" })
+			:style(search.match == "any" and filterStyles.anyActive or filterStyles.anyIdle)
+			:onClick(filterStyles.anyMessage)
+		headerActions[#headerActions + 1] = text("Clear"):style(filterStyles.clear):onClick(filterStyles.clearMessage)
 	end
-	local headerChildren = {
-		text("Filter by tag"):style(theme:s():wrel(1.0):text(theme:type("xs")):weight("bold"):fg(theme:color("muted"))),
-		div():style(sty():row():w(theme:px(120)):gap(theme:px(8)):align("center"):justify("end")):children(headerActions)
-	}
 
 	local rows = math.ceil(#tags / columns)
 	local height = theme:px(18) + theme:px(8) + rows * theme:px(28) + math.max(0, rows - 1) * theme:px(8) + theme:px(4)
+	local boxSlot = styles.of(theme, "searchFilterBox", height) --[[@as { style: wonderland.StyleBuilder? }]]
+	local box = boxSlot.style
+	if box == nil then
+		box = sty():column():wrel(1.0):h(height):gap(theme:px(8))
+		boxSlot.style = box
+	end
 	return div()
-		:style(sty():column():wrel(1.0):h(height):gap(theme:px(8)))
+		:style(assert(box))
 		:children(
-			{
-				div():style(sty():row():wrel(1.0):h(theme:px(18)):justify("space-between"):align("center")):children(headerChildren),
-				pills
-			}
+			div():style(filterStyles.head):children(
+				text("Filter by tag"):style(filterStyles.label),
+				div():style(filterStyles.actions):children(headerActions)
+			),
+			pills
 		), height
 end
 
@@ -243,7 +359,7 @@ function searchPage.view(app, page, window)
 	local columns = metrics.gridColumns(app, content)
 	local gap = theme:space(16)
 	local cardWidth = math.max(120, math.floor((content - gap * (columns - 1)) / columns))
-	local cardHeight = albumCard.height(app, { width = cardWidth })
+	local cardHeight = albumCard.height(app, cardWidth)
 	-- The phone's field is the pinned header's (see `searchPage.header`), so it is not part of what
 	-- scrolls: the header's box comes out of the body's room, which is the same as asking the
 	-- helper for that much more content. It is added to the height rather than to the answer
@@ -275,30 +391,36 @@ function searchPage.view(app, page, window)
 		local cards = {}
 		for _, album in ipairs(recent) do
 			---@cast album beat.Album
-			cards[#cards + 1] = albumCard.view(
-				app,
-				{
-					album = album,
-					width = cardWidth,
-					ui = ctx
-				}
-			)
+			cards[#cards + 1] = albumCard.view(app, album, cardWidth, ctx)
 		end
-		local children = {}
-		children[#children + 1] = text("Search your library"):style(
-			theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
-		)
-		children[#children + 1] = text("Artists, albums and tracks are all one field."):style(
-			theme:s():text(theme:type("sm")):fg(theme:color("muted"))
-		)
-		children[#children + 1] = ui.section(ctx, { title = "Recently added" })
-		children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(cards)
+		local intro = styles.of(theme, "searchIntro", 0) --[[@as beat.pages.SearchIntroStyles]]
+		if intro.title == nil then
+			local built = introStyles(ctx)
+			intro.title, intro.copy = built.title, built.copy
+		end
+		local shelf = styles.of(theme, "searchShelf", cardHeight) --[[@as { style: wonderland.StyleBuilder? }]]
+		local shelfStyle = shelf.style
+		if shelfStyle == nil then
+			shelfStyle = sty():row():wrel(1.0):h(cardHeight):gap(gap)
+			shelf.style = shelfStyle
+		end
+		local children = {
+			text("Search your library"):style(intro.title),
+			text("Artists, albums and tracks are all one field."):style(intro.copy),
+			ui.section(ctx, RECENTLY_ADDED),
+			div():style(assert(shelfStyle)):children(cards)
+		}
 
 		local idleHeight = cardHeight + theme:px(150)
 		limit(idleHeight)
-		return div()
-			:style(sty():column():wrel(1.0):h(idleHeight):gap(gap))
-			:children(children)
+		local column = styles.of(theme, "searchColumn", idleHeight) --[[@as { style: wonderland.StyleBuilder?, gap: number? }]]
+		local columnStyle = column.style
+		if columnStyle == nil or column.gap ~= gap then
+			column.gap = gap
+			columnStyle = sty():column():wrel(1.0):h(idleHeight):gap(gap)
+			column.style = columnStyle
+		end
+		return div():style(assert(columnStyle)):children(children)
 	end
 
 	local albums, artists, tracks = search:results()
@@ -332,94 +454,106 @@ function searchPage.view(app, page, window)
 
 	local total = #albums + #artists + #tracks
 	local found = total > 0
+	local current = app.services.playback:current()
+	local playing = app.services.playback.player:isPlaying()
 	local children = {}
 	if found then
 		-- The field already says what was searched for; this says how much it found.
-		children[#children + 1] = text(format.count(total, "result") .. " found")
-			:style(theme:s():wrel(1.0):h(countHeight):text(theme:type("sm")):fg(theme:color("muted")):ellipsis())
+		local foundText = foundTexts[total]
+		if foundText == nil then
+			foundText = format.count(total, "result") .. " found"
+			foundTexts[total] = foundText
+		end
+		local foundStyle = styles.of(theme, "searchFoundText").style
+		if foundStyle == nil then
+			foundStyle = theme:s():wrel(1.0):h(countHeight):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
+			styles.of(theme, "searchFoundText").style = foundStyle
+		end
+		children[#children + 1] = text(foundText):style(foundStyle)
 	end
 	if filter ~= nil then children[#children + 1] = filter end
 
 	if albumLimit > 0 then
-		children[#children + 1] = ui.section(
-			ctx,
-			{
-				title = "Albums",
-				action = #albums > albumLimit ? { type = "navigate", page = { kind = "searchAll", category = "albums" } } : nil
-			}
-		)
+		sectionProps.title, sectionProps.action = "Albums", nil
+		if #albums > albumLimit then
+			sectionProps.action = SEE_ALL_ALBUMS
+		end
+		children[#children + 1] = ui.section(ctx, sectionProps)
+		local shelf = styles.of(theme, "searchShelf", cardHeight) --[[@as { style: wonderland.StyleBuilder? }]]
+		local shelfStyle = shelf.style
+		if shelfStyle == nil then
+			shelfStyle = sty():row():wrel(1.0):h(cardHeight):gap(gap)
+			shelf.style = shelfStyle
+		end
 		for rowAt = 1, albumRows do
 			local row = {}
 			for columnAt = 1, columns do
 				local at = (rowAt - 1) * columns + columnAt
 				local album = albums[at]
 				if album ~= nil and at <= albumLimit then
-					row[#row + 1] = albumCard.view(
-						app,
-						{
-							album = album,
-							width = cardWidth,
-							ui = ctx
-						}
-					)
+					row[#row + 1] = albumCard.view(app, album, cardWidth, ctx)
 				end
 			end
-			children[#children + 1] = div():style(sty():row():wrel(1.0):h(cardHeight):gap(gap)):children(row)
+			children[#children + 1] = div():style(assert(shelfStyle)):children(row)
 		end
 	end
 
 	if artistLimit > 0 then
-		children[#children + 1] = ui.section(
-			ctx,
-			{
-				title = "Artists",
-				action = #artists > artistLimit ? { type = "navigate", page = { kind = "searchAll", category = "artists" } } : nil
-			}
-		)
+		sectionProps.title, sectionProps.action = "Artists", nil
+		if #artists > artistLimit then
+			sectionProps.action = SEE_ALL_ARTISTS
+		end
+		children[#children + 1] = ui.section(ctx, sectionProps)
+		local artistBox = styles.of(theme, "searchArtist", 0) --[[@as beat.pages.SearchArtistStyles]]
+		if artistBox.row == nil then
+			local built = artistStyles(ctx)
+			artistBox.row, artistBox.hover, artistBox.art, artistBox.name = built.row, built.hover, built.art, built.name
+		end
 		for at, artist in ipairs(artists) do
 			if at > artistLimit then break end
+			local top = artist.albums[1]
+			local art
+			if top ~= nil then
+				artistCoverProps.album, artistCoverProps.size, artistCoverProps.radius = top, theme:px(44), theme:radius("full")
+				art = cover.view(app, artistCoverProps --[[@as beat.components.CoverProps]])
+			else
+				art = div():style(artistBox.art)
+			end
 			children[#children + 1] = div()
-				:style(sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")))
-				:hover(
-					sty():row():h(theme:px(56)):gap(theme:px(12)):align("center"):radius(theme:radius("sm")):bg(theme:color("hover"))
-				):onClick({ type = "navigate", page = { kind = "artist", id = artist.id } })
-				:children(
-					{
-						artist.albums[1] ~= nil and cover.view(
-							app,
-							{ album = artist.albums[1], size = theme:px(44), radius = theme:radius("full") }
-						) or div():style(sty():size(theme:px(44), theme:px(44)):radius(theme:radius("full")):bg(theme:color("elevated"))),
-						text(artist.name):style(theme:s():text(theme:type("base")):weight("semibold"):fg(theme:color("text")))
-					}
-				)
+				:style(artistBox.row)
+				:hover(artistBox.hover)
+				:onClick(artistAction(artist))
+				:children(art, text(artist.name):style(artistBox.name))
 		end
 	end
 
 	if trackLimit > 0 then
-		children[#children + 1] = ui.section(
-			ctx,
-			{
-				title = "Tracks",
-				action = #tracks > trackLimit ? { type = "navigate", page = { kind = "searchAll", category = "tracks" } } : nil
-			}
-		)
+		sectionProps.title, sectionProps.action = "Tracks", nil
+		if #tracks > trackLimit then
+			sectionProps.action = SEE_ALL_TRACKS
+		end
+		children[#children + 1] = ui.section(ctx, sectionProps)
+		local ids = idsCache
+		if ids == nil or ids.tracks ~= tracks then
+			ids = { tracks = tracks, ids = trackIds }
+			idsCache = ids
+		end
 		for at, track in ipairs(tracks) do
 			if at > trackLimit then break end
-			children[#children + 1] = trackRow.view(
-				app,
-				{
-					track = track,
-					index = at,
-					current = app.services.playback:current() ~= nil and app.services.playback:current().id == track.id,
-					playing = app.services.playback.player:isPlaying(),
-					onClick = { type = "playTrack", trackId = track.id, trackIds = trackIds },
-					width = content,
-					showAlbum = true,
-					showCover = true,
-					mobile = ctx.mobile,
-					ui = ctx
-				}
-			)
+			local props = trackRows[track]
+			if props == nil or props.ids ~= ids.ids then
+				props = { track = track, onClick = { type = "playTrack", trackId = track.id, trackIds = ids.ids }, ids = ids.ids }
+				trackRows[track] = props
+			end
+			props.index = at
+			props.current = current ~= nil and current.id == track.id
+			props.playing = playing
+			props.width = content
+			props.showAlbum = true
+			props.showCover = true
+			props.mobile = ctx.mobile
+			props.ui = ctx
+			children[#children + 1] = trackRow.view(app, props)
 		end
 	end
 
@@ -432,7 +566,15 @@ function searchPage.view(app, page, window)
 
 	height = height + theme:space(24)
 	limit(height)
-	return div():style(sty():column():wrel(1.0):h(height):gap(theme:space(16))):children(children)
+	local columnGap = theme:space(16)
+	local column = styles.of(theme, "searchColumn", height) --[[@as { style: wonderland.StyleBuilder?, gap: number? }]]
+	local columnStyle = column.style
+	if columnStyle == nil or column.gap ~= columnGap then
+		column.gap = columnGap
+		columnStyle = sty():column():wrel(1.0):h(height):gap(columnGap)
+		column.style = columnStyle
+	end
+	return div():style(assert(columnStyle)):children(children)
 end
 
 return searchPage

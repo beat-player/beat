@@ -14,6 +14,12 @@ local function typed(value)
 	return { type = "search", value = value }
 end
 
+-- Enter in the field sends nothing: the results are already there as the query is typed. A
+-- function that answers nothing is still a function, and it is made once rather than per frame.
+local function submitNothing()
+	return nil
+end
+
 --- The clear mark: a cross drawn in the colour it is given. It is made here so the frame that
 --- draws the field defines no function.
 ---@param colour string
@@ -102,7 +108,7 @@ function searchField.view(ctx, props)
 		name = props.name,
 		value = query,
 		oninput = typed,
-		onsubmit = || -> nil
+		onsubmit = submitNothing
 	})
 	-- The line takes the colour of the state it is in, and there are a handful of those: one style
 	-- per colour, kept with the rest of what the field built.

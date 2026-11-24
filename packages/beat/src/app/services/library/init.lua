@@ -160,6 +160,29 @@ local function folded(albums)
 	return titles, artists
 end
 
+-- The folded names the current sort is reading. A comparator is a function with no arguments of
+-- its own -- the names are made for the sort and read by all three -- and one made inside the sort
+-- would close the names as upvalues on the frame that draws a page.
+local sortTitles = {}
+local sortArtists = {}
+
+local function byArtist(a, b)
+	local aa, ba = sortArtists[a], sortArtists[b]
+	if aa ~= ba then return aa < ba end
+	return sortTitles[a] < sortTitles[b]
+end
+
+local function byYear(a, b)
+	local ay, by = a.year or 0, b.year or 0
+	if ay ~= by then return ay > by end
+	return sortTitles[a] < sortTitles[b]
+end
+
+local function byModified(a, b)
+	if a.modified ~= b.modified then return a.modified > b.modified end
+	return sortTitles[a] < sortTitles[b]
+end
+
 --- The albums in an order, computed once per order until the library changes. `recent` is the
 --- library's own list reversed, so it is copied rather than sorted.
 ---@param order string
@@ -180,23 +203,13 @@ function LibraryService:sorted(order)
 	for _, album in ipairs(library.albums) do albums[#albums + 1] = album end
 
 	local titles, artists = folded(albums)
+	sortTitles, sortArtists = titles, artists
 	if order == "artist" then
-		table.sort(albums, function(a, b)
-			local aa, ba = artists[a], artists[b]
-			if aa ~= ba then return aa < ba end
-			return titles[a] < titles[b]
-		end)
+		table.sort(albums, byArtist)
 	elseif order == "year" then
-		table.sort(albums, function(a, b)
-			local ay, by = a.year or 0, b.year or 0
-			if ay ~= by then return ay > by end
-			return titles[a] < titles[b]
-		end)
+		table.sort(albums, byYear)
 	elseif order == "modified" then
-		table.sort(albums, function(a, b)
-			if a.modified ~= b.modified then return a.modified > b.modified end
-			return titles[a] < titles[b]
-		end)
+		table.sort(albums, byModified)
 	end
 
 	self.sortedAlbums = albums

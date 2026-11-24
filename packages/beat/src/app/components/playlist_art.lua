@@ -17,6 +17,17 @@ function PlaylistArt.tracks(app, playlist)
 	return app.services.collections:playlistTracks(playlist)
 end
 
+-- A codepoint that changes the picture before it rather than being one of its own: a combining
+-- mark, a variation selector, a skin tone or a keycap.
+---@param cp number
+---@return boolean
+local function isModifier(cp)
+	return (cp >= 0x0300 and cp <= 0x036F)
+		or (cp >= 0xFE00 and cp <= 0xFE0F)
+		or (cp >= 0x1F3FB and cp <= 0x1F3FF)
+		or cp == 0x20E3
+end
+
 --- One grapheme from a byte offset: a letter, or the whole picture of an emoji -- its variation
 --- selector, skin tone, keycap or joined parts included. Initials count pictures, not bytes.
 ---@param value string
@@ -28,10 +39,6 @@ local function firstCluster(value, at)
 	if codepoint == nil then return "", at end
 	local last = nextAt - 1
 
-	local function modifier(cp)
-		return (cp >= 0x0300 and cp <= 0x036F) or (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0x1F3FB and cp <= 0x1F3FF) or cp == 0x20E3
-	end
-
 	if codepoint >= 0x1F1E6 and codepoint <= 0x1F1FF and nextAt <= #value then
 		local following, after = utf8.decode(value, nextAt)
 		if following ~= nil and following >= 0x1F1E6 and following <= 0x1F1FF then
@@ -41,7 +48,7 @@ local function firstCluster(value, at)
 
 	while nextAt <= #value do
 		local cp, after = utf8.decode(value, nextAt)
-		if cp == nil or not modifier(cp) then break end
+		if cp == nil or not isModifier(cp) then break end
 		last, nextAt = after - 1, after
 	end
 
@@ -53,7 +60,7 @@ local function firstCluster(value, at)
 		last, nextAt = joinedAfter - 1, joinedAfter
 		while nextAt <= #value do
 			local nextCp, nextAfter = utf8.decode(value, nextAt)
-			if nextCp == nil or not modifier(nextCp) then break end
+			if nextCp == nil or not isModifier(nextCp) then break end
 			last, nextAt = nextAfter - 1, nextAfter
 		end
 	end
@@ -63,9 +70,14 @@ end
 
 --- Two initials at most, one per word: Maximum Overdrive is MO. A word that is a single emoji
 --- keeps the whole picture, so a playlist called by its emoji is not cut in half.
+---@type table<string, string>
+local initialsCache = {}
+
 ---@param name string
 ---@return string
 function PlaylistArt.initials(name)
+	local known = initialsCache[name]
+	if known ~= nil then return known end
 	local initials = {}
 	local at = 1
 	while at <= #name and #initials < 2 do
@@ -84,24 +96,34 @@ function PlaylistArt.initials(name)
 			at = after
 		end
 	end
-	return table.concat(initials)
+	local text = table.concat(initials)
+	initialsCache[name] = text
+	return text
 end
+
+-- The four a mosaic was made from, kept with the list they came from: a tile is built on every
+-- frame of a scroll, and the playlist's tracks are the same table until the playlist changes.
+---@type table<beat.Track[], beat.Track[]>
+local mosaics = setmetatable({}, { __mode = "k" })
 
 --- Four tracks spread across the playlist, repeated when the playlist is shorter than four, so
 --- the mosaic has the same weight whether it holds four songs or one.
 ---@param tracks beat.Track[]
 ---@return beat.Track[]
 function PlaylistArt.mosaicTracks(tracks)
+	local known = mosaics[tracks]
+	if known ~= nil then return known end
 	local picked = {}
 	local count = #tracks
 	if count <= 4 then
 		for at = 1, count do picked[at] = tracks[at] end
-		return picked
+	else
+		for slot = 1, 4 do
+			local offset = math.floor((slot - 1) * (count - 1) / 3 + 0.5)
+			picked[slot] = tracks[math.min(count, 1 + offset)]
+		end
 	end
-	for slot = 1, 4 do
-		local offset = math.floor((slot - 1) * (count - 1) / 3 + 0.5)
-		picked[slot] = tracks[math.min(count, 1 + offset)]
-	end
+	mosaics[tracks] = picked
 	return picked
 end
 
@@ -155,19 +177,54 @@ function PlaylistArt.grid(app, cell, size, radius)
 		kept.column = sty():column():size(size, size):gap(gap)
 	end
 
-	local function row(from)
-		return div():style(kept.row):children(
-			cell(from, cellSize, cellRadius),
-			cell(from + 1, cellSize, cellRadius)
-		)
-	end
-
-	return div():style(kept.column):children(row(1), row(3))
+	-- The two rows are built straight away rather than by a helper over which row it is: a grid is
+	-- built on every frame of a scroll, and a closure made per grid is one the trace compiler gives
+	-- up on.
+	return div():style(kept.column):children(
+		div():style(kept.row):children(cell(1, cellSize, cellRadius), cell(2, cellSize, cellRadius)),
+		div():style(kept.row):children(cell(3, cellSize, cellRadius), cell(4, cellSize, cellRadius))
+	)
 end
 
 --- A playlist's square: four evenly spread album pictures behind the playlist's initials. A
 --- one-track playlist is one cover, and two or three leave their remaining cells black. The cells
 --- sit apart with corners of their own, so no rounded clip slices the covers they hold.
+-- The state a mosaic's cell is built from, written before the grid asks for the cells: the grid
+-- reads it as it builds each cell, and a closure made per tile is a closure the trace compiler
+-- gives up on.
+---@class beat.components.PlaylistCellState
+---@field app beat.App
+---@field picked beat.Track[]
+---@field library beat.Library?
+---@field theme beat.Theme
+
+---@type beat.components.PlaylistCellState
+local cellState = {}
+---@type table<string, any>
+local cellCoverProps = {}
+
+--- One cell of a mosaic: the album's cover, or a black square where its picture is not there yet.
+---@param slot number
+---@param cellSize number
+---@param cellRadius number
+---@return wonderland.Element
+local function cellAt(slot, cellSize, cellRadius)
+	local track = cellState.picked[slot]
+	local library = cellState.library
+	local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
+	if album ~= nil then
+		cellCoverProps.album, cellCoverProps.size, cellCoverProps.radius = album, cellSize, cellRadius
+		return cover.view(cellState.app, cellCoverProps --[[@as beat.components.CoverProps]])
+	end
+	local theme = cellState.theme
+	local cells = styles.of(theme, "playlistArtCell", cellSize) --[[@as beat.components.PlaylistArtCellStyles]]
+	if cells.radius ~= cellRadius then
+		cells.radius = cellRadius
+		cells.style = sty():size(cellSize, cellSize):radius(cellRadius):bg("#000000")
+	end
+	return div():style(cells.style)
+end
+
 ---@param app beat.App
 ---@param props beat.components.PlaylistArtProps
 ---@return wonderland.Element
@@ -207,33 +264,20 @@ function PlaylistArt.view(app, props)
 	local root = div():style(kept.root)
 
 	local library = app.services.library.current
+	cellState.app, cellState.picked, cellState.library, cellState.theme = app, picked, library, theme
 	if #picked <= 1 then
 		local track = picked[1]
 		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
 		if album ~= nil then
-			root:children({ cover.view(app, { album = album, size = size, radius = artRadius }) })
+			cellCoverProps.album, cellCoverProps.size, cellCoverProps.radius = album, size, artRadius
+			root:children(cover.view(app, cellCoverProps --[[@as beat.components.CoverProps]]), badge)
 		else
-			root:children({ div():style(kept.empty) })
+			root:children(div():style(kept.empty), badge)
 		end
-		root:children({ badge })
 		return root
 	end
 
-	local function cellAt(slot, cellSize, cellRadius)
-		local track = picked[slot]
-		local album = track ~= nil and library ~= nil ? (library:album(track.albumId)) : nil
-		if album ~= nil then
-			return cover.view(app, { album = album, size = cellSize, radius = cellRadius })
-		end
-		local cells = styles.of(theme, "playlistArtCell", cellSize) --[[@as beat.components.PlaylistArtCellStyles]]
-		if cells.radius ~= cellRadius then
-			cells.radius = cellRadius
-			cells.style = sty():size(cellSize, cellSize):radius(cellRadius):bg("#000000")
-		end
-		return div():style(cells.style)
-	end
-
-	root:children({ PlaylistArt.grid(app, cellAt, size, artRadius), badge })
+	root:children(PlaylistArt.grid(app, cellAt, size, artRadius), badge)
 	return root
 end
 

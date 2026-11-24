@@ -3,9 +3,11 @@
 -- underneath while a transition runs.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
+local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
+local styles = require("beat.app.components.helpers.styles")
 local metrics = require("beat.app.components.helpers.metrics")
 local measure = require("beat.app.components.helpers.measure")
 local popup = require("beat.app.components.popup")
@@ -13,6 +15,42 @@ local tapButton = require("beat.app.components.tap_button")
 local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
+
+--- The three dots at one size and colour. It is made where the button's record is made rather
+--- than in the view, so the frame that draws the tool row makes no closure.
+---@param size number
+---@param colour string
+---@return fun(canvas: wonderland.Canvas)
+local function moreDraw(size, colour)
+	return function(canvas)
+		local radius = math.max(1.2, math.floor(size * 0.064))
+		local y = math.floor(canvas.height / 2 - radius)
+		for at = 0, 2 do
+			local x = math.floor(canvas.width / 2 + (at - 1) * size * 0.21 - radius)
+			canvas:rect(x, y, radius * 2, radius * 2, colour, radius)
+		end
+	end
+end
+
+-- The equalizer's mark is four bars of fixed levels. They are a constant of the drawing rather
+-- than a table made for every frame.
+local EQUALIZER_LEVELS = { 0.36, 0.7, 0.48, 0.58 }
+
+--- The equalizer's mark at one size and colour, made where the button's record is made.
+---@param inner number
+---@param colour string
+---@return fun(canvas: wonderland.Canvas)
+local function equalizerDraw(inner, colour)
+	return function(canvas)
+		local barWidth = math.max(2, math.floor(inner * 0.1))
+		local gap = math.max(2, math.floor((canvas.width - barWidth * #EQUALIZER_LEVELS) / (#EQUALIZER_LEVELS + 1)))
+		for at, level in ipairs(EQUALIZER_LEVELS) do
+			local height = math.max(2, math.floor(canvas.height * level))
+			local x = math.floor(gap + (at - 1) * (barWidth + gap))
+			canvas:rect(x, canvas.height - height, barWidth, height, colour, barWidth / 2)
+		end
+	end
+end
 
 --- The volume control is a button. Its bubble is a sibling of the transport group rather than a
 --- child of the button: a positioned panel inside a size-locked button shifted the row's paint
@@ -44,17 +82,19 @@ local function moreButton(app, ctx, size, hit, onClick, active)
 	local theme = app.services.appearance.theme
 	local colour = active ? (theme:color("text")) : (theme:color("muted"))
 
+	-- The dots depend on the size and the colour, and both are the same on every frame the button
+	-- is drawn: the draw is kept with the theme, one for each pair.
+	local byColour = styles.of(theme, "nowPlayingMore", size) --[[@as table<string, fun(canvas: wonderland.Canvas)>]]
+	local draw = byColour[colour]
+	if draw == nil then
+		draw = moreDraw(size, colour)
+		byColour[colour] = draw
+	end
+
 	return ui.iconButton(ctx, {
 		size = hit,
 		onClick = onClick,
-		content = div():style(sty():size(size, size)):canvas(function(canvas)
-			local radius = math.max(1.2, math.floor(size * 0.064))
-			local y = math.floor(canvas.height / 2 - radius)
-			for at = 0, 2 do
-				local x = math.floor(canvas.width / 2 + (at - 1) * size * 0.21 - radius)
-				canvas:rect(x, y, radius * 2, radius * 2, colour, radius)
-			end
-		end)
+		content = div():style(sty():size(size, size)):canvas(draw)
 	})
 end
 
@@ -71,20 +111,35 @@ local function equalizerButton(app, ctx, size, hit, onClick, active)
 	local colour = active ? (theme:color("text")) : (theme:color("muted"))
 	local inner = math.max(12, math.floor(size * 0.72 + 0.5))
 
+	local byColour = styles.of(theme, "nowPlayingEqualizer", inner) --[[@as table<string, fun(canvas: wonderland.Canvas)>]]
+	local draw = byColour[colour]
+	if draw == nil then
+		draw = equalizerDraw(inner, colour)
+		byColour[colour] = draw
+	end
+
 	return ui.iconButton(ctx, {
 		size = hit,
 		onClick = onClick,
-		content = div():style(sty():size(inner, inner)):canvas(function(canvas)
-			local levels = { 0.36, 0.7, 0.48, 0.58 }
-			local barWidth = math.max(2, math.floor(inner * 0.1))
-			local gap = math.max(2, math.floor((canvas.width - barWidth * #levels) / (#levels + 1)))
-			for at, level in ipairs(levels) do
-				local height = math.max(2, math.floor(canvas.height * level))
-				local x = math.floor(gap + (at - 1) * (barWidth + gap))
-				canvas:rect(x, canvas.height - height, barWidth, height, colour, barWidth / 2)
-			end
-		end)
+		content = div():style(sty():size(inner, inner)):canvas(draw)
 	})
+end
+
+-- The rating a track's stars send, one handler per track rather than one per frame the screen is
+-- drawn. The screen is built again whenever the playhead moves.
+---@type table<beat.Track, fun(stars: number): table>
+local rateHandlers = setmetatable({}, { __mode = "k" })
+
+---@param track beat.Track
+---@return fun(stars: number): table
+local function rateFor(track)
+	local handler = rateHandlers[track]
+	if handler == nil then
+		local id = track.id
+		handler = |stars| -> { type = "rateTrack", id = id, stars = stars }
+		rateHandlers[track] = handler
+	end
+	return handler
 end
 
 ---@class beat.ToolRoom
@@ -284,14 +339,9 @@ function nowPlaying.view(app, _overlay, window)
 		local coverFrame = div():style(sty():size(coverSize, coverSize):shadow(0, 12, 20, "#00000060")):onClick({
 			type = "navigate",
 			page = { kind = "album", id = album.id }
-		}):onContextMenu(|_, _, _, _, _, windowX, windowY| -> {
-			type = "open",
-			overlay = "menu",
-			menu = "album",
-			id = album.id,
-			x = windowX,
-			y = windowY
-		}):children(cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true }))
+		}):onContextMenu(albumCard.actions(album).menu):children(
+			cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true })
+		)
 		local transport = math.max(0.7, math.min(1, progressWidth / theme:px(240)))
 		local controlGap = theme:px(10 * transport)
 		-- The album and artist are secondary: body type on a phone, where the larger desktop line
@@ -356,7 +406,7 @@ function nowPlaying.view(app, _overlay, window)
 		if app.registry:hasPlugin("ratings") and progressWidth - toolGroupWidth * 2 >= starSize * 5 + starGap * 4 + theme:px(24) then
 			toolChildren[#toolChildren + 1] = ui.rating(ctx, {
 				value = app.services.collections.taxonomy:rating(names.trackKey(track)),
-				onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
+				onRate = rateFor(track),
 				size = starSize,
 				gap = starGap
 			})

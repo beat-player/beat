@@ -12,54 +12,77 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local trackRow = {}
 
+-- The number a row shows, kept per index: a row is built on every frame of a scroll, and the
+-- number it shows is the same one each time.
+---@type table<number, string>
+local indexTexts = {}
+
+---@param index number
+---@return string
+local function indexText(index)
+	local known = indexTexts[index]
+	if known == nil then
+		known = tostring(index)
+		indexTexts[index] = known
+	end
+	return known
+end
+
 --- Three dots, drawn rather than taken from the icon face: the face has no ellipsis, and this is
 --- the same mark the now-playing view's larger menu uses. A canvas draws it at every size.
+---@class beat.components.TrackRowDots
+---@field style wonderland.StyleBuilder
+---@field draw fun(canvas: wonderland.Canvas)
+
+--- The three dots at one size and colour, made where the row's record is made rather than in the
+--- view: a function declared in the view is one the trace compiler closes an upvalue on for every
+--- row of every frame.
 ---@param size number
 ---@param colour string
----@return wonderland.Element
-local function dots(size, colour)
-	return div():style(sty():size(size, size)):canvas(function(canvas)
-		local radius = math.max(1.2, math.floor(size * 0.064))
+---@return fun(canvas: wonderland.Canvas)
+local function dotsDraw(size, colour)
+	local radius = math.max(1.2, math.floor(size * 0.064))
+	return function(canvas)
 		local y = math.floor(canvas.height / 2 - radius)
 		for at = 0, 2 do
 			local x = math.floor(canvas.width / 2 + (at - 1) * size * 0.21 - radius)
 			canvas:rect(x, y, radius * 2, radius * 2, colour, radius)
 		end
-	end)
+	end
+end
+
+---@param theme beat.Theme
+---@param size number
+---@param colour string
+local function dots(theme, size, colour)
+	---@type table<string, any>
+	local cache = theme:cache()
+	local kept = cache.trackRowDots --[[@as table<number, beat.components.TrackRowDots>?]]
+	if kept == nil then
+		kept = {}
+		cache.trackRowDots = kept
+	end
+	local mark = kept[size]
+	if mark == nil then
+		mark = { style = sty():size(size, size), draw = dotsDraw(size, colour) }
+		kept[size] = mark
+	end
+	return div():style(mark.style):canvas(mark.draw)
 end
 
 -- What a click on the current track's row sends.
 local TOGGLE_PLAY = { type = "togglePlay" }
 
--- A row's right-click menu and its stars' handler, one per track rather than one per row per frame.
----@type table<beat.Track, fun(...): table>
-local menus = setmetatable({}, { __mode = "k" })
+-- A row's stars' handler, one per track rather than one per row per frame.
 ---@type table<beat.Track, fun(stars: number): table>
 local rates = setmetatable({}, { __mode = "k" })
--- The menu a phone's three dots open, one per track. The message names no place: the menu opens
--- where the tap was (see `beat.MenuOverlay`), next to the dots.
+-- The menu a row opens, one per track. The message names no place: a right-click opens the menu
+-- where the pointer is, which is where the click landed, and a tap on the dots opens it beside
+-- them (see `beat.MenuOverlay`). A message rather than a function keeps the row's view from
+-- making a closure on every frame.
 ---@type table<beat.Track, table>
 local mores = setmetatable({}, { __mode = "k" })
 
----@param track beat.Track
-local function menuFor(track)
-	local menu = menus[track]
-	if menu == nil then
-		local id = track.id
-		menu = |_, _, _, _, _, windowX, windowY| -> {
-			type = "open",
-			overlay = "menu",
-			menu = "track",
-			id = id,
-			x = windowX,
-			y = windowY
-		}
-		menus[track] = menu
-	end
-	return menu
-end
-
---- The track menu a tap on the dots opens.
 ---@param track beat.Track
 ---@return table
 local function moreFor(track)
@@ -127,6 +150,19 @@ function trackRow.ratingWidth(app, width, mobile)
 	return theme:px(14) * 5 + theme:px(2) * 4
 end
 
+--- The row's own box: one width and height, and the padding and gap every column sits in. It is
+--- made by a function of its own rather than by one declared inside the view, so the frame that
+--- draws a list makes no closure and its trace can be compiled.
+---@param theme beat.Theme
+---@param width number
+---@param rowHeight number
+---@return wonderland.StyleBuilder
+local function rowStyle(theme, width, rowHeight)
+	return sty():row():w(width):h(rowHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align(
+		"center"
+	):radius(theme:radius("sm"))
+end
+
 ---@param app beat.App
 ---@param props beat.components.TrackRowProps
 ---@return wonderland.Element
@@ -174,11 +210,6 @@ function trackRow.view(app, props)
 			theme:px(100),
 			width - fixedWidth - (ratingWidth ~= nil and ratingWidth + theme:px(12) or 0)
 		)
-		local function row()
-			return sty():row():w(width):h(rowHeight):pad(0, theme:px(10), 0, theme:px(10)):gap(theme:px(12)):align(
-				"center"
-			):radius(theme:radius("sm"))
-		end
 		s = {
 			index = theme:s():text(theme:type("sm")):fg(theme:color("faint")),
 			markerBox = sty():w(showCover and coverSize or theme:px(24)):align("center"),
@@ -195,8 +226,8 @@ function trackRow.view(app, props)
 			album = theme:s():w(theme:px(190)):text(theme:type("sm")):fg(muted):ellipsis(),
 			timeBox = sty():w(theme:px(54)):h(rowHeight):column():align("start"):justify("center"),
 			time = theme:s():text(theme:type("sm")):fg(muted),
-			row = row():bg(current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))),
-			rowHover = row():bg(theme:color("hover")),
+			row = rowStyle(theme, width, rowHeight):bg(current ? (theme:color("accent", 0.07)) : (theme:color("surface", 0))),
+			rowHover = rowStyle(theme, width, rowHeight):bg(theme:color("hover")),
 			starSize = theme:px(14),
 			starGap = theme:px(2)
 		}
@@ -216,7 +247,7 @@ function trackRow.view(app, props)
 	elseif current then
 		marker = playingBars.view(app, { playing = props.playing })
 	else
-		marker = text(tostring(index)):style(s.index)
+		marker = text(indexText(index)):style(s.index)
 	end
 
 	local info = { text(track.title):style(s.title) }
@@ -249,11 +280,11 @@ function trackRow.view(app, props)
 		local size = theme:px(44)
 		children[#children + 1] = ui.iconButton(
 			assert(props.ui),
-			{ size = size, onClick = moreFor(track), content = dots(size, theme:color("muted")) }
+			{ size = size, onClick = moreFor(track), content = dots(theme, size, theme:color("muted")) }
 		)
 	end
 
-	return div():style(s.row):hover(s.rowHover):onClick(onClick):onContextMenu(menuFor(track)):children(children)
+	return div():style(s.row):hover(s.rowHover):onClick(onClick):onContextMenu(moreFor(track)):children(children)
 end
 
 return trackRow

@@ -111,11 +111,18 @@ local function drawMeter(app, canvas, theme, levels, intensity, reach, bold)
 	local mobile = metrics.mobile(app, canvas.width)
 	local baseAlpha = mobile and MOBILE_ALPHA_FLOOR or ALPHA_FLOOR
 	local levelAlpha = mobile and MOBILE_ALPHA_RANGE or ALPHA_RANGE
-	local accent = accentChannels(theme)
-	-- The two shapes of a bar, kept as tables across the loop: a canvas reads the colour when the
-	-- shape is added to the frame, so only the alpha has to be set for each bar.
-	local wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-	local core = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
+	-- The two shapes of a bar, kept as tables across the loop and across the frames: a canvas reads
+	-- the colour when the shape is added to the frame, so only the alpha has to be set for each
+	-- bar, and the tables themselves are the same ones the last frame drew with.
+	---@type table<string, any>
+	local cache = theme:cache()
+	local wash = cache.spectrumWash --[[@as { r: number, g: number, b: number, a: number }?]]
+	if wash == nil then
+		local accent = accentChannels(theme)
+		wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
+		cache.spectrumWash, cache.spectrumCore = wash, { r = accent.r, g = accent.g, b = accent.b, a = 0 }
+	end
+	local core = cache.spectrumCore --[[@as { r: number, g: number, b: number, a: number }]]
 	local count, gap, barWidth = barLayout(theme, canvas.width, mobile, bold)
 	local bands = #levels
 	local spread = math.max(1, count - 1)
@@ -159,6 +166,23 @@ end
 ---@field levels number[]
 ---@field draw fun(canvas: wonderland.Canvas)
 
+--- The draw of one meter, made where the meter is made: it reads the levels from the record so a
+--- strip handed different ones keeps the draw it was made with. A function declared in the view
+--- itself is one the trace compiler closes an upvalue on for every frame; this one is made once
+--- for each meter the theme keeps.
+---@param app beat.App
+---@param theme beat.Theme
+---@param intensity number
+---@param reach number
+---@param bold boolean
+---@param meter beat.components.SpectrumMeter
+---@return fun(canvas: wonderland.Canvas)
+local function meterDraw(app, theme, intensity, reach, bold, meter)
+	return function(canvas)
+		drawMeter(app, canvas, theme, meter.levels, intensity, reach, bold)
+	end
+end
+
 ---@param app beat.App
 ---@param theme beat.Theme
 ---@param levels number[]
@@ -182,15 +206,16 @@ local function meterOf(app, theme, levels, intensity, reach, bold)
 		meters[intensity] = byIntensity
 	end
 	local meter = byIntensity[reach]
-	if meter == nil or meter.levels ~= levels then
-		---@param canvas wonderland.Canvas
-		local function draw(canvas)
-			drawMeter(app, canvas, theme, levels, intensity, reach, bold)
-		end
-
-		meter = { levels = levels, draw = draw }
+	if meter == nil then
+		meter = { levels = levels }
+		meter.draw = meterDraw(app, theme, intensity, reach, bold, meter)
 		byIntensity[reach] = meter
 	end
+
+	-- The draw reads the levels from the record, so a strip handed a different table of them keeps
+	-- the draw it was made with: a draw made inside the view is a closure closed in a block the
+	-- trace compiler leaves the frame for, and that is a frame drawn interpreted.
+	meter.levels = levels
 	return meter.draw
 end
 
@@ -199,12 +224,16 @@ end
 ---@field reach number? # How much of the bar's height the tallest bar takes; default 0.82
 ---@field bold boolean? # Few thick columns: the meter as the screen's own, not texture behind a bar
 
+-- What a strip with no props of its own is built from: the bar's two ask for this on every frame.
+local DEFAULTS = {}
+
 --- The element fills the box it is given and takes no room in it, so a caller can place it as a
 --- layer behind its siblings.
 ---@param app beat.App
----@param props beat.components.SpectrumBackgroundProps
+---@param props beat.components.SpectrumBackgroundProps?
 ---@return wonderland.Element
 function spectrumBackground.view(app, props)
+	props = props or DEFAULTS
 	local intensity = props.intensity or 1
 	local reach = props.reach or 0.82
 	local bold = props.bold == true

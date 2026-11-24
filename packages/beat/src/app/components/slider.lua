@@ -26,10 +26,29 @@ local slider = {}
 ---@field thumbSize number? # Default theme:px(14)
 ---@field origin number? # Where the fill starts, as a fraction; default the left end
 ---@field liveValue fun(): number? # Where the slider is when the frame is drawn, for one that follows something moving
+---@field instance any # What tells this slider from another of the same size, kept across frames
 
 ---@class beat.components.SliderStyles
 ---@field track wonderland.StyleBuilder
 ---@field thumb wonderland.StyleBuilder
+---@field draws table<any, beat.components.SliderDraw> # By instance: each slider's draw and the numbers it reads
+
+--- The numbers one slider's draw reads. They are written when the view is built and read when the
+--- frame is painted, so the slider that follows a playhead shows where it is without the view
+--- making a function for it.
+---@class beat.components.SliderDraw
+---@field fraction number
+---@field min number
+---@field max number
+---@field origin number?
+---@field liveValue fun(): number?
+---@field trackColour string
+---@field fillColour string
+---@field thumbColour string
+---@field trackHeight number
+---@field thumbSize number
+---@field radius number
+---@field draw fun(canvas: wonderland.Canvas)
 
 --- Where a value sits between the two ends of a slider, 0 at the left one and 1 at the right.
 ---@param value number
@@ -38,6 +57,47 @@ local slider = {}
 local function fractionOf(value, min, max)
 	local span = max - min
 	return math.max(0, math.min(1, span ~= 0 and (value - min) / span or 0))
+end
+
+-- A slider that names no instance has this key: all its frames are the same slider, and a caller
+-- that draws two of them with the same size must name them.
+local NO_INSTANCE = {}
+
+--- The draw of one slider, made where the slider's record is made rather than on every frame: a
+--- function declared in the view itself is one whose upvalues the trace compiler closes each time
+--- the view returns, which leaves the frame interpreted.
+---@param state beat.components.SliderDraw
+---@return fun(canvas: wonderland.Canvas)
+local function drawFor(state)
+	return function(canvas)
+		local thumbSize, trackHeight, radius = state.thumbSize, state.trackHeight, state.radius
+		local showed = state.liveValue ~= nil and fractionOf(state.liveValue(), state.min, state.max) or state.fraction
+		local y = (canvas.height - trackHeight) / 2
+		-- The room the nub travels: the box less the nub itself, which is what makes the ends of
+		-- the box the ends of the slider.
+		local travel = math.max(0, canvas.width - thumbSize)
+		local centre = showed * travel + thumbSize / 2
+		local origin = state.origin
+
+		canvas:rect(0, y, canvas.width, trackHeight, state.trackColour, radius)
+		if origin == nil or origin == 0 then
+			canvas:rect(0, y, math.max(0, centre), trackHeight, state.fillColour, radius)
+		else
+			local from = origin * travel + thumbSize / 2
+			if centre >= from then
+				canvas:rect(from, y, centre - from, trackHeight, state.fillColour, radius)
+			else
+				canvas:rect(centre, y, from - centre, trackHeight, state.fillColour, radius)
+			end
+		end
+
+		-- The nub, where the layout put the box it paints nothing for: across the box less itself
+		-- and centred on the other axis, snapped to whole pixels the way the layout snaps it. A
+		-- rounded rectangle and not a circle of triangles: the corner shader antialiases it the
+		-- way it did the box, while a small fan reads as a pixelated circle.
+		local thumbY = math.floor((canvas.height - thumbSize) / 2 + 0.5)
+		canvas:rect(math.floor(showed * travel + 0.5), thumbY, thumbSize, thumbSize, state.thumbColour, thumbSize / 2)
+	end
 end
 
 ---@param app beat.App
@@ -70,10 +130,39 @@ function slider.view(app, props)
 	if kept == nil then
 		kept = {
 			track = sty():w(width):h(height):row():align("center"),
-			thumb = sty():size(thumbSize, thumbSize)
+			thumb = sty():size(thumbSize, thumbSize),
+			draws = {}
 		}
 		byThumb[thumbSize] = kept
 	end
+
+	-- What the slider draws reads the value when the frame is drawn rather than when the view was
+	-- built: a repaint then shows the place the playhead is at now, and a rebuild the same place.
+	-- Each slider keeps its own draw and the numbers it reads, so a screen with several of them --
+	-- an equalizer's faders -- paints each one at its own place.
+	local instance = props.instance
+	if instance == nil then instance = NO_INSTANCE end
+	local record = kept.draws[instance]
+	if record == nil then
+		record = {
+			fraction = fraction,
+			min = min,
+			max = max,
+			origin = origin,
+			liveValue = liveValue,
+			trackColour = props.trackColour,
+			fillColour = props.fillColour,
+			thumbColour = thumbColour,
+			trackHeight = trackHeight,
+			thumbSize = thumbSize,
+			radius = radius
+		}
+		record.draw = drawFor(record)
+		kept.draws[instance] = record
+	end
+	record.fraction, record.min, record.max = fraction, min, max
+	record.origin, record.liveValue = origin, liveValue
+	record.trackColour, record.fillColour, record.thumbColour = props.trackColour, props.fillColour, thumbColour
 
 	local sliderElement = div():style(kept.track):slider({
 		value = props.value,
@@ -81,36 +170,7 @@ function slider.view(app, props)
 		max = max,
 		onchange = props.onchange
 	}):children(div():style(kept.thumb):thumb())
-
-	-- What the slider draws reads the value when the frame is drawn rather than when the view was
-	-- built: a repaint then shows the place the playhead is at now, and a rebuild the same place.
-	sliderElement:canvas(function(canvas)
-		local showed = liveValue ~= nil ? fractionOf(liveValue(), min, max) : fraction
-		local y = (canvas.height - trackHeight) / 2
-		-- The room the nub travels: the box less the nub itself, which is what makes the ends of
-		-- the box the ends of the slider.
-		local travel = math.max(0, canvas.width - thumbSize)
-		local centre = showed * travel + thumbSize / 2
-
-		canvas:rect(0, y, canvas.width, trackHeight, props.trackColour, radius)
-		if origin == nil or origin == 0 then
-			canvas:rect(0, y, math.max(0, centre), trackHeight, props.fillColour, radius)
-		else
-			local from = origin * travel + thumbSize / 2
-			if centre >= from then
-				canvas:rect(from, y, centre - from, trackHeight, props.fillColour, radius)
-			else
-				canvas:rect(centre, y, from - centre, trackHeight, props.fillColour, radius)
-			end
-		end
-
-		-- The nub, where the layout put the box it paints nothing for: across the box less itself
-		-- and centred on the other axis, snapped to whole pixels the way the layout snaps it. A
-		-- rounded rectangle and not a circle of triangles: the corner shader antialiases it the
-		-- way it did the box, while a small fan reads as a pixelated circle.
-		local thumbY = math.floor((canvas.height - thumbSize) / 2 + 0.5)
-		canvas:rect(math.floor(showed * travel + 0.5), thumbY, thumbSize, thumbSize, thumbColour, thumbSize / 2)
-	end)
+	sliderElement:canvas(record.draw)
 
 	return sliderElement
 end

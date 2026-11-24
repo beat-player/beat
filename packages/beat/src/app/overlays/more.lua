@@ -8,6 +8,22 @@ local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+-- The rating row's handler, one per track rather than one per frame the menu is open.
+---@type table<beat.Track, fun(stars: number): table>
+local rateHandlers = setmetatable({}, { __mode = "k" })
+
+---@param track beat.Track
+---@return fun(stars: number): table
+local function rateFor(track)
+	local handler = rateHandlers[track]
+	if handler == nil then
+		local id = track.id
+		handler = |stars| -> { type = "rateTrack", id = id, stars = stars }
+		rateHandlers[track] = handler
+	end
+	return handler
+end
+
 --- A label row in the two now-playing panels. They are deliberately taller than a context menu
 --- row: these are the larger screens' utility menus rather than a right-click's short list.
 ---@param app beat.App
@@ -111,7 +127,7 @@ function more.view(app, overlay, window)
 						ctx,
 						{
 							value = app.services.collections.taxonomy:rating(names.trackKey(track)),
-							onRate = |stars| -> { type = "rateTrack", id = track.id, stars = stars },
+							onRate = rateFor(track),
 							size = theme:px(18)
 						}
 					)

@@ -43,6 +43,23 @@ local CONTEXT = {
 	end
 }
 
+-- The stars a rated menu leads with send a message naming the album, one handler per album rather
+-- than one per frame the menu is open.
+---@type table<beat.Album, fun(stars: number): table>
+local rateHandlers = setmetatable({}, { __mode = "k" })
+
+---@param album beat.Album
+---@return fun(stars: number): table
+local function rateFor(album)
+	local handler = rateHandlers[album]
+	if handler == nil then
+		local id = album.id
+		handler = |stars| -> { type = "rateAlbum", id = id, stars = stars }
+		rateHandlers[album] = handler
+	end
+	return handler
+end
+
 --- The menus whose subject can be rated, with its rating and the message a star sends. A star
 --- sends its message like any entry, and the menu closes behind it the same way.
 ---@type table<string, fun(app: beat.App, ctx: table): { value: number, onRate: fun(stars: number): table }>
@@ -53,7 +70,7 @@ local RATING = {
 		local album = ctx.album
 		return {
 			value = app.services.collections.taxonomy:albumRating(album.key),
-			onRate = |stars| -> { type = "rateAlbum", id = album.id, stars = stars }
+			onRate = rateFor(album)
 		}
 	end
 }

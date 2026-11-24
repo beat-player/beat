@@ -95,7 +95,7 @@ local function formatLine(summary, heapKiB, rssKiB)
 	if summary.frames == 0 then
 		first = "idle"
 	else
-		first = string.format("%d fps  avg %.1f ms  max %.1f ms", summary.frames, summary.average, summary.max)
+		first = string.format("%d fps  cpu %.1f ms  max %.1f ms", summary.frames, summary.average, summary.max)
 	end
 
 	local second = string.format("lua %.1f MB", heapKiB / 1024)

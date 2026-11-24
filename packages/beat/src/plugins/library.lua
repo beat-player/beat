@@ -6,16 +6,17 @@ local covers = require("beat.app.services.covers")
 local scan = require("beat.app.services.scan")
 local search = require("beat.app.services.search")
 
-local homePage = require("beat.app.pages.home")
-local libraryPage = require("beat.app.pages.library")
-local foldersPage = require("beat.app.pages.folders")
-local searchPage = require("beat.app.pages.search")
-local searchAllPage = require("beat.app.pages.search_all")
-local artistPage = require("beat.app.pages.artist")
-local albumPage = require("beat.app.pages.album")
+-- Pages and overlays are named by module, not read here: one is read when it is first shown.
+local homePage = "beat.app.pages.home"
+local libraryPage = "beat.app.pages.library"
+local foldersPage = "beat.app.pages.folders"
+local searchPage = "beat.app.pages.search"
+local searchAllPage = "beat.app.pages.search_all"
+local artistPage = "beat.app.pages.artist"
+local albumPage = "beat.app.pages.album"
 
-local sortMenu = require("beat.app.overlays.sort_menu")
-local coverView = require("beat.app.overlays.cover_view")
+local sortMenu = "beat.app.overlays.sort_menu"
+local coverView = "beat.app.overlays.cover_view"
 
 return beat.plugin({ name = "library", version = "1.0.0", author = "beat", description = "Browsing, covers, search and album pages", requires = { core = "^1.0.0" }, setup = function(handle)
 	handle.service("library", library)

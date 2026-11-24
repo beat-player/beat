@@ -2,6 +2,7 @@
 -- volume, and the phone's one row that opens the individual track view.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
+local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
 local progress = require("beat.app.components.progress")
 local spectrumBackground = require("beat.app.components.spectrum_background")
@@ -11,6 +12,35 @@ local volume = require("beat.app.components.volume")
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local playerBar = {}
+
+-- The bar's pointer handler, one per app: moving off a playlist row in the rail drops the tooltip
+-- the rail showed. It reads the sidebar's state when it is called, and the handler is made once
+-- rather than on every frame the bar is drawn.
+---@type table<beat.App, fun(): table?>
+local hoverClearHandlers = setmetatable({}, { __mode = "k" })
+
+---@param app beat.App
+---@return fun(): table?
+local function hoverClearFor(app)
+	local handler = hoverClearHandlers[app]
+	if handler == nil then
+		handler = function()
+			if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil } end
+			return nil
+		end
+		hoverClearHandlers[app] = handler
+	end
+	return handler
+end
+
+-- What the bar's controls send, made once rather than once per frame: the bar is built on every
+-- frame it is on, and a message names the action rather than the frame.
+local TOGGLE_PLAY = { type = "togglePlay" }
+local PREVIOUS = { type = "previous" }
+local NEXT = { type = "next" }
+local SHUFFLE = { type = "shuffle" }
+local REPEAT = { type = "repeat" }
+local OPEN_NOW_PLAYING = { type = "open", overlay = "now_playing" }
 
 ---@class beat.components.chrome.PlayerBarProps
 ---@field width number # The window's width
@@ -102,14 +132,9 @@ function playerBar.view(app, props)
 	local art = cover.view(app, { album = album, size = theme:px(56), radius = theme:radius("sm") })
 	if album.id ~= 0 then
 		art:onClick({ type = "navigate", page = { kind = "album", id = album.id } })
-		art:onContextMenu(|_, _, _, _, _, windowX, windowY| -> {
-			type = "open",
-			overlay = "menu",
-			menu = "album",
-			id = album.id,
-			x = windowX,
-			y = windowY
-		})
+		-- The album's own menu message, kept with the album: a right-click opens it at the pointer,
+		-- and the bar's view makes no closure for it on any frame.
+		art:onContextMenu(albumCard.actions(album).menu)
 	end
 
 	local isPlaying = player:isPlaying()
@@ -117,20 +142,20 @@ function playerBar.view(app, props)
 		ui.iconButton(ctx, {
 			name = "shuffle",
 			size = theme:px(28),
-			onClick = { type = "shuffle" },
+			onClick = SHUFFLE,
 			active = player.queue?.shuffle ?? false
 		}),
-		ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = { type = "previous" } }),
-		div():style(styles.play):onClick({ type = "togglePlay" }):children(ui.icon(ctx, {
+		ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = PREVIOUS }),
+		div():style(styles.play):onClick(TOGGLE_PLAY):children(ui.icon(ctx, {
 			name = isPlaying ? "pause" : "play",
 			size = (theme:px(20)),
 			colour = theme.accentInk
 		})),
-		ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = { type = "next" } }),
+		ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = NEXT }),
 		ui.iconButton(ctx, {
 			name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
 			size = theme:px(28),
-			onClick = { type = "repeat" },
+			onClick = REPEAT,
 			active = player.queue and player.queue.repeatMode ~= "off"
 		})
 	})
@@ -150,13 +175,13 @@ function playerBar.view(app, props)
 			progress.view(app, { track = track, player = player, width = progressWidth }),
 			volume.view(app, { width = progressWidth, trackWidth = styles.volumeTrackWidth, ui = ctx })
 		}),
-		ui.iconButton(ctx, { name = "chevronUp", size = theme:px(30), onClick = { type = "open", overlay = "now_playing" } })
+		ui.iconButton(ctx, { name = "chevronUp", size = theme:px(30), onClick = OPEN_NOW_PLAYING })
 	})
 
-	return div():style(styles.bar):onMouseMove(function()
-		if app.services.sidebar.hover ~= nil then return { type = "hoverPlaylist", id = nil } end
-		return nil
-	end):children({ spectrumBackground.view(app, {}), div():style(styles.row):children({ left, cards, right }) })
+	return div():style(styles.bar):onMouseMove(hoverClearFor(app)):children(
+		spectrumBackground.view(app),
+		div():style(styles.row):children(left, cards, right)
+	)
 end
 
 --- The phone bar's styles, kept for the same reason the desktop bar's are.
@@ -229,6 +254,72 @@ end
 --- The phone mini player: one row above the bottom tabs, over the same spectrum the desktop bar
 --- draws. The whole row opens the individual track view; the play and next controls inside it
 --- keep their own actions.
+-- What the phone bar's playhead strip draws from, written when the bar is built and read when the
+-- strip is drawn: the bar is rebuilt every frame, and a closure made in the view is one the trace
+-- compiler gives up on.
+local progressDraw = { playback = nil, track = nil, lineHeight = 0, line = "", played = "" }
+
+---@param canvas wonderland.Canvas
+local function drawProgress(canvas)
+	local playback = progressDraw.playback
+	local track = progressDraw.track
+	-- The place in the track is read when the strip is drawn, not when the view was built: a
+	-- repaint moves it without the row being laid out again.
+	local duration = track.duration > 0 and track.duration or playback.player:duration()
+	local position = playback.player:position()
+	local fraction = duration > 0 ? math.max(0, math.min(1, position / duration)) : 0
+	local line = progressDraw.lineHeight
+
+	canvas:rect(0, canvas.height - line, canvas.width, line, progressDraw.line)
+	if fraction > 0 then
+		canvas:rect(0, canvas.height - line, math.floor(canvas.width * fraction), line, progressDraw.played)
+	end
+end
+
+-- The props the phone bar's cover and next control are built from, written again each frame.
+---@type table<string, any>
+local mobileCoverProps = {}
+---@type table<string, any>
+local nextProps = {}
+
+--- The phone bar's play control: a circle in a larger transparent box, so the glyph can be small
+--- and the thumb's target still its own.
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param playing boolean
+---@param styles beat.components.chrome.PlayerBarMobileStyles
+---@return wonderland.Element
+local function playControl(ctx, theme, playing, styles)
+	return div():style(styles.playHit):onClick(TOGGLE_PLAY):children(
+		div():style(styles.play):children(
+			ui.icon(ctx, { name = playing ? "pause" : "play", size = theme:px(19), colour = theme.accentInk })
+		)
+	)
+end
+
+--- The phone bar's one row: the track's cover and words, its play control and the next button.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param styles beat.components.chrome.PlayerBarMobileStyles
+---@param track beat.Track
+---@param album beat.Album
+---@param playing boolean
+---@return wonderland.Element
+local function mobileRow(app, ctx, theme, styles, track, album, playing)
+	local playback = app.services.playback
+	progressDraw.playback, progressDraw.track = playback, track
+	progressDraw.lineHeight, progressDraw.line, progressDraw.played = styles.lineHeight, styles.line, styles.played
+	mobileCoverProps.album, mobileCoverProps.size, mobileCoverProps.radius = album, styles.artSize, theme:radius("sm")
+	nextProps.name, nextProps.size, nextProps.hit, nextProps.onClick = "next", styles.nextSize, styles.nextHit, NEXT
+	return div():style(styles.row):canvas(drawProgress):children(
+		cover.view(app, mobileCoverProps --[[@as beat.components.CoverProps]]),
+		div():style(styles.info):children(text(track.title):style(styles.title), text(track.artist):style(styles.artist)),
+		playControl(ctx, theme, playing, styles),
+		tapButton.view(ctx, nextProps --[[@as beat.components.TapButtonProps]])
+	)
+end
+
 ---@param app beat.App
 ---@param props beat.components.chrome.PlayerBarProps
 ---@return wonderland.Element
@@ -253,41 +344,13 @@ function playerBar.mobile(app, props)
 		}
 	end
 
-	local playback = app.services.playback
-
-	local row = div():style(styles.row):canvas(function(canvas)
-		-- The place in the track is read when the strip is drawn, not when the view was built: a
-		-- repaint moves it without the row being laid out again.
-		local duration = track.duration > 0 and track.duration or playback.player:duration()
-		local position = playback.player:position()
-		local fraction = duration > 0 ? math.max(0, math.min(1, position / duration)) : 0
-		local line = styles.lineHeight
-
-		canvas:rect(0, canvas.height - line, canvas.width, line, styles.line)
-		if fraction > 0 then
-			canvas:rect(0, canvas.height - line, math.floor(canvas.width * fraction), line, styles.played)
-		end
-	end):children({
-		cover.view(app, { album = album, size = styles.artSize, radius = theme:radius("sm") }),
-		div():style(styles.info):children({ text(track.title):style(styles.title), text(track.artist):style(styles.artist) }),
-		div():style(styles.playHit):onClick({ type = "togglePlay" }):children({
-			div():style(styles.play):children(ui.icon(ctx, {
-				name = playing ? "pause" : "play",
-				size = (theme:px(19)),
-				colour = theme.accentInk
-			}))
-		}),
-		tapButton.view(ctx, { name = "next", size = styles.nextSize, hit = styles.nextHit, onClick = { type = "next" } })
-	})
+	local row = mobileRow(app, ctx, theme, styles, track, album, playing)
 
 	-- The meter is the desktop bar's own, put behind the row: it reads the levels when the frame
 	-- is drawn, so the app's repaints move it while the music plays and leave it still once it stops.
 	-- The bar answers a press itself, but a press in one of the controls meets that control first:
 	-- the enlarged boxes take their presses without the track view opening under them.
-	return div():style(styles.bar):onClick({ type = "open", overlay = "now_playing" }):children({
-		spectrumBackground.view(app, {}),
-		row
-	})
+	return div():style(styles.bar):onClick(OPEN_NOW_PLAYING):children(spectrumBackground.view(app), row)
 end
 
 return playerBar

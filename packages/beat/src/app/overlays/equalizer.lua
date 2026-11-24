@@ -15,6 +15,21 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@type beat.OverlaySurface
 local equalizer = {}
 
+-- What moving one band asks for, one handler per band rather than one per fader per frame.
+---@type table<number, fun(value: number): table>
+local gainHandlers = {}
+
+---@param band number
+---@return fun(value: number): table
+local function gainHandler(band)
+	local handler = gainHandlers[band]
+	if handler == nil then
+		handler = function(value) return { type = "equalizerGain", band = band, value = value } end
+		gainHandlers[band] = handler
+	end
+	return handler
+end
+
 function equalizer.new()
 	return {}
 end
@@ -227,7 +242,10 @@ function equalizer.view(app, _overlay, window)
 							min = service.minimum,
 							max = service.maximum,
 							origin = 0.5,
-							onchange = |value_| -> { type = "equalizerGain", band = band, value = value_ },
+							onchange = gainHandler(band),
+							-- Each fader is its own slider: the bands share their size and colours,
+							-- and the band is what tells their draws apart.
+							instance = band,
 							trackColour = theme:color("text", 0.1),
 							fillColour = theme:color("accent"),
 							thumbColour = theme:color("text"),

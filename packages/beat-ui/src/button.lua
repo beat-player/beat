@@ -100,13 +100,13 @@ function button.view(ctx, props)
 
 	local styles = cache.of(ctx, buttonStyles, "button", variant, height, width, gap, props.icon ~= nil) --[[@as beat.ui.ButtonStyles]]
 
-	local children = {}
+	-- The icon and the label are handed over one at a time: a button is built on every frame of
+	-- the screens it is on, and a table it is only a list of is a table that frame does not need.
+	local element = div():style(styles.base):hover(styles.hover):onClick(props.onClick)
 	if props.icon ~= nil then
-		children[#children + 1] = icon.view(ctx, { name = props.icon, size = ctx:px(16), colour = styles.colour })
+		element:children(icon.view(ctx, { name = props.icon, size = ctx:px(16), colour = styles.colour }))
 	end
-	children[#children + 1] = text(props.label):style(styles.label)
-
-	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children(children)
+	return element:children(text(props.label):style(styles.label))
 end
 
 return { view = button.view }

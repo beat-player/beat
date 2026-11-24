@@ -320,6 +320,7 @@ local function loadOne(registry, candidate, builtin, loaded, entries)
 
 	loaded[plugin.name] = plugin
 	registry.plugins[#registry.plugins + 1] = plugin
+	registry.pluginsByName[plugin.name] = plugin
 	entries[#entries + 1] = plugin
 end
 

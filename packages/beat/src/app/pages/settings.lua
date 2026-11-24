@@ -8,11 +8,140 @@ local format = require("beat.app.components.helpers.format")
 local volume = require("beat.app.components.volume")
 local metrics = require("beat.app.components.helpers.metrics")
 local settingsList = require("beat.app.components.settings_list")
+local styles = require("beat.app.components.helpers.styles")
 local version = require("beat.version")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 local GITHUB = "https://github.com/bycruz/beat"
+
+--- A choice a segmented control offers, and the extra values the page reads back off it while
+--- working out which one is chosen.
+---@class beat.pages.SettingsChoice: beat.components.SettingsOption
+---@field message table
+---@field width number?
+---@field channel string?
+
+---@alias beat.pages.SettingsChoices beat.pages.SettingsChoice[]
+
+local THEME_OPTIONS = {} --[[@as beat.pages.SettingsChoices]]
+
+-- The record each row fills, one per row of this page, kept across frames: a row is built again
+-- on every scroll step, and neither it nor the props it was built from is worth making again.
+---@type beat.components.SettingsItem[]
+local ROW_ITEMS = {}
+
+---@param index integer
+---@return beat.components.SettingsItem
+local function rowSlot(index)
+	local item = ROW_ITEMS[index]
+	if item == nil then
+		item = {}
+		ROW_ITEMS[index] = item
+	end
+	return item
+end
+
+-- The choices the page offers, with their messages: the words never change, and a message is the
+-- same table every frame. Only which of them is chosen is written again.
+local THEME_LABELS = {}
+local THEME_OPTION_NAMES = {}
+local SCALE_OPTIONS = {
+	{ label = "90%", message = { type = "uiScale", value = 0.9 } },
+	{ label = "100%", message = { type = "uiScale", value = 1 } },
+	{ label = "125%", message = { type = "uiScale", value = 1.25 } }
+} --[[@as beat.pages.SettingsChoices]]
+local SIDEBAR_OPTIONS = {
+	{ label = "Narrow", message = { type = "sidebarWidth", width = 220 }, width = 220 },
+	{ label = "Balanced", message = { type = "sidebarWidth", width = 264 }, width = 264 },
+	{ label = "Wide", message = { type = "sidebarWidth", width = 320 }, width = 320 },
+	{ label = "Collapse", message = { type = "toggleSidebar" } }
+} --[[@as beat.pages.SettingsChoices]]
+local CHANNEL_OPTIONS = {
+	{ label = "Release", message = { type = "updateChannel", value = "release" }, channel = "release" },
+	{ label = "Nightly", message = { type = "updateChannel", value = "nightly" }, channel = "nightly" }
+} --[[@as beat.pages.SettingsChoices]]
+
+local CHOOSE_FOLDER = { type = "chooseFolder" }
+local RESCAN = { type = "rescan" }
+local OPEN_ACCENT_PICKER = { type = "open", overlay = "accent_picker" }
+local OPEN_PLUGINS = { type = "navigate", page = { kind = "plugins" } }
+local GITHUB_ACTION = { type = "openURL", url = GITHUB }
+local ISSUES_ACTION = { type = "openURL", url = GITHUB .. "/issues" }
+
+-- What a segmented choice is asked for, written again per control: the component reads it and
+-- keeps nothing, and the page is built again on every frame it is scrolled.
+local segmentProps = {}
+
+--- A segmented choice drawn at the width its labels ask for, filling the room the row leaves when
+--- that is wider than the row can give it.
+---@param app beat.App
+---@param options beat.pages.SettingsChoices
+---@param stacked boolean
+---@param inner number
+---@return wonderland.Element
+---@return number
+local function segmentedControl(app, options, stacked, inner)
+	local theme = app.services.appearance.theme
+	segmentProps.options = options
+	segmentProps.width = nil
+	local element, width = settingsList.segmented(app, segmentProps)
+	local limit = stacked and inner or (inner - theme:px(80) - theme:px(16))
+	if width > limit then
+		segmentProps.width = limit
+		element, width = settingsList.segmented(app, segmentProps)
+	end
+	return element, width
+end
+
+-- What a theme's swatches are drawn in, written again per page: the icon reads it and keeps
+-- nothing, and the swatches are built on every frame.
+---@type table<string, any>
+local swatchIconProps = { name = "check", size = 0, colour = "" }
+
+-- What a theme's swatches are drawn in, written again per page: the icon reads it and keeps
+-- nothing, and the swatches are built on every frame.
+---@type table<string, any>
+local swatchIconProps = { name = "check", size = 0, colour = "" }
+
+--- The accent swatches as one control. The loop is its own function so it compiles even while
+--- the page around it is still being interpreted; the swatches themselves are kept per size.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param names string[]
+---@param values beat.Settings
+---@param size number
+---@return wonderland.Element[]
+local function buildAccents(app, ctx, theme, names, values, size)
+	local swatches = styles.of(theme, "settingsSwatches", size) --[[@as table<string, wonderland.StyleBuilder>]]
+	local messages = styles.of(theme, "settingsSwatchMessages") --[[@as table<string, table>]]
+	local accents = {}
+	for at = 1, #names do
+		local name = names[at]
+		local swatch = swatches[name]
+		if swatch == nil then
+			swatch = sty()
+				:size(size, size):radius(theme:radius("full"))
+				:bg(app.services.appearance:accentColour(name)):align("center"):justify("center")
+			swatches[name] = swatch
+		end
+		local message = messages[name]
+		if message == nil then
+			message = { type = "accent", name = name }
+			messages[name] = message
+		end
+		local body
+		if values.accent == name then
+			swatchIconProps.size, swatchIconProps.colour = theme:px(14), app.services.appearance:accentInk(name)
+			body = ui.icon(ctx, swatchIconProps --[[@as beat.ui.IconProps]])
+		else
+			body = div()
+		end
+		accents[#accents + 1] = div():style(swatch):onClick(message):children(body)
+	end
+	return accents
+end
 
 ---@type beat.PageSurface
 local settings = {}
@@ -33,27 +162,20 @@ function settings.view(app, page, window)
 
 	-- A segmented choice is drawn at the width its labels ask for, and fills the room the row
 	-- leaves when that is wider than the row can give it.
-	---@param options beat.components.SettingsOption[]
-	---@return wonderland.Element
-	---@return number
-	local function segmented(options)
-		local element, width = settingsList.segmented(app, { options = options })
-		local limit = stacked and inner or (inner - theme:px(80) - theme:px(16))
-		if width > limit then
-			element, width = settingsList.segmented(app, { options = options, width = limit })
+	local names = app.services.appearance:names()
+	for at = 1, #names do
+		local name = names[at]
+		local option = THEME_OPTIONS[at]
+		if option == nil then
+			local label = name == "auto" ? "Auto" : (name:sub(1, 1):upper() .. name:sub(2))
+			option = { label = label, message = { type = "theme", name = name } }
+			THEME_OPTIONS[at] = option
+			THEME_LABELS[at] = label
+			THEME_OPTION_NAMES[at] = name
 		end
-		return element, width
+		option.selected = values.theme == name
 	end
-
-	local themeOptions = {}
-	for _, name in ipairs(app.services.appearance:names()) do
-		themeOptions[#themeOptions + 1] = {
-			label = name == "auto" ? "Auto" : (name:sub(1, 1):upper() .. name:sub(2)),
-			message = { type = "theme", name = name },
-			selected = values.theme == name
-		}
-	end
-	local themeControl, themeWidth = segmented(themeOptions)
+	local themeControl, themeWidth = segmentedControl(app, THEME_OPTIONS, stacked, inner)
 
 	-- The accent swatches and the Custom button share one control, so the row can put them beside
 	-- the words or under them as a single piece.
@@ -68,40 +190,30 @@ function settings.view(app, page, window)
 		accentWidth = #accentNames * accentSize + #accentNames * accentGap + customWidth
 	end
 
-	local accents = {}
-	for _, name in ipairs(accentNames) do
-		local active = values.accent == name
-		accents[#accents + 1] = div()
-			:style(
-				sty()
-					:size(accentSize, accentSize):radius(theme:radius("full"))
-					:bg(app.services.appearance:accentColour(name)):align("center"):justify("center")
-			):onClick({ type = "accent", name = name })
-			:children(
-				active ? ui.icon(ctx, { name = "check", size = theme:px(14), colour = app.services.appearance:accentInk(name) }) : div()
-			)
+	local accents = buildAccents(app, ctx, theme, accentNames, values, accentSize)
+	local custom = styles.of(theme, "settingsCustom", customWidth) --[[@as { box: wonderland.StyleBuilder?, text: wonderland.StyleBuilder? }]]
+	if custom.box == nil then
+		custom.box = sty()
+			:row():w(customWidth):h(theme:px(32)):radius(theme:radius("full")):bg("#000000")
+			:border(theme:px(1), theme:color("border")):align("center"):justify("center")
+		custom.text = theme:s():text(theme:type("sm")):weight("semibold"):fg("#f4f6f9")
 	end
 	local customButton = div()
-		:style(
-			sty()
-				:row():w(customWidth):h(theme:px(32)):radius(theme:radius("full")):bg("#000000")
-				:border(theme:px(1), theme:color("border")):align("center"):justify("center")
-		):onClick({ type = "open", overlay = "accent_picker" })
-		:children(text("Custom"):style(theme:s():text(theme:type("sm")):weight("semibold"):fg("#f4f6f9")))
+		:style(assert(custom.box)):onClick(OPEN_ACCENT_PICKER)
+		:children(text("Custom"):style(assert(custom.text)))
 	accents[#accents + 1] = customButton
-	local accentControl = div()
-		:style(sty():row():w(accentWidth):h(theme:px(32)):gap(accentGap):align("center"))
-		:children(accents)
-
-	local scaleOptions = {}
-	for _, choice in ipairs({ { label = "90%", value = 0.9 }, { label = "100%", value = 1 }, { label = "125%", value = 1.25 } }) do
-		scaleOptions[#scaleOptions + 1] = {
-			label = choice.label,
-			message = { type = "uiScale", value = choice.value },
-			selected = values.uiScale == choice.value
-		}
+	local accentBox = styles.of(theme, "settingsAccentBox", accentWidth) --[[@as { style: wonderland.StyleBuilder?, gap: number? }]]
+	if accentBox.style == nil or accentBox.gap ~= accentGap then
+		accentBox.gap = accentGap
+		accentBox.style = sty():row():w(accentWidth):h(theme:px(32)):gap(accentGap):align("center")
 	end
-	local scaleControl, scaleWidth = segmented(scaleOptions)
+	local accentControl = div():style(assert(accentBox.style)):children(accents)
+
+	for at = 1, #SCALE_OPTIONS do
+		local choice = SCALE_OPTIONS[at]
+		choice.selected = values.uiScale == choice.message.value
+	end
+	local scaleControl, scaleWidth = segmentedControl(app, SCALE_OPTIONS, stacked, inner)
 
 	local motionControl, motionWidth = settingsList.toggle(app, {
 		on = values.reduceMotion,
@@ -109,53 +221,44 @@ function settings.view(app, page, window)
 	})
 
 	local appearanceRows = {
-		settingsList.row(app, {
-			label = "Theme",
+		settingsList.rowAt(
+			app,
+			rowSlot(1),
+			column,
+			"Theme",
 			-- Only the automatic choice has a rule to explain; a named palette is its own answer.
-			description = values.theme == "auto" ? "Day from 7:00 to 19:00, night otherwise" : nil,
-			control = themeControl,
-			controlWidth = themeWidth,
-			controlHeight = theme:px(32),
-			width = column
-		}),
-		settingsList.row(
-			app,
-			{ label = "Accent", control = accentControl, controlWidth = accentWidth, controlHeight = theme:px(32), width = column }
+			values.theme == "auto" ? "Day from 7:00 to 19:00, night otherwise" : nil,
+			themeControl,
+			themeWidth,
+			theme:px(32)
 		),
-		settingsList.row(
+		settingsList.rowAt(app, rowSlot(2), column, "Accent", nil, accentControl, accentWidth, theme:px(32)),
+		settingsList.rowAt(app, rowSlot(3), column, "Scale", nil, scaleControl, scaleWidth, theme:px(32)),
+		settingsList.rowAt(
 			app,
-			{ label = "Scale", control = scaleControl, controlWidth = scaleWidth, controlHeight = theme:px(32), width = column }
-		),
-		settingsList.row(app, {
-			label = "Reduce motion",
-			description = "Fewer animations and transitions",
-			control = motionControl,
-			controlWidth = motionWidth,
-			controlHeight = theme:px(26),
-			width = column
-		})
+			rowSlot(4),
+			column,
+			"Reduce motion",
+			"Fewer animations and transitions",
+			motionControl,
+			motionWidth,
+			theme:px(26)
+		)
 	}
 	local appearance, appearanceHeight = settingsList.group(app, { title = "Appearance", rows = appearanceRows, width = column })
 
 	-- The phone shell has bottom tabs, so a sidebar width means nothing there.
 	local sidebar, sidebarHeight
 	if not ctx.mobile then
-		local sidebarControl, sidebarControlWidth = segmented({
-			{ label = "Narrow", message = { type = "sidebarWidth", width = 220 }, selected = values.sidebarWidth == 220 },
-			{ label = "Balanced", message = { type = "sidebarWidth", width = 264 }, selected = values.sidebarWidth == 264 },
-			{ label = "Wide", message = { type = "sidebarWidth", width = 320 }, selected = values.sidebarWidth == 320 },
-			{ label = "Collapse", message = { type = "toggleSidebar" }, selected = values.sidebarCollapsed }
-		})
+		for at = 1, #SIDEBAR_OPTIONS do
+			local choice = SIDEBAR_OPTIONS[at]
+			choice.selected = choice.width ~= nil and values.sidebarWidth == choice.width or values.sidebarCollapsed
+		end
+		local sidebarControl, sidebarControlWidth = segmentedControl(app, SIDEBAR_OPTIONS, stacked, inner)
 		sidebar, sidebarHeight = settingsList.group(app, {
 			title = "Sidebar",
 			rows = {
-				settingsList.row(app, {
-					label = "Width",
-					control = sidebarControl,
-					controlWidth = sidebarControlWidth,
-					controlHeight = theme:px(32),
-					width = column
-				})
+				settingsList.rowAt(app, rowSlot(5), column, "Width", nil, sidebarControl, sidebarControlWidth, theme:px(32))
 			},
 			width = column
 		})
@@ -172,14 +275,16 @@ function settings.view(app, page, window)
 		windowGroup, windowHeight = settingsList.group(app, {
 			title = "Window",
 			rows = {
-				settingsList.row(app, {
-					label = "Minimize to tray",
-					description = "Where minimizing sends the window",
-					control = trayButton,
-					controlWidth = trayWidth,
-					controlHeight = theme:px(26),
-					width = column
-				})
+				settingsList.rowAt(
+					app,
+					rowSlot(6),
+					column,
+					"Minimize to tray",
+					"Where minimizing sends the window",
+					trayButton,
+					trayWidth,
+					theme:px(26)
+				)
 			},
 			width = column
 		})
@@ -194,45 +299,50 @@ function settings.view(app, page, window)
 		rescanWidth = inner - buttonGap - chooseWidth
 		libraryControlWidth = inner
 	end
+	local libraryBox = styles.of(theme, "settingsLibraryBox", libraryControlWidth) --[[@as { style: wonderland.StyleBuilder?, gap: number? }]]
+	if libraryBox.style == nil or libraryBox.gap ~= buttonGap then
+		libraryBox.gap = buttonGap
+		libraryBox.style = sty():row():w(libraryControlWidth):h(theme:px(32)):gap(buttonGap)
+	end
 	local libraryButtons = div()
-		:style(sty():row():w(libraryControlWidth):h(theme:px(32)):gap(buttonGap))
-		:children({
+		:style(assert(libraryBox.style))
+		:children(
 			ui.button(
 				ctx,
 				{
 					label = "Choose folder…",
-					onClick = { type = "chooseFolder" },
+					onClick = CHOOSE_FOLDER,
 					variant = "primary",
 					height = theme:px(32),
 					width = chooseWidth
 				}
 			),
-			ui.button(ctx, { label = "Rescan", onClick = { type = "rescan" }, height = theme:px(32), width = rescanWidth })
-		})
+			ui.button(ctx, { label = "Rescan", onClick = RESCAN, height = theme:px(32), width = rescanWidth })
+		)
 	local libraryRows = {
-		settingsList.row(app, {
-			label = "Music folder",
-			description = values.root or "No folder chosen",
-			control = libraryButtons,
-			controlWidth = libraryControlWidth,
-			controlHeight = theme:px(32),
-			width = column
-		})
+		settingsList.rowAt(
+			app,
+			rowSlot(7),
+			column,
+			"Music folder",
+			values.root or "No folder chosen",
+			libraryButtons,
+			libraryControlWidth,
+			theme:px(32)
+		)
 	}
 	local scan = app.services.scan
 	if scan.skipped > 0 then
-		libraryRows[#libraryRows + 1] = settingsList.row(app, {
-			label = format.count(scan.skipped, "file") .. " skipped",
-			description = "Files the last scan could not read",
-			width = column
-		})
+		libraryRows[#libraryRows + 1] = settingsList.rowAt(
+			app,
+			rowSlot(8),
+			column,
+			format.count(scan.skipped, "file") .. " skipped",
+			"Files the last scan could not read"
+		)
 		for at, failure in ipairs(scan.errors) do
 			if at > 3 then break end
-			libraryRows[#libraryRows + 1] = settingsList.row(app, {
-				label = path.basename(failure.path),
-				description = failure.message,
-				width = column
-			})
+			libraryRows[#libraryRows + 1] = settingsList.rowAt(app, rowSlot(8 + at), column, path.basename(failure.path), failure.message)
 		end
 	end
 	local library, libraryHeight = settingsList.group(app, { title = "Library", rows = libraryRows, width = column })
@@ -240,21 +350,19 @@ function settings.view(app, page, window)
 	local volumeWidth = theme:px(narrow ? 80 : 200)
 	local percentWidth = theme:px(38)
 	local audioControlWidth = volumeWidth + theme:px(10) + percentWidth
+	local audioBox = styles.of(theme, "settingsAudioBox", audioControlWidth) --[[@as { style: wonderland.StyleBuilder?, percent: wonderland.StyleBuilder? }]]
+	if audioBox.style == nil then
+		audioBox.style = sty():row():w(audioControlWidth):h(theme:px(22)):gap(theme:px(10)):align("center")
+		audioBox.percent = theme:s():w(percentWidth):text(theme:type("xs")):fg(theme:color("faint"))
+	end
 	local audioControl = div()
-		:style(sty():row():w(audioControlWidth):h(theme:px(22)):gap(theme:px(10)):align("center"))
-		:children({
+		:style(assert(audioBox.style))
+		:children(
 			volume.view(app, { width = volumeWidth, ui = ctx }),
-			text(tostring(math.floor((values.isMuted ? 0 : values.volume) * 100)) .. "%")
-				:style(theme:s():w(percentWidth):text(theme:type("xs")):fg(theme:color("faint")))
-		})
+			text(tostring(math.floor((values.isMuted ? 0 : values.volume) * 100)) .. "%"):style(audioBox.percent)
+		)
 	local audioRows = {
-		settingsList.row(app, {
-			label = "Volume",
-			control = audioControl,
-			controlWidth = audioControlWidth,
-			controlHeight = theme:px(22),
-			width = column
-		})
+		settingsList.rowAt(app, rowSlot(12), column, "Volume", nil, audioControl, audioControlWidth, theme:px(22))
 	}
 	-- Only the phone has another app to take audio focus, or a media stream of its own to fall
 	-- silent; the setting would mean nothing on a desktop.
@@ -263,14 +371,16 @@ function settings.view(app, page, window)
 			on = values.pauseForOtherAudio ~= false,
 			onClick = { type = "pauseForOtherAudio", value = values.pauseForOtherAudio == false }
 		})
-		audioRows[#audioRows + 1] = settingsList.row(app, {
-			label = "Pause for other audio",
-			description = "When another app plays, or the volume is at zero",
-			control = otherAudio,
-			controlWidth = otherAudioWidth,
-			controlHeight = theme:px(26),
-			width = column
-		})
+		audioRows[#audioRows + 1] = settingsList.rowAt(
+			app,
+			rowSlot(13),
+			column,
+			"Pause for other audio",
+			"When another app plays, or the volume is at zero",
+			otherAudio,
+			otherAudioWidth,
+			theme:px(26)
+		)
 	end
 	local audio, audioHeight = settingsList.group(app, {
 		title = "Audio",
@@ -326,35 +436,41 @@ function settings.view(app, page, window)
 	local lastfmGroup, lastfmHeight = settingsList.group(app, {
 		title = "Last.fm",
 		rows = {
-			settingsList.row(app, {
-				label = "Account",
-				description = lastfm:statusText(),
-				control = lastfmButton,
-				controlWidth = lastfmControlWidth,
-				controlHeight = theme:px(28),
-				width = column
-			}),
-			settingsList.row(app, {
-				label = "Scrobbling",
-				description = values.lastfmEnabled ? "Sending what you play to Last.fm" : "Paused",
-				control = scrobbling,
-				controlWidth = scrobblingWidth,
-				controlHeight = theme:px(26),
-				width = column
-			})
+			settingsList.rowAt(
+				app,
+				rowSlot(14),
+				column,
+				"Account",
+				lastfm:statusText(),
+				lastfmButton,
+				lastfmControlWidth,
+				theme:px(28)
+			),
+			settingsList.rowAt(
+				app,
+				rowSlot(15),
+				column,
+				"Scrobbling",
+				values.lastfmEnabled ? "Sending what you play to Last.fm" : "Paused",
+				scrobbling,
+				scrobblingWidth,
+				theme:px(26)
+			)
 		},
 		width = column
 	})
 
-	local pluginsRow = settingsList.row(app, {
-		label = "Plugins",
-		description = "Manage built-in and installed plugins",
-		control = ui.icon(ctx, { name = "chevronRight", size = theme:px(18), colour = theme:color("muted") }),
-		controlWidth = theme:px(18),
-		controlHeight = theme:px(18),
-		width = column,
-		onClick = { type = "navigate", page = { kind = "plugins" } }
-	})
+	local pluginsRow = settingsList.rowAt(
+		app,
+		rowSlot(16),
+		column,
+		"Plugins",
+		"Manage built-in and installed plugins",
+		ui.icon(ctx, { name = "chevronRight", size = theme:px(18), colour = theme:color("muted") }),
+		theme:px(18),
+		theme:px(18),
+		OPEN_PLUGINS
+	)
 	local pluginsGroup, pluginsHeight = settingsList.group(app, {
 		title = "Plugins",
 		rows = { pluginsRow },
@@ -362,18 +478,12 @@ function settings.view(app, page, window)
 	})
 
 	local updateService = app.services.update
-	local channelControl, channelWidth = segmented({
-		{
-			label = "Release",
-			message = { type = "updateChannel", value = "release" },
-			selected = updateService:channel() == "release"
-		},
-		{
-			label = "Nightly",
-			message = { type = "updateChannel", value = "nightly" },
-			selected = updateService:channel() == "nightly"
-		}
-	})
+	local channel = updateService:channel()
+	for at = 1, #CHANNEL_OPTIONS do
+		local choice = CHANNEL_OPTIONS[at]
+		choice.selected = channel == choice.channel
+	end
+	local channelControl, channelWidth = segmentedControl(app, CHANNEL_OPTIONS, stacked, inner)
 
 	local updateStatus = updateService.status
 	local updateDescription
@@ -437,12 +547,7 @@ function settings.view(app, page, window)
 	})
 
 	local versionBadge, versionBadgeWidth = settingsList.badge(app, version)
-	local versionRow = settingsList.row(app, {
-		label = "beat",
-		badge = versionBadge,
-		badgeWidth = versionBadgeWidth,
-		width = column
-	})
+	local versionRow = settingsList.rowAt(app, rowSlot(17), column, "beat", nil, nil, nil, nil, nil, versionBadge, versionBadgeWidth)
 
 	local githubWidth = theme:px(narrow ? 160 : 124)
 	local issuesWidth = theme:px(narrow ? 160 : 92)
@@ -452,102 +557,117 @@ function settings.view(app, page, window)
 		issuesWidth = inner - buttonGap - githubWidth
 		linksWidth = inner
 	end
+	local linksBox = styles.of(theme, "settingsLinksBox", linksWidth) --[[@as { style: wonderland.StyleBuilder?, gap: number? }]]
+	if linksBox.style == nil or linksBox.gap ~= buttonGap then
+		linksBox.gap = buttonGap
+		linksBox.style = sty():row():w(linksWidth):h(theme:px(32)):gap(buttonGap)
+	end
 	local links = div()
-		:style(sty():row():w(linksWidth):h(theme:px(32)):gap(buttonGap))
-		:children({
+		:style(assert(linksBox.style))
+		:children(
 			ui.button(
 				ctx,
 				{
 					label = "GitHub",
-					onClick = { type = "openURL", url = GITHUB },
+					onClick = GITHUB_ACTION,
 					icon = "github",
 					variant = "primary",
 					height = theme:px(32),
 					width = githubWidth
 				}
 			),
-			ui.button(
-				ctx,
-				{
-					label = "Issues",
-					onClick = { type = "openURL", url = GITHUB .. "/issues" },
-					height = theme:px(32),
-					width = issuesWidth
-				}
-			)
-		})
+			ui.button(ctx, { label = "Issues", onClick = ISSUES_ACTION, height = theme:px(32), width = issuesWidth })
+		)
 	local about, aboutHeight = settingsList.group(app, {
 		title = "About",
 		rows = {
 			versionRow,
-			settingsList.row(app, {
-				label = "Update channel",
-				description = "Release is stable; Nightly is every new build",
-				control = channelControl,
-				controlWidth = channelWidth,
-				controlHeight = theme:px(32),
-				width = column
-			}),
-			settingsList.row(app, {
-				label = "Updates",
-				description = updateDescription,
-				control = updateButton,
-				controlWidth = updateButtonWidth,
-				controlHeight = theme:px(28),
-				width = column
-			}),
-			settingsList.row(app, {
-				label = "Check automatically",
-				description = "Look for a new build once a launch",
-				control = autoUpdates,
-				controlWidth = autoUpdatesWidth,
-				controlHeight = theme:px(26),
-				width = column
-			}),
-			settingsList.row(app, {
-				label = "Project",
-				description = "Source code and issue tracker",
-				control = links,
-				controlWidth = linksWidth,
-				controlHeight = theme:px(32),
-				width = column
-			})
+			settingsList.rowAt(
+				app,
+				rowSlot(18),
+				column,
+				"Update channel",
+				"Release is stable; Nightly is every new build",
+				channelControl,
+				channelWidth,
+				theme:px(32)
+			),
+			settingsList.rowAt(
+				app,
+				rowSlot(19),
+				column,
+				"Updates",
+				updateDescription,
+				updateButton,
+				updateButtonWidth,
+				theme:px(28)
+			),
+			settingsList.rowAt(
+				app,
+				rowSlot(20),
+				column,
+				"Check automatically",
+				"Look for a new build once a launch",
+				autoUpdates,
+				autoUpdatesWidth,
+				theme:px(26)
+			),
+			settingsList.rowAt(
+				app,
+				rowSlot(21),
+				column,
+				"Project",
+				"Source code and issue tracker",
+				links,
+				linksWidth,
+				theme:px(32)
+			)
 		},
 		width = column
 	})
 
-	local groupElements = {}
-	local groupHeights = {}
-	local function addGroup(element, height)
-		if element == nil then return end
-		groupElements[#groupElements + 1] = element
-		groupHeights[#groupHeights + 1] = height
+	local groupElements = { appearance }
+	local groupHeights = { appearanceHeight }
+	if sidebar ~= nil then
+		groupElements[#groupElements + 1] = sidebar
+		groupHeights[#groupHeights + 1] = sidebarHeight
 	end
-	addGroup(appearance, appearanceHeight)
-	addGroup(sidebar, sidebarHeight)
-	addGroup(windowGroup, windowHeight)
-	addGroup(library, libraryHeight)
-	addGroup(audio, audioHeight)
-	addGroup(lastfmGroup, lastfmHeight)
-	addGroup(pluginsGroup, pluginsHeight)
-	addGroup(about, aboutHeight)
+	if windowGroup ~= nil then
+		groupElements[#groupElements + 1] = windowGroup
+		groupHeights[#groupHeights + 1] = windowHeight
+	end
+	groupElements[#groupElements + 1] = library
+	groupHeights[#groupHeights + 1] = libraryHeight
+	groupElements[#groupElements + 1] = audio
+	groupHeights[#groupHeights + 1] = audioHeight
+	groupElements[#groupElements + 1] = lastfmGroup
+	groupHeights[#groupHeights + 1] = lastfmHeight
+	groupElements[#groupElements + 1] = pluginsGroup
+	groupHeights[#groupHeights + 1] = pluginsHeight
+	groupElements[#groupElements + 1] = about
+	groupHeights[#groupHeights + 1] = aboutHeight
 
 	local titleHeight = math.floor(theme:type("xxl") * 1.25)
 	local gap = theme:px(28)
 	local totalHeight = titleHeight
-	for _, height in ipairs(groupHeights) do totalHeight += height end
+	for at = 1, #groupHeights do totalHeight += groupHeights[at] end
 	totalHeight += gap * #groupElements
 
 	app.services.scroll:setLimit(app:pageKey(), metrics.pageScrollLimit(app, window, totalHeight))
 
-	local children = {
-		text("Settings"):style(
-			theme:s():w(column):h(titleHeight):text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
-		)
-	}
-	for _, element in ipairs(groupElements) do children[#children + 1] = element end
+	local titleBox = styles.of(theme, "settingsTitle", column) --[[@as { style: wonderland.StyleBuilder? }]]
+	if titleBox.style == nil then
+		titleBox.style = theme:s():w(column):h(titleHeight):text(theme:type("xxl")):weight("bold"):fg(theme:color("text"))
+	end
+	local children = { text("Settings"):style(titleBox.style) }
+	for at = 1, #groupElements do children[#children + 1] = groupElements[at] end
 
-	local pageColumn = div():style(sty():column():w(column):h(totalHeight):gap(gap)):children(children)
+	local pageBox = styles.of(theme, "settingsColumn", totalHeight) --[[@as { style: wonderland.StyleBuilder?, column: number? }]]
+	if pageBox.style == nil or pageBox.column ~= column then
+		pageBox.column = column
+		pageBox.style = sty():column():w(column):h(totalHeight):gap(gap)
+	end
+	local pageColumn = div():style(pageBox.style):children(children)
 	if ctx.mobile then return pageColumn end
 	return div():style(sty():row():wrel(1.0):h(totalHeight):justify("center")):children({ pageColumn })
 end

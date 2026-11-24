@@ -3,7 +3,9 @@
 -- a library appear, so it also owns the folder the library was chosen from and the question the
 -- first launch asks -- everything a view needs to say "no folder yet" comes from here.
 local Picker = require("beat.app.services.scan.picker")
-local ScanJob = require("beat.app.services.scan.job")
+-- The worker that walks a folder is read when a scan starts rather than when the app does: a
+-- launch that only browses the cached library never needs it.
+local function scanJob() return require("beat.app.services.scan.job") end
 local path = require("path")
 local time = require("wonderland.time")
 local Log = require("beat.log")
@@ -141,7 +143,7 @@ function Scan:start(root)
 	self.playback:reset()
 	self.covers:releaseAll()
 	self.library:replace(root)
-	self.job = ScanJob.start(root, known)
+	self.job = scanJob().start(root, known)
 	self.islandOpen = true
 	self.summary = nil
 	self.skipped = 0
@@ -180,7 +182,7 @@ function Scan:addFolder(folder)
 
 	library:forgetFolder(folder)
 	self.addFolderPath = folder
-	self.addJob = ScanJob.start(folder)
+	self.addJob = scanJob().start(folder)
 end
 
 --- Starts the folder dialog, or waits for the one already open. A request with a reply is a

@@ -9,6 +9,124 @@ local collection = require("beat.app.components.collection")
 ---@type beat.PageSurface
 local albumPage = {}
 
+--- The message a press on the current album's play control sends; the same table every frame.
+local TOGGLE_PLAY = { type = "togglePlay" }
+
+--- What a track's row sends when it is clicked, one per track: an album page builds its rows
+--- again on every scroll step, and a message the row never changes can be sent again.
+---@type table<beat.Track, table>
+local trackActions = setmetatable({}, { __mode = "k" })
+
+---@param track beat.Track
+---@return table
+local function trackAction(track)
+	local message = trackActions[track]
+	if message == nil then
+		message = { type = "playTrack", trackId = track.id, albumId = track.albumId }
+		trackActions[track] = message
+	end
+	return message
+end
+
+--- The number a row shows: the track's own, or its place when the library gave it none.
+---@param track beat.Track
+---@param at number
+---@return number
+local function trackIndex(track, at)
+	return track.number or at
+end
+
+--- The things a page for one album sends and draws that do not depend on what is playing now: the
+--- cover it opens, the menu under a right-click, the artist's page, the two ways of playing it and
+--- the ratings. Kept per album, because a page is built again every frame it is scrolled.
+---@class beat.pages.AlbumUi
+---@field openCover table
+---@field coverMenu table # Open the album's menu where the pointer is
+---@field subtitleAction table
+---@field playAction table
+---@field shuffleAction table
+---@field rate fun(stars: number): table
+---@field cover fun(size: number): wonderland.Element
+---@field trackAction fun(track: beat.Track, at: number): table
+---@field trackIndex fun(track: beat.Track, at: number): number
+---@field props table
+
+---@type table<beat.Album, beat.pages.AlbumUi>
+local albumUi = setmetatable({}, { __mode = "k" })
+
+--- The things one album's page sends and draws, made the first time the album is shown. It is
+--- kept apart from the lookup that follows so the frames after the first only read the record:
+--- a function declared in the lookup itself is one the trace compiler gives up on, however often
+--- the record is already there.
+---@param app beat.App
+---@param album beat.Album
+---@param ratings boolean
+---@return beat.pages.AlbumUi
+local function buildUi(app, album, ratings)
+	local id = album.id
+	local artistId = album.artistId
+	local found = {
+		openCover = { type = "open", overlay = "cover_view", id = id },
+		-- The menu opens where the pointer is, which is where a right-click landed: the message
+		-- names no place and the page keeps no closure to make one.
+		coverMenu = { type = "open", overlay = "menu", menu = "album", id = id },
+		subtitleAction = { type = "navigate", page = { kind = "artist", id = artistId } },
+		playAction = { type = "playAlbum", id = id },
+		shuffleAction = { type = "playAlbum", id = id, shuffle = true },
+		rate = |stars| -> { type = "rateAlbum", id = id, stars = stars },
+		trackAction = trackAction,
+		trackIndex = trackIndex
+	} --[[@as beat.pages.AlbumUi]]
+	found.cover = |size| -> cover
+		.view(
+			app,
+			{
+				album = album,
+				size = size,
+				radius = app.services.appearance.theme:radius("lg"),
+				glow = true,
+				sheen = true
+			}
+		)
+		:onClick(found.openCover)
+	found.props = {
+		window = nil,
+		label = album.single and "SINGLE" or "ALBUM",
+		cover = found.cover,
+		coverMenu = found.coverMenu,
+		title = album.title,
+		subtitle = album.artist,
+		subtitleAction = found.subtitleAction,
+		meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track") .. " · " .. format.duration(
+			album.duration
+		),
+		playAction = found.playAction,
+		playIcon = "play",
+		titleOnly = true,
+		ratings = ratings,
+		phoneHero = true,
+		shuffleAction = found.shuffleAction,
+		rating = nil,
+		onRate = ratings and found.rate or nil,
+		tracks = album.tracks,
+		trackAction = found.trackAction,
+		trackIndex = found.trackIndex
+	}
+	return found
+end
+
+---@param app beat.App
+---@param album beat.Album
+---@param ratings boolean
+---@return beat.pages.AlbumUi
+local function uiFor(app, album, ratings)
+	local found = albumUi[album]
+	if found ~= nil then return found end
+	found = buildUi(app, album, ratings)
+	albumUi[album] = found
+	return found
+end
+
 --- Two album pages are different pages even with the same cover: the scroll and the back
 --- stack tell them apart by this, not by the kind.
 ---@param page beat.PageInstance
@@ -59,44 +177,13 @@ function albumPage.view(app, page, window)
 	local thisAlbum = current?.albumId == album.id
 	local playing = app.services.playback.player:isPlaying()
 	local ratings = app.registry:hasPlugin("ratings")
-	local onRate = nil
-	if ratings then onRate = |stars| -> { type = "rateAlbum", id = album.id, stars = stars } end
-	return collection.view(
-		app,
-		{
-			window = window,
-			label = album.single and "SINGLE" or "ALBUM",
-			cover = |size| -> cover.view(
-				app,
-				{ album = album, size = size, radius = app.services.appearance.theme:radius("lg"), glow = true, sheen = true }
-			):onClick({ type = "open", overlay = "cover_view", id = album.id }),
-			coverMenu = |_, _, _, _, _, windowX, windowY| -> {
-				type = "open",
-				overlay = "menu",
-				menu = "album",
-				id = album.id,
-				x = windowX,
-				y = windowY
-			},
-			title = album.title,
-			subtitle = album.artist,
-			subtitleAction = { type = "navigate", page = { kind = "artist", id = album.artistId } },
-			meta = (album.year and (album.year .. " · ") or "") .. format.count(#album.tracks, "track") .. " · " .. format.duration(
-				album.duration
-			),
-			playAction = thisAlbum ? { type = "togglePlay" } : { type = "playAlbum", id = album.id },
-			playIcon = playing and thisAlbum ? "pause" : "play",
-			titleOnly = true,
-			ratings = ratings,
-			phoneHero = true,
-			shuffleAction = { type = "playAlbum", id = album.id, shuffle = true },
-			rating = ratings and app.services.collections.taxonomy:albumRating(album.key) or nil,
-			onRate = onRate,
-			tracks = album.tracks,
-			trackAction = |track| -> { type = "playTrack", trackId = track.id, albumId = album.id },
-			trackIndex = |track, at| -> track.number or at
-		}
-	)
+	local kept = uiFor(app, album, ratings)
+	local props = kept.props
+	props.window = window
+	props.playAction = thisAlbum and TOGGLE_PLAY or kept.playAction
+	props.playIcon = playing and thisAlbum and "pause" or "play"
+	props.rating = ratings and app.services.collections.taxonomy:albumRating(album.key) or nil
+	return collection.view(app, props)
 end
 
 return albumPage
