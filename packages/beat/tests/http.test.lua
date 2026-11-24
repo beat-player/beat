@@ -298,31 +298,35 @@ end)
 test.it("gives back the C callback each download watches its status with", function()
 	-- LuaJIT has room for only some hundreds of C callbacks and never takes one back on its own.
 	-- A run of downloads that kept each one used them all up: an HTTP download then fails because
-	-- its status cannot be watched, and nothing else in the process can make a callback. A local
-	-- file keeps this off the network; it still goes through libcurl, callbacks and all.
+	-- its status cannot be watched, and nothing else in the process can make a callback.
+	--
+	-- The downloads go to a port on this machine nothing listens on. They fail at once with a
+	-- refused connection, but each is still a libcurl transfer with its callbacks made and given
+	-- back, which is what is counted. A `file://` source would have kept this off the network too,
+	-- but curl-sys builds libcurl without the file protocol, so every such download failed as
+	-- "Unsupported protocol" before this test could say anything about callbacks.
 	local dir = tempDir()
-	local source = path.join(dir, "source.bin")
-	fs.write(source, string.rep("x", 64))
-	local forward = source:gsub("\\", "/")
-	local url = forward:sub(1, 1) == "/" and ("file://" .. forward) or ("file:///" .. forward)
+	local url = "http://127.0.0.1:1/source.bin"
 
 	local service = Http.new({})
 	local count, done = 2000, 0
-	local failures = {} ---@type string[]
+	local callbackFailures = {} ---@type string[]
 	for at = 1, count do
 		service:download({
 			url = url,
 			path = path.join(dir, at .. ".bin"),
 			onDone = function(ok, err)
 				done = done + 1
-				if not ok then failures[#failures + 1] = err or "failed" end
+				if not ok and err ~= nil and err:lower():find("callback", 1, true) then
+					callbackFailures[#callbackFailures + 1] = err
+				end
 			end
 		})
 	end
 	while done < count do service:step(0) end
 	service:close()
 
-	test.equal(#failures, 0, failures[1])
+	test.equal(#callbackFailures, 0, callbackFailures[1])
 	local made, callback = pcall(ffi.cast, "int (*)(int)", function(value) return value end)
 	test.truthy(made, "a callback can still be made after the downloads")
 	if made then callback:free() end

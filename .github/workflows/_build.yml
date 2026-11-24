@@ -1,5 +1,7 @@
 # Each matrix job compiles, packages and uploads its own asset. There is deliberately no
-# aggregate job: a failed target must not block or remove the assets the others built.
+# aggregate job: a failed target must not block or remove the assets the others built. The test
+# job is the one gate in front of all of them: nothing is built, so nothing is uploaded over the
+# nightly or a release, unless the whole suite passes.
 name: Build Beat
 
 on:
@@ -21,7 +23,33 @@ env:
   MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: lde-org/setup-lde@v2
+        with:
+          version: nightly
+
+      # The suite draws screens headless, so it needs a Vulkan driver: lavapipe draws on the CPU.
+      # Audio tests open ALSA's null device, and text is measured with a real font.
+      - name: Install test dependencies
+        run: >
+          sudo apt-get update && sudo apt-get install -y glslang-tools mesa-vulkan-drivers
+          libvulkan1 libasound2t64 fontconfig fonts-dejavu-core
+
+      - name: Install dependencies
+        run: lde sync -C packages/beat
+
+      - name: Run tests
+        run: lde test -C packages/beat
+
   build:
+    needs: test
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -157,6 +185,7 @@ jobs:
           fail_on_unmatched_files: true
 
   android:
+    needs: test
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     strategy:
@@ -251,10 +280,12 @@ jobs:
           fail_on_unmatched_files: true
 
   # The Linux binary from the build job, packed as a Flatpak bundle. It runs once that job is done
-  # even when another platform failed: a Windows failure must not hold back the Linux packages.
+  # even when another platform failed: a Windows failure must not hold back the Linux packages. It
+  # still never runs when the tests failed, since `!cancelled()` alone would let it start with no
+  # build behind it.
   flatpak:
-    needs: build
-    if: ${{ !cancelled() }}
+    needs: [test, build]
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     container:
@@ -313,10 +344,10 @@ jobs:
           fail_on_unmatched_files: true
 
   # The Linux binary from the build job, packed as an AppImage; see packaging/appimage/build.sh.
-  # Like the Flatpak, it does not wait on the other platforms succeeding.
+  # Like the Flatpak, it does not wait on the other platforms succeeding, but needs the tests.
   appimage:
-    needs: build
-    if: ${{ !cancelled() }}
+    needs: [test, build]
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
