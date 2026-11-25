@@ -63,6 +63,18 @@ the interpreter.
 A pointer crosses to another thread as its eight raw bytes in a string, never as a Lua number:
 Android tags heap pointers above 2^53 and a double rounds them.
 
+## In the background
+
+A hidden window draws nothing, so nothing may run at the display's rate while it is hidden:
+`App:tick` returns a quarter of a second instead of a frame, and tells the audio thread, which then
+wakes every 40 ms instead of every 5 and stops feeding the spectrum. Per-sample work on the audio
+thread (equalizer, volume, the spectrum tap) runs for every second of music whether or not the app
+is shown; keep it in flat numeric loops over ffi arrays.
+
+To measure a phone playing in the background, read each thread's CPU ticks and context switches
+from `/proc/<pid>/task/*/stat` and `status` over `adb shell` twice, 30 seconds apart. Compare runs
+with the screen in the same state, because a dozing phone runs its cores slower.
+
 ## Measuring
 
 - `tools/bench.lua` drives the app headless. `BEAT_BENCH_MODE=idle|redraw|scroll|playing`,

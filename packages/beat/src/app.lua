@@ -1030,6 +1030,12 @@ end
 -- the ticker
 -- ────────────────────────────────────────────────────────────────
 
+-- How long the ticker sleeps: a frame while something on screen moves, a quarter of a second while
+-- something moves on a window nobody can see, and half a second when nothing moves.
+local FRAME_TICK = 1 / 60
+local HIDDEN_TICK = 0.25
+local IDLE_TICK = 0.5
+
 ---@param now number
 ---@param window wonderland.RenderWindow
 ---@return number
@@ -1039,6 +1045,8 @@ function App:tick(now, window)
 		---@cast window wonderland.RenderWindow & beat.WindowCalls
 		self:bringForward(window)
 	end
+	local hidden = window.visible == false
+	self.services.playback.player:setBackground(hidden)
 	local changed, serviceBusy, repaint = false, false, false
 	-- Each service does what it does on its own -- a scan coming in, a toast fading -- in the
 	-- order they were made, so a service steps after everything it depends on. `changed` is what
@@ -1062,7 +1070,14 @@ function App:tick(now, window)
 	elseif repaint then
 		self:repaint(window)
 	end
-	return serviceBusy and (1 / 60) or 0.5
+	-- A hidden window -- an app sent to the background, a phone with its screen off -- shows no
+	-- frame, so a track playing is no reason to come back at the display's rate: the audio thread
+	-- plays the queue through on its own, and what the services still do there (a track ending, a
+	-- scrobble, the session saved) is in no hurry. Stepping them sixty times a second is what made
+	-- music playing in the background cost a phone most of its battery.
+	if not serviceBusy then return IDLE_TICK end
+	if hidden then return HIDDEN_TICK end
+	return FRAME_TICK
 end
 
 ---@param window wonderland.RenderWindow

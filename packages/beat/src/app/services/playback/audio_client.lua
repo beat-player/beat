@@ -338,6 +338,11 @@ function AudioClient:setDevice(device)
 	self:send({ kind = "device", device = device }, false)
 end
 
+---@param background boolean
+function AudioClient:setBackground(background)
+	self:send({ kind = "background", value = background }, false)
+end
+
 ---@param snapshot beat.AudioMessage
 function AudioClient:apply(snapshot)
 	local commandId = snapshot.commandId

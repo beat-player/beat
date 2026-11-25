@@ -17,6 +17,7 @@ local AudioClient = require("beat.app.services.playback.audio_client")
 ---@field player beat.AudioClient?
 ---@field pcm beat.PcmRing? # The spectrum's ring the audio thread writes
 ---@field device string? # The output device the next player opens
+---@field background boolean? # The app shows nothing; the audio thread wakes less
 ---@field volume number
 ---@field lastVolume number
 ---@field isMuted boolean
@@ -122,6 +123,7 @@ local function ensurePlayer(self)
 	player.onError = function(err) self.error = tostring(err); self.pending = "error" end
 	if self.device ~= nil then player:setDevice(self.device) end
 	if self.equalizerBands ~= nil then player:setEqualizer(self.equalizerBands) end
+	if self.background then player:setBackground(true) end
 	applyVolume(self)
 	return player
 end
@@ -444,6 +446,15 @@ function Player:setDevice(device)
 	if self.player ~= nil and self.player.setDevice ~= nil then
 		self.player:setDevice(device)
 	end
+end
+
+--- Whether the app is showing anything. A hidden app has nobody watching the playhead, so the
+--- audio thread is told to wake only as often as the device needs feeding.
+---@param background boolean
+function Player:setBackground(background)
+	if self.background == background then return end
+	self.background = background
+	if self.player ~= nil and self.player.setBackground ~= nil then self.player:setBackground(background) end
 end
 
 ---@param value number

@@ -28,6 +28,10 @@ local STAGING_SECONDS = 0.2
 local SNAPSHOT_EVERY = 6
 local WAIT_PLAYING = 5
 local WAIT_IDLE = 40
+-- While the app shows nothing -- in the background, the screen off -- nobody watches a playhead or
+-- a meter, so the loop wakes only as often as the device needs feeding: its buffer holds 150 ms,
+-- and the snapshots come about four times a second, as often as the app's own tick reads them.
+local WAIT_BACKGROUND = 40
 
 --- One command or event on its way between the app thread and the audio thread. Which fields mean
 --- something is what `kind` says; a command carries the queue for a load, an event the state a
@@ -71,6 +75,7 @@ local WAIT_IDLE = 40
 ---@field commandId number # The last command applied, so a snapshot says what it includes
 ---@field sampleRate number? # The last stream's rate, for counting heard frames between snapshots
 ---@field device string? # The output device the next player opens
+---@field background boolean # The app shows nothing, so the loop wakes less
 
 --- Starts the reader for a track before treble reaches it, so the ring is full when it does.
 ---@param state beat.AudioThread.State
@@ -168,6 +173,9 @@ function AudioThread.open(state, send, producer)
 		---@param frames number
 		---@param channels number
 		local function onSamples(samples, frames, channels)
+			-- Nobody sees the meter of an app in the background. The ring is left behind, and the
+			-- first feed after coming back starts a new timeline at the frame it is fed.
+			if state.background then return end
 			producer:feed(samples, frames, channels, timeline.framesWritten + timeline.stagedFrames)
 		end
 		player.onSamples = onSamples
@@ -247,6 +255,8 @@ function AudioThread.apply(state, player, command, send, producer)
 		player:setVolume(command.value or 0)
 	elseif kind == "equalizer" then
 		player:setEqualizer(command.bands)
+	elseif kind == "background" then
+		state.background = command.value == true
 	elseif kind == "device" then
 		-- treble takes a device when its player is made, so this is a new player with the queue and
 		-- place it had: the app sees the same track continue on the other output.
@@ -333,7 +343,8 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		repeatOne = false,
 		commandId = 0,
 		sampleRate = nil,
-		device = nil
+		device = nil,
+		background = false
 	}
 
 	---@param event beat.AudioMessage
@@ -385,7 +396,7 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 			send(AudioThread.snapshot(state, player, producer))
 		end
 
-		commands:wait(playing and WAIT_PLAYING or WAIT_IDLE)
+		commands:wait(playing and (state.background and WAIT_BACKGROUND or WAIT_PLAYING) or WAIT_IDLE)
 	end
 
 	player:close()
