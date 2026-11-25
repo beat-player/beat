@@ -160,21 +160,62 @@ test.it("leaves a platform with no asset unoffered", function()
 	test.equal(update.pick({ nightly(NIGHTLY_SHA) }, "nightly", installed), nil)
 end)
 
+--- A service with only what a check reads, and an http stand-in that answers GitHub's compare
+--- endpoint with `comparison` ("ahead", "behind", "identical", or nil for a commit GitHub does
+--- not know).
+---@param installed string
+---@param comparison string?
+local function checking(installed, comparison)
+	local asked = {} ---@type string[]
+	local service = setmetatable({
+		installed = update.parseVersion(installed),
+		installedVersion = installed,
+		settings = { values = { updateChannel = "nightly" } },
+		toasts = { show = function() end },
+		offered = true,
+		dirty = false,
+		http = {
+			---@param request { url: string, onDone: fun(response: table) }
+			request = function(_, request)
+				asked[#asked + 1] = request.url
+				if comparison == nil then
+					request.onDone({ status = 404, body = json.encode({ message = "Not Found" }) })
+				else
+					request.onDone({ status = 200, body = json.encode({ status = comparison }) })
+				end
+				return { cancel = function() end }
+			end
+		}
+	}, { __index = update })
+	return service, asked
+end
+
 test.it("reads GitHub's answer as the JSON text it arrives as", function()
 	-- The list reaches the service as a response body, not as tables: a check that read it
 	-- through the decoder's document handle saw no releases at all and said every build was up to
 	-- date. This goes through the same decode the service does.
-	local service = setmetatable({
-		installed = update.parseVersion("0.1.0-nightly+0000000"),
-		settings = { values = { updateChannel = "nightly" } },
-		toasts = { show = function() end },
-		offered = true,
-		dirty = false
-	}, { __index = update })
-
+	local service = checking("0.1.0-nightly+0000000", "ahead")
 	service:checked({ status = 200, body = json.encode({ nightly(NIGHTLY_SHA) }) }, true)
 
 	test.equal(service.error, nil)
 	test.equal(service.status, "available")
 	test.equal(service.offer and service.offer.commit, NIGHTLY_SHA:sub(1, 7))
+end)
+
+test.it("offers a nightly only when its commit comes after the installed one", function()
+	local body = json.encode({ nightly(NIGHTLY_SHA) })
+
+	local ahead, asked = checking("0.1.0-nightly+0000000", "ahead")
+	ahead:checked({ status = 200, body = body }, true)
+	test.equal(ahead.status, "available", "a later nightly is offered")
+	test.truthy(asked[1]:find("0000000..." .. NIGHTLY_SHA:sub(1, 7), 1, true), "installed first, nightly second")
+
+	local behind = checking("0.1.0-nightly+0000000", "behind")
+	behind:checked({ status = 200, body = body }, true)
+	test.equal(behind.status, "upToDate", "a build newer than the nightly is not offered the older one")
+	test.equal(behind.offer, nil)
+
+	local unknown = checking("0.1.0-nightly+0000000", nil)
+	unknown:checked({ status = 200, body = body }, true)
+	test.equal(unknown.status, "upToDate", "a commit GitHub has not seen is left alone")
 end)
