@@ -14,6 +14,7 @@ local Plugins = {}
 -- for those, and a name in `disabledPlugins` is ignored for them.
 local OPTIONAL = {
 	ratings = true,
+	metadata = true,
 	debug = true
 }
 
