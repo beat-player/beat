@@ -475,3 +475,108 @@ test.it("does not block the app thread while the audio thread is stuck reading",
 
 	client:shutdown()
 end)
+
+test.it("says a track that ends with nothing after it is the last, and starts nothing", function()
+	local state = {
+		index = 1,
+		tracks = { { path = "tests/fixtures/tone.wav", sampleRate = 44100, channels = 1 } },
+		sources = {},
+		repeatOne = false,
+		commandId = 3,
+		sampleRate = nil,
+		device = nil
+	}
+	---@type beat.AudioMessage[]
+	local events = {}
+	local player = AudioThread.open(state, function(event) events[#events + 1] = event end, nil)
+
+	-- The buffer's last track playing out: treble says so through the same callback.
+	assert(player.onTrackEnd)()
+
+	test.equal(events[1].kind, "ended")
+	test.equal(events[1].last, true, "nothing is staged or repeated after it")
+	test.equal(events[2].kind, "snapshot", "and no track is announced as started")
+	test.equal(events[2].playing, false)
+	test.equal(#events, 2)
+
+	player:close()
+end)
+
+test.it("keeps the play button after a stale snapshot says the last track is still playing", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+	local Player = require("beat.app.services.playback.player")
+
+	---@type beat.Track
+	local track = {
+		id = 1,
+		albumId = 1,
+		path = "/a.wav",
+		title = "A",
+		artist = "A",
+		album = "A",
+		albumArtist = "A",
+		artistId = 1,
+		disc = 1,
+		number = 1,
+		duration = 100,
+		format = "wav",
+		sampleRate = 44100,
+		channels = 1,
+		hasPicture = false,
+		modified = 0,
+		hash = "a"
+	}
+
+	local player = Player.new()
+	player.player = client
+	client.onTrackEnd = function() player.pending = "ended" end
+	player:playTracks({ track }, 1, {})
+
+	---@type beat.AudioMessage?
+	local load
+	while true do
+		local command = commands:pop() --[[@as beat.AudioMessage?]]
+		if command == nil then break end
+		if command.kind == "load" then load = command end
+	end
+	test.truthy(load ~= nil, "the queue was staged")
+
+	events:push({
+		kind = "snapshot", commandId = assert(load).id, playing = true, position = 0,
+		duration = 100, heard = 0, sampleRate = 44100
+	})
+	player:update(1)
+	test.truthy(player:isPlaying())
+
+	-- The track ends with nothing next, and right behind that comes a snapshot taken before the
+	-- end. It must not turn the pause button back on.
+	events:push({ kind = "ended", completed = true, last = true })
+	events:push({
+		kind = "snapshot", commandId = load.id, playing = true, position = 100,
+		duration = 100, heard = 4410000, sampleRate = 44100
+	})
+	local moved, structural = player:update(2)
+	test.falsy(moved)
+	test.truthy(structural, "the bar is laid out again for the stopped state")
+	test.falsy(player:isPlaying(), "the play button comes back with the last track")
+
+	local stopped = false
+	while true do
+		local command = commands:pop() --[[@as beat.AudioMessage?]]
+		if command == nil then break end
+		if command.kind == "stop" then stopped = true end
+	end
+	test.truthy(stopped, "the audio thread is told playback stopped")
+
+	-- Even a later copy of that old snapshot cannot put it back.
+	events:push({
+		kind = "snapshot", commandId = load.id, playing = true, position = 100,
+		duration = 100, heard = 4410000, sampleRate = 44100
+	})
+	player:update(3)
+	test.falsy(player:isPlaying())
+
+	player:destroy()
+end)

@@ -55,6 +55,7 @@ local WAIT_IDLE = 40
 ---@field duration number?
 ---@field playing boolean?
 ---@field completed boolean?
+---@field last boolean? # Whether nothing is staged or repeated after the track that ended
 ---@field heard number?
 ---@field sampleRate number?
 ---@field written number?
@@ -131,21 +132,28 @@ function AudioThread.open(state, send, producer)
 			if sources ~= nil then sources[ended] = nil end
 		end
 
-		send({ kind = "ended", completed = true })
-		state.index = ended + 1
-
 		-- A repeat-one queue has only this track in it, so a fresh reader for the same path is what
 		-- makes the loop go on.
 		local track = tracks ~= nil and tracks[ended] or nil
-		if state.repeatOne and track ~= nil then
-			local fresh = Prefetch.new(track)
+		local repeats = state.repeatOne and track ~= nil
+		local nextTrack = tracks ~= nil and tracks[ended + 1] or nil
+		-- `last` says the device has stopped for good: nothing is staged and nothing repeats, so
+		-- the app must not read the pause button from a snapshot that predates this end.
+		send({ kind = "ended", completed = true, last = nextTrack == nil and not repeats })
+		state.index = ended + 1
+
+		if repeats then
+			local fresh = Prefetch.new(track --[[@as beat.AudioTrack]])
 			fresh:prefetch(false)
 			player:enqueue(fresh --[[@as treble.Source]])
 			if sources ~= nil then sources[ended] = fresh end
 			state.index = ended
 		end
 
-		send({ kind = "started", index = state.index })
+		-- Only a track that exists is announced as started; at the end of the queue there is none.
+		if repeats or nextTrack ~= nil then
+			send({ kind = "started", index = state.index })
+		end
 		prefetchAround(state)
 		-- The next track is already what the device is hearing; report it at once so the bar does
 		-- not show the old track's place for a frame or two.

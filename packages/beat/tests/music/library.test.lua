@@ -128,8 +128,57 @@ test.it("folds the search text once and gives it back when the query empties", f
 	local albums, _, tracks = library:search("night")
 	test.equal(#albums, 1)
 	test.equal(#tracks, 1)
-	test.equal(library.columns.searchText[library.tracks[1].id], "song 1\0mira vale\0night drive")
+	test.equal(library.columns.searchText[library.tracks[1].id], "song 1 mira vale night drive")
 
 	library:forgetSearch()
 	test.equal(library.columns.searchText, nil, "an empty query keeps no folded text")
+end)
+
+---@param library beat.Library
+---@param title string
+---@param artist string
+local function addNamed(library, title, artist)
+	local info, entry = file(title, artist, #library.tracks + 1)
+	info.tags.album = title .. " (Album)"
+	entry.path = ROOT .. "/" .. artist .. "/" .. title .. ".flac"
+	entry.dir = ROOT .. "/" .. artist
+	entry.name = title .. ".flac"
+	return library:add(info, entry)
+end
+
+---@param tracks beat.Track[]
+---@return string[]
+local function titles(tracks)
+	local list = {}
+	for at, track in ipairs(tracks) do list[at] = track.title end
+	return list
+end
+
+test.it("finds a name without its accents, in any case and word order", function()
+	local library = Library.new(ROOT)
+	addNamed(library, "Over The Moon", "The Marías")
+	addNamed(library, "Halo", "Beyoncé")
+	addNamed(library, "Don't Stop Me Now", "Queen")
+	library:finish()
+
+	test.deepEqual(titles(select(3, library:search("marias"))), { "Over The Moon" })
+	test.deepEqual(titles(select(3, library:search("the marias"))), { "Over The Moon" })
+	test.deepEqual(titles(select(3, library:search("MARÍAS moon"))), { "Over The Moon" })
+	test.deepEqual(titles(select(3, library:search("beyonce"))), { "Halo" })
+	test.deepEqual(titles(select(3, library:search("dont stop"))), { "Don't Stop Me Now" })
+	test.equal(#select(2, library:search("marías")), 1, "the artist is found too")
+end)
+
+test.it("finds a word typed with a typo, after the ones typed right", function()
+	local library = Library.new(ROOT)
+	addNamed(library, "Creep", "Radiohead")
+	addNamed(library, "Radiohaed", "Somebody Else")
+	addNamed(library, "Abc", "Xyz")
+	library:finish()
+
+	test.deepEqual(titles(select(3, library:search("radiohead"))), { "Creep", "Radiohaed" }, "exact first, then the typo")
+	test.deepEqual(titles(select(3, library:search("radioheda"))), { "Creep", "Radiohaed" })
+	test.deepEqual(titles(select(3, library:search("rdiohead"))), { "Creep", "Radiohaed" })
+	test.equal(#select(3, library:search("abd")), 0, "a short word is only found as typed")
+	test.equal(#select(3, library:search("zzzzzzzz")), 0)
 end)

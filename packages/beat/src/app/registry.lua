@@ -79,6 +79,7 @@ local Log = require("beat.log")
 ---@class beat.Action
 ---@field menu string
 ---@field title string
+---@field icon string? # A glyph name from beat-ui's icon component, drawn beside the title
 ---@field order number?
 ---@field tone string? # A colour name from the theme; `danger` is the one built-in menus use
 ---@field when (fun(ctx: beat.MenuContext, app: beat.App): boolean?)?
@@ -89,6 +90,7 @@ local Log = require("beat.log")
 ---@class beat.ActionEntry
 ---@field menu string
 ---@field title string
+---@field icon string?
 ---@field order number
 ---@field tone string?
 ---@field when (fun(ctx: table, app: beat.App): boolean?)?
@@ -467,6 +469,7 @@ function Registry:addAction(action, plugin)
 	if type(action) ~= "table" then error("an action must be a table", 0) end
 	if type(action.menu) ~= "string" then error("an action needs a menu", 0) end
 	if type(action.title) ~= "string" then error("an action needs a title", 0) end
+	if action.icon ~= nil and type(action.icon) ~= "string" then error("an action's icon must be a glyph name", 0) end
 	if action.order ~= nil and type(action.order) ~= "number" then error("an action's order must be a number", 0) end
 	if action.tone ~= nil and type(action.tone) ~= "string" then error("an action's tone must be a theme colour", 0) end
 	if action.when ~= nil and type(action.when) ~= "function" then error("an action's when must be a function", 0) end
@@ -477,6 +480,7 @@ function Registry:addAction(action, plugin)
 	local entry = {
 		menu = action.menu,
 		title = action.title,
+		icon = action.icon,
 		order = action.order or 100,
 		tone = action.tone,
 		when = action.when,
@@ -795,7 +799,7 @@ end
 --- `when` says no, is not there.
 ---@param menu string
 ---@param ctx table
----@return { title: string, message: table, tone: string? }[]
+---@return { title: string, icon: string?, message: table, tone: string? }[]
 function Registry:actions(menu, ctx)
 	local shown = {}
 	for _, entry in ipairs(self.actionsList) do
@@ -841,7 +845,12 @@ function Registry:actions(menu, ctx)
 
 	local actions = {}
 	for at, item in ipairs(shown) do
-		actions[at] = { title = item.entry.title, message = item.message, tone = item.entry.tone }
+		actions[at] = {
+			title = item.entry.title,
+			icon = item.entry.icon,
+			message = item.message,
+			tone = item.entry.tone
+		}
 	end
 	return actions
 end

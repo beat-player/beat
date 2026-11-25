@@ -17,6 +17,43 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 -- Each menu keeps the width it had when it was its own overlay: enough for its longest entry.
 local WIDTH = { album = 218, track = 210, playlist = 196 }
 
+-- The glyph column of a menu row. Every row leads with the same square, whether or not a plugin
+-- gave its action an icon, so the titles line up down the menu.
+local ICON_SIZE = 16
+local ICON_GAP = 10
+
+-- The square is one size for the whole theme, and a menu draws its rows on every frame it is
+-- open, so it is made once per theme rather than once per row.
+---@type table<beat.Theme, wonderland.StyleBuilder>
+local iconBoxes = setmetatable({}, { __mode = "k" })
+
+---@param theme beat.Theme
+---@return wonderland.StyleBuilder
+local function iconBox(theme)
+	local box = iconBoxes[theme]
+	if box == nil then
+		local size = theme:px(ICON_SIZE)
+		box = sty():size(size, size):row():align("center"):justify("center")
+		iconBoxes[theme] = box
+	end
+	return box
+end
+
+--- The fixed icon column an entry starts with. A missing glyph leaves the square empty so the
+--- title still starts at the same place as every other row's.
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param name string?
+---@return wonderland.Element
+local function iconColumn(ctx, theme, name)
+	if name == nil then return div():style(iconBox(theme)) end
+	return div():style(iconBox(theme)):children(ui.icon(ctx, {
+		name = name,
+		size = theme:px(ICON_SIZE),
+		colour = theme:color("muted")
+	}))
+end
+
 --- What the entries are shown for. The menu is refused when the library or the taxonomy no longer
 --- has the thing it was opened on, which is what the three menus used to decide one at a time.
 ---@type table<string, fun(app: beat.App, id: number): table?>
@@ -122,9 +159,14 @@ function menu.view(app, overlay, window)
 	local rows = {}
 	if rating ~= nil then
 		rows[1] = div()
-			:style(sty():row():w(width - theme:px(16)):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"))
+			:style(
+				sty()
+					:row():w(width - theme:px(16)):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12))
+					:gap(theme:px(ICON_GAP)):align("center")
+			)
 			:children(
 				{
+					iconColumn(uiCtx, theme, "star"),
 					text("Rating"):style(theme:s():w("auto"):text(theme:type("sm")):fg(theme:color("muted"))),
 					ui.rating(uiCtx, { value = rating.value, onRate = rating.onRate, size = theme:px(16) })
 				}
@@ -138,8 +180,9 @@ function menu.view(app, overlay, window)
 			{
 				height = rowHeight,
 				padding = theme:px(12),
+				gap = theme:px(ICON_GAP),
 				onClick = entry.message,
-				children = { text(entry.title):style(label) }
+				children = { iconColumn(uiCtx, theme, entry.icon), text(entry.title):style(label) }
 			}
 		)
 	end

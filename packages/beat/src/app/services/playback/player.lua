@@ -572,6 +572,8 @@ function Player:update(now)
 		local queue = self.queue
 		if queue == nil then
 			endTrack(self, true)
+			if self.player ~= nil then self.player:stop() end
+			self.loaded = false
 			return false, true
 		end
 
@@ -609,6 +611,9 @@ function Player:update(now)
 			applyVolume(self)
 			beginTrack(self,  queue:current() --[[@as beat.Track]],  0 )
 		else
+			-- Nothing comes next: the device is idle, and the client is told so rather than left
+			-- to a snapshot that may still describe the track before it ended.
+			if self.player ~= nil then self.player:stop() end
 			self.loaded = false
 			self.fadeGain = 1
 			self.fadeActive = false

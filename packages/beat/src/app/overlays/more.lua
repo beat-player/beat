@@ -8,6 +8,39 @@ local popup = require("beat.app.components.popup")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+-- Every row leads with the same glyph column, so the labels line up, and the glyph is the muted
+-- colour of a secondary control rather than the label's own.
+local ICON_SIZE = 18
+local ICON_GAP = 10
+
+---@type table<beat.Theme, wonderland.StyleBuilder>
+local iconBoxes = setmetatable({}, { __mode = "k" })
+
+---@param theme beat.Theme
+---@return wonderland.StyleBuilder
+local function iconBox(theme)
+	local box = iconBoxes[theme]
+	if box == nil then
+		local size = theme:px(ICON_SIZE)
+		box = sty():size(size, size):row():align("center"):justify("center")
+		iconBoxes[theme] = box
+	end
+	return box
+end
+
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param name string?
+---@return wonderland.Element
+local function iconColumn(ctx, theme, name)
+	if name == nil then return div():style(iconBox(theme)) end
+	return div():style(iconBox(theme)):children(ui.icon(ctx, {
+		name = name,
+		size = theme:px(ICON_SIZE),
+		colour = theme:color("muted")
+	}))
+end
+
 -- The rating row's handler, one per track rather than one per frame the menu is open.
 ---@type table<beat.Track, fun(stars: number): table>
 local rateHandlers = setmetatable({}, { __mode = "k" })
@@ -27,24 +60,29 @@ end
 --- A label row in the two now-playing panels. They are deliberately taller than a context menu
 --- row: these are the larger screens' utility menus rather than a right-click's short list.
 ---@param app beat.App
+---@param ctx beat.ui.Context
+---@param icon string?
 ---@param label string
 ---@param action any
 ---@param width number
 ---@param height number
-local function nowPlayingEntry(app, label, action, width, height)
+local function nowPlayingEntry(app, ctx, icon, label, action, width, height)
 	local theme = app.services.appearance.theme
 	return div()
 		:style(
-			sty():row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
+			sty()
+				:row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):gap(theme:px(ICON_GAP)):align("center")
+				:radius(theme:radius("sm"))
 		)
 		:hover(
 			sty()
-				:row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):align("center"):radius(theme:radius("sm"))
-				:bg(theme:color("hover"))
+				:row():w(width):h(height):pad(0, theme:px(12), 0, theme:px(12)):gap(theme:px(ICON_GAP)):align("center")
+				:radius(theme:radius("sm")):bg(theme:color("hover"))
 		):onClick(action)
-		:children(
+		:children({
+			iconColumn(ctx, theme, icon),
 			text(label):style(theme:s():wrel(1.0):text(theme:type("sm")):weight("medium"):fg(theme:color("text")):ellipsis())
-		)
+		})
 end
 
 ---@class beat.MoreAnchor
@@ -92,16 +130,16 @@ function more.view(app, overlay, window)
 	local x = anchor.x
 	local theme = app.services.appearance.theme
 	local album = app.services.library.current ? (app.services.library.current:album(track.albumId)) : nil
-	---@type { [1]: string, [2]: beat.Message }[]
+	-- The queue has its own button beside the three dots, so it is not repeated here.
+	---@type { [1]: string, [2]: string, [3]: beat.Message }[]
 	local entries = {
-		{ "Tag track", { type = "open", overlay = "tag_picker", id = track.id } },
-		{ "Add to playlist", { type = "open", overlay = "playlist_picker", kind = "track", id = track.id } }
+		{ "Tag track", "tag", { type = "open", overlay = "tag_picker", id = track.id } },
+		{ "Add to playlist", "playlists", { type = "open", overlay = "playlist_picker", kind = "track", id = track.id } }
 	}
 	if album ~= nil then
-		entries[#entries + 1] = { "Go to album", { type = "navigate", page = { kind = "album", id = album.id } } }
-		entries[#entries + 1] = { "Go to artist", { type = "navigate", page = { kind = "artist", id = album.artistId } } }
+		entries[#entries + 1] = { "Go to album", "folder", { type = "navigate", page = { kind = "album", id = album.id } } }
+		entries[#entries + 1] = { "Go to artist", "library", { type = "navigate", page = { kind = "artist", id = album.artistId } } }
 	end
-	entries[#entries + 1] = { "Open queue", { type = "open", overlay = "queue" } }
 
 	-- Under its own button, unless that would carry it past the end of the row.
 	local width = math.min(theme:px(252), rowWidth)
@@ -119,9 +157,14 @@ function more.view(app, overlay, window)
 	local rows = {}
 	if ratings then
 		rows[1] = div()
-			:style(sty():row():w(width - padding * 2):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12)):align("center"))
+			:style(
+				sty()
+					:row():w(width - padding * 2):h(rowHeight):pad(0, theme:px(12), 0, theme:px(12))
+					:gap(theme:px(ICON_GAP)):align("center")
+			)
 			:children(
 				{
+					iconColumn(ctx, theme, "star"),
 					text("Rating"):style(theme:s():w("auto"):text(theme:type("sm")):weight("medium"):fg(theme:color("muted"))),
 					ui.rating(
 						ctx,
@@ -135,7 +178,7 @@ function more.view(app, overlay, window)
 			)
 	end
 	for _, entry in ipairs(entries) do
-		rows[#rows + 1] = nowPlayingEntry(app, entry[1], entry[2], width - padding * 2, rowHeight)
+		rows[#rows + 1] = nowPlayingEntry(app, ctx, entry[2], entry[1], entry[3], width - padding * 2, rowHeight)
 	end
 
 	local panel = div()

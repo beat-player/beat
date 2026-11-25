@@ -27,6 +27,7 @@ local threading = require("threading")
 ---@field duration number?
 ---@field playing boolean?
 ---@field completed boolean?
+---@field last boolean? # Whether nothing is staged or repeated after the track that ended
 ---@field heard number?
 ---@field sampleRate number?
 ---@field written number?
@@ -48,6 +49,7 @@ local threading = require("threading")
 ---@field at number # The playhead the last snapshot reported
 ---@field trackDuration number
 ---@field playing boolean
+---@field endedId number? # The command whose last track played out with nothing after it
 ---@field sampledAt number # `now` when the snapshot was applied
 ---@field heard number
 ---@field sampleRate number?
@@ -118,6 +120,7 @@ function AudioClient.attach(commands, events, handle)
 		at = 0,
 		trackDuration = 0,
 		playing = false,
+		endedId = nil,
 		sampledAt = 0,
 		heard = 0,
 		sampleRate = nil,
@@ -227,6 +230,7 @@ function AudioClient:load(tracks, startAt, autoplay, repeatOne)
 
 	self.pendingTracks = {}
 	self.collecting = false
+	self.endedId = nil
 	self.at = startAt or 0
 	self:send({
 		kind = "load",
@@ -336,7 +340,12 @@ end
 
 ---@param snapshot beat.AudioMessage
 function AudioClient:apply(snapshot)
-	self.appliedId = snapshot.commandId or self.appliedId
+	local commandId = snapshot.commandId
+	-- The device played the last track out and has nothing after it: no snapshot queued at or
+	-- before that end can say it is playing. One from a command the app sent since is newer and
+	-- is the truth again.
+	local afterEnd = self.endedId == nil or (commandId or 0) > self.endedId
+	self.appliedId = commandId or self.appliedId
 	self.trackDuration = snapshot.duration or 0
 	self.audioIndex = snapshot.index or self.audioIndex
 	local rate = snapshot.sampleRate
@@ -346,7 +355,7 @@ function AudioClient:apply(snapshot)
 	-- this side -- a play, a seek -- is what the user is looking at, even though the device has not
 	-- caught up yet; the next snapshot carries its command id and becomes the truth.
 	if self.appliedId >= self.stateId then
-		self.playing = snapshot.playing == true
+		if afterEnd then self.playing = snapshot.playing == true end
 		self.at = snapshot.position or 0
 		self.heard = snapshot.heard or 0
 		self.written = snapshot.written
@@ -376,10 +385,18 @@ function AudioClient:update(now)
 			self:apply(event)
 		elseif kind == "ended" then
 			self.loading = false
+			-- The audio thread says nothing follows: the device has stopped, whatever a snapshot
+			-- from before this moment still says. The pause button must not outlive the track.
+			if event.last == true then
+				self.endedId = self.appliedId
+				self.playing = false
+				self.sampledAt = self.now
+			end
 			if self.onTrackEnd ~= nil then self.onTrackEnd(event.completed == true) end
 		elseif kind == "started" then
 			local index = event.index
 			if type(index) == "number" then
+				self.endedId = nil
 				self.audioIndex = index
 				if self.onStarted ~= nil then self.onStarted(index) end
 			end

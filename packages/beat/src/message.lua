@@ -197,6 +197,8 @@
 ---@class beat.DismissToastMessage: beat.MessageFields
 ---@field type "dismissToast"
 ---@field at number
+---@class beat.DebugPageMessage: beat.MessageFields
+---@field type "debugPage"
 ---@class beat.OpenURLMessage: beat.MessageFields
 ---@field type "openURL"
 ---@field url string
@@ -470,6 +472,7 @@
 --- | beat.SortMessage
 --- | beat.ToastMessage
 --- | beat.DismissToastMessage
+--- | beat.DebugPageMessage
 --- | beat.OpenURLMessage
 --- | beat.OpenPluginsFolderMessage
 --- | beat.StartScanMessage

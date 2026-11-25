@@ -5,6 +5,8 @@
 -- by id without walking the list, not so a later launch can skip the walk.
 local path = require("path")
 local names = require("beat.music.names")
+local searchFold = require("beat.music.search_fold")
+local searchMatch = require("beat.music.search_match")
 
 -- Track and album records keep only the fields a page reads for every row. The rest -- the audio
 -- details a scan writes and a plugin reads once, a cover path, a fingerprint -- live in columns on
@@ -63,8 +65,8 @@ local names = require("beat.music.names")
 ---@field tracks beat.Track[]
 ---@field searchText string? # The folded name, made on the first search
 
---- What one search answered, kept so a query that only adds characters can look in it instead of
---- the whole library.
+--- What one search answered, kept so the same query asked again -- a frame of the search page --
+--- is the same lists rather than another pass over the library.
 ---@class beat.SearchSweep
 ---@field needle string # The folded query this answers
 ---@field version number # The library version it was computed for
@@ -89,7 +91,8 @@ local names = require("beat.music.names")
 ---@field albumColumns table<string, table<number, any>> # The same for an album
 ---@field trackMeta table # Serves `columns` to the tracks this library made
 ---@field albumMeta table # Serves `albumColumns` and the computed fields to the albums
----@field sweep beat.SearchSweep? # The last search, for a longer query to narrow
+---@field sweep beat.SearchSweep? # The last search, answered again for the same query
+---@field searchWords beat.SearchWords? # The distinct words of the search text, for typos
 ---@field nextTrackId number # The id the next track is given; ids are never reused
 ---@field nextAlbumId number
 ---@field nextArtistId number
@@ -665,6 +668,31 @@ function Library:recentlyAdded(limit)
 	return list
 end
 
+---@class beat.SearchWords
+---@field words string[] # Every distinct folded word the library's text holds
+---@field letters number[] # Each word's letters a-z, as bits
+---@field known table<string, boolean>
+
+--- Adds the words of one folded text the list has not seen yet. A typo is looked for among
+--- these rather than in every title, so each distinct word is compared once per query.
+---@param vocabulary beat.SearchWords
+---@param text string
+local function learn(vocabulary, text)
+	local known, words, letters = vocabulary.known, vocabulary.words, vocabulary.letters
+	local start, length = 1, #text
+	while start <= length do
+		local stop = text:find(" ", start, true) or (length + 1)
+		local word = text:sub(start, stop - 1)
+		if not known[word] then
+			known[word] = true
+			local at = #words + 1
+			words[at] = word
+			letters[at] = searchMatch.lettersOf(word)
+		end
+		start = stop + 1
+	end
+end
+
 --- The folded text of everything a search looks in, made where it is missing. Only the first
 --- search of a library writes them; every later one finds the fields already there. They are kept
 --- on the album, artist and track because a title, an artist and an album do not change once the
@@ -672,13 +700,24 @@ end
 --- field empties.
 ---@param self beat.Library
 local function prepareSearch(self)
+	local vocabulary = self.searchWords
+	if vocabulary == nil then
+		vocabulary = { words = {}, letters = {}, known = {} } --[[@as beat.SearchWords]]
+		self.searchWords = vocabulary
+	end
+	---@cast vocabulary beat.SearchWords
+
 	for _, album in ipairs(self.albums) do
 		if album.searchText == nil then
-			album.searchText = names.fold(album.title .. "\0" .. album.artist)
+			album.searchText = searchFold.text(album.title .. " " .. album.artist)
+			learn(vocabulary, album.searchText)
 		end
 	end
 	for _, artist in ipairs(self.artists) do
-		if artist.searchText == nil then artist.searchText = names.fold(artist.name) end
+		if artist.searchText == nil then
+			artist.searchText = searchFold.text(artist.name)
+			learn(vocabulary, artist.searchText)
+		end
 	end
 	-- A track's folded text is a string of a hundred bytes and more, which is too much to keep on
 	-- thousands of track tables for a search nobody may type again: it lives in a column, so
@@ -690,78 +729,71 @@ local function prepareSearch(self)
 	end
 	for _, track in ipairs(self.tracks) do
 		if texts[track.id] == nil then
-			texts[track.id] = names.fold(track.title .. "\0" .. track.artist .. "\0" .. track.album)
+			local text = searchFold.text(track.title .. " " .. track.artist .. " " .. track.album)
+			texts[track.id] = text
+			learn(vocabulary, text)
 		end
 	end
 end
 
---- Drops the folded text the last search made. The search screen calls this when its query
---- empties: it is a few hundred kilobytes of strings kept for a search nobody is looking at, and
---- the next search folds the library again in one pass.
+--- Drops the folded text and the word list the last search made. The search screen calls this
+--- when its query empties: it is a few hundred kilobytes of strings kept for a search nobody is
+--- looking at, and the next search folds the library again in one pass.
 function Library:forgetSearch()
 	for _, album in ipairs(self.albums) do album.searchText = nil end
 	for _, artist in ipairs(self.artists) do artist.searchText = nil end
 	self.columns.searchText = nil
+	self.searchWords = nil
 	self.sweep = nil
 end
 
---- Every album, artist and track whose text holds `needle`, and the sweep to narrow from if the
---- query grows. The sweep names the library version it answers: a track added or a scan closed
---- makes the previous answer incomplete, and then there is nothing to narrow.
----@param self beat.Library
----@param needle string
----@return beat.SearchSweep
-local function sweepLibrary(self, needle)
-	prepareSearch(self)
-	local albums, artists, tracks = {}, {}, {}
-	for _, album in ipairs(self.albums) do
-		local text = album.searchText
-		if text ~= nil and text:find(needle, 1, true) then albums[#albums + 1] = album end
+--- The items of `list` the prepared query finds: those that hold every word as written first,
+--- then those that hold them with typos, each in the list's own order.
+---@param list table[] # Albums, artists or tracks, each with its folded `searchText`
+---@return table[]
+local function found(list)
+	---@type table[], table[]?
+	local exact, near = {}, nil
+	for at = 1, #list do
+		local item = list[at]
+		local score = searchMatch.score(item.searchText)
+		if score == 2 then
+			exact[#exact + 1] = item
+		elseif score == 1 then
+			near = near or {}
+			near[#near + 1] = item
+		end
 	end
-	for _, artist in ipairs(self.artists) do
-		local text = artist.searchText
-		if text ~= nil and text:find(needle, 1, true) then artists[#artists + 1] = artist end
+	if near ~= nil then
+		for at = 1, #near do exact[#exact + 1] = near[at] end
 	end
-	for _, track in ipairs(self.tracks) do
-		local text = track.searchText
-		if text ~= nil and text:find(needle, 1, true) then tracks[#tracks + 1] = track end
-	end
-	return { needle = needle, version = self.version, albums = albums, artists = artists, tracks = tracks }
+	return exact
 end
 
+--- Albums, artists and tracks whose text holds every word of the query, with or without accents,
+--- in any case and in any order; a word of four letters or more may also be off by a typo. What
+--- holds the words as typed comes before what holds them with a typo.
 ---@param query string
 ---@return beat.Album[] albums, beat.Artist[] artists, beat.Track[] tracks
 function Library:search(query)
-	local needle = names.fold(query:gsub("^%s+", ""):gsub("%s+$", ""))
+	local needle = searchFold.text(query)
 	if needle == "" then return {}, {}, {} end
 
 	local known = self.sweep
-	if known ~= nil and known.version == self.version then
-		if known.needle == needle then return known.albums, known.artists, known.tracks end
-		-- A query that only adds characters cannot match anything the shorter one did not: the
-		-- text is searched for a substring, and the longer needle holds the shorter one. So a
-		-- keystroke looks in what the last one answered rather than in the whole library.
-		if needle:sub(1, #known.needle) == known.needle then
-			local albums, artists, tracks = {}, {}, {}
-			for _, album in ipairs(known.albums) do
-				local text = album.searchText
-				if text ~= nil and text:find(needle, 1, true) then albums[#albums + 1] = album end
-			end
-			for _, artist in ipairs(known.artists) do
-				local text = artist.searchText
-				if text ~= nil and text:find(needle, 1, true) then artists[#artists + 1] = artist end
-			end
-			for _, track in ipairs(known.tracks) do
-				local text = track.searchText
-				if text ~= nil and text:find(needle, 1, true) then tracks[#tracks + 1] = track end
-			end
-			local sweep = { needle = needle, version = self.version, albums = albums, artists = artists, tracks = tracks }
-			self.sweep = sweep
-			return albums, artists, tracks
-		end
+	if known ~= nil and known.version == self.version and known.needle == needle then
+		return known.albums, known.artists, known.tracks
 	end
 
-	local sweep = sweepLibrary(self, needle)
+	prepareSearch(self)
+	local vocabulary = assert(self.searchWords)
+	searchMatch.prepare(needle, vocabulary.words, vocabulary.letters)
+	local sweep = {
+		needle = needle,
+		version = self.version,
+		albums = found(self.albums),
+		artists = found(self.artists),
+		tracks = found(self.tracks)
+	}
 	self.sweep = sweep
 	return sweep.albums, sweep.artists, sweep.tracks
 end

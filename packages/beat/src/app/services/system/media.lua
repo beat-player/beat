@@ -4,11 +4,13 @@
 --
 -- A media session answers its controls through a Java callback class, and a NativeActivity APK has
 -- no Java of its own, so the class (android/beat/MediaBridge.java) is a dex that is written to the
--- app's private storage and loaded at run time. Lua drives it through the two framework interfaces
--- it implements: a Consumer that takes what is playing as a Bundle, and an IntSupplier that hands
--- back the controls pressed since the last tick. Audio focus and a media stream at zero arrive
--- through that same queue, because only Java can hear them. Off Android this service does nothing.
+-- app's private storage and loaded at run time (see system/dex.lua). Lua drives it through the two
+-- framework interfaces it implements: a Consumer that takes what is playing as a Bundle, and an
+-- IntSupplier that hands back the controls pressed since the last tick. Audio focus and a media
+-- stream at zero arrive through that same queue, because only Java can hear them. Off Android this
+-- service does nothing.
 local platform = require("beat.platform")
+local dex = require("beat.app.services.system.dex")
 
 -- What `MediaBridge.getAsInt` answers with; a seek is -2 - the position in milliseconds.
 local NONE = -1
@@ -66,41 +68,15 @@ function Media.new(deps)
 	}, Media)
 end
 
---- The class loader MediaBridge comes from. An APK built with beat's `android.dex` carries the
---- class itself, together with the playback service Android starts from it, and the activity's
---- own loader finds it. An APK built without one does not: the dex embedded in the app is written
---- where only this app can reach it and loaded at run time instead, which gives the lock-screen
---- controls but no foreground service. Android 14 refuses to load a dex that can still be
---- written, so the file is made read-only first; one left by the last launch is replaced.
----@param jni androidapi.jni
----@param activity androidapi.ffi.NativeActivity
----@return ffi.cdata* loader
-local function bridgeLoader(jni, activity)
-	local own = jni.call(activity.clazz, "android/content/Context", "getClassLoader", "()Ljava/lang/ClassLoader;", "object")
-	local found = pcall(jni.call, own, "java/lang/ClassLoader", "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", "object", jni.string("beat.MediaBridge"))
-	if found then return own end
-
-	local files = jni.call(activity.clazz, "android/content/Context", "getFilesDir", "()Ljava/io/File;", "object")
-	local directory = jni.tostring(jni.call(files, "java/io/File", "getAbsolutePath", "()Ljava/lang/String;", "object"))
-	local file = directory .. "/media.dex"
-	os.remove(file)
-	local handle = assert(io.open(file, "wb"))
-	handle:write(require("beat.app.media_dex"))
-	handle:close()
-	local dex = jni.new("java/io/File", "(Ljava/lang/String;)V", jni.string(file))
-	jni.call(dex, "java/io/File", "setReadOnly", "()Z", "boolean")
-	return jni.new("dalvik/system/DexClassLoader", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/ClassLoader;)V", jni.string(file), jni.string(directory), nil, own)
-end
-
 --- Loads MediaBridge and starts it on the activity.
 ---@return ffi.cdata* bridge
 local function loadBridge()
-	local android = require("androidapi")
+	---@diagnostic disable-next-line: missing-module
+	local android = require("androidapi") --[[@as beat.AndroidApi]]
 	local jni = android.jni
 	local activity = assert(android.activity())
 	local bridge, err = jni.frame(function()
-		local loader = bridgeLoader(jni, activity)
-		local class = jni.call(loader, "java/lang/ClassLoader", "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", "object", jni.string("beat.MediaBridge"))
+		local class = dex.class(jni, activity, "beat.MediaBridge")
 		local instance = jni.call(class, "java/lang/Class", "newInstance", "()Ljava/lang/Object;", "object")
 		jni.call(instance, "java/util/function/Consumer", "accept", "(Ljava/lang/Object;)V", "void", activity.clazz)
 		return jni.global(instance)
@@ -112,7 +88,9 @@ end
 ---@param self beat.MediaService
 ---@param state { active: boolean, title: string?, artist: string?, album: string?, art: string?, duration: number?, position: number?, playing: boolean? }
 local function report(self, state)
-	local jni = require("androidapi").jni
+	---@diagnostic disable-next-line: missing-module
+	local android = require("androidapi") --[[@as beat.AndroidApi]]
+	local jni = android.jni
 	local bridge = assert(self.bridge)
 	local _, err = jni.frame(function()
 		local bundle = jni.new("android/os/Bundle", "()V")
@@ -145,12 +123,14 @@ end
 --- Carries out what the lock screen, the shade or a headset asked for since the last tick.
 ---@param self beat.MediaService
 local function takeCommands(self)
-	local jni = require("androidapi").jni
+	---@diagnostic disable-next-line: missing-module
+	local android = require("androidapi") --[[@as beat.AndroidApi]]
+	local jni = android.jni
 	local bridge = assert(self.bridge)
 	local playback = self.playback
 	local pauseForOtherAudio = self.settings.values.pauseForOtherAudio ~= false
 	for _ = 1, 16 do
-		local command = jni.call(bridge, "java/util/function/IntSupplier", "getAsInt", "()I", "int")
+		local command = jni.call(bridge, "java/util/function/IntSupplier", "getAsInt", "()I", "int") --[[@as number]]
 		if command == NONE then return end
 
 		local playing = playback.player:isPlaying()

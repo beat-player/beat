@@ -3,20 +3,31 @@
 -- it: the About links and Last.fm's authorization page, and the plugins page. They also want the
 -- same answer when nothing could be opened, so the failure is a toast here rather than a second
 -- copy of the platform command in each caller.
+--
+-- The phone's system bars are here too, because they belong to the platform rather than to a
+-- screen: modules/system/bars.lua follows the theme's background so the clock and battery stay
+-- readable over it.
 local fs = require("fs")
 local paths = require("beat.paths")
 local links = require("beat.app.services.system.links")
+local Bars = require("beat.app.services.system.bars")
 
 ---@class beat.SystemService: beat.Service
 ---@field toasts beat.ToastsService
+---@field systemBars beat.BarsService
 local System = {}
 System.__index = System
-System.needs = { "toasts" }
+System.needs = { "toasts", "appearance" }
 
----@param deps { toasts: beat.ToastsService }
+---@param deps { toasts: beat.ToastsService, appearance: beat.AppearanceService }
 ---@return beat.SystemService
 function System.new(deps)
-	return setmetatable({ toasts = deps.toasts }, System)
+	---@type beat.BarsService
+	local bars = Bars.new(deps.appearance)
+	return setmetatable({
+		toasts = deps.toasts,
+		systemBars = bars
+	}, System)
 end
 
 --- Open a URL and say whether it worked. The opener reports failure by returning false, and the
@@ -59,6 +70,15 @@ System.on = {
 function System:openFolder(dir)
 	local ok, opened = pcall(links.openFolder, dir)
 	return ok and opened ~= false
+end
+
+--- The phone's system bars belong to the system service: they follow the theme's background, and
+--- an automatic theme can turn them over half a day. Nothing here asks for a redraw.
+---@param now number
+---@return boolean changed
+---@return boolean busy
+function System:step(now)
+	return self.systemBars:step(now)
 end
 
 return System

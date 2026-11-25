@@ -35,11 +35,11 @@ return beat.plugin({ name = "library", version = "1.0.0", author = "beat", descr
 	handle.overlay("sort_menu", sortMenu)
 	handle.overlay("cover_view", coverView)
 
-	handle.action({ menu = "album", title = "Play album", order = 10, message = |ctx| -> { type = "playAlbum", id = assert(ctx.album).id, restart = true } })
-	handle.action({ menu = "album", title = "Add to playlist", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "album", id = assert(ctx.album).id } })
-	handle.action({ menu = "album", title = "Play next", order = 30, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id, next = true } })
-	handle.action({ menu = "album", title = "Add to queue", order = 40, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id } })
+	handle.action({ menu = "album", title = "Play album", icon = "play", order = 10, message = |ctx| -> { type = "playAlbum", id = assert(ctx.album).id, restart = true } })
+	handle.action({ menu = "album", title = "Add to playlist", icon = "playlists", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "album", id = assert(ctx.album).id } })
+	handle.action({ menu = "album", title = "Play next", icon = "next", order = 30, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id, next = true } })
+	handle.action({ menu = "album", title = "Add to queue", icon = "queue", order = 40, message = |ctx| -> { type = "queueAlbum", id = assert(ctx.album).id } })
 
-	handle.action({ menu = "track", title = "Play now", order = 10, message = |ctx| -> { type = "playTrack", trackId = assert(ctx.track).id, restart = true } })
-	handle.action({ menu = "track", title = "Add to playlist", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "track", id = assert(ctx.track).id } })
+	handle.action({ menu = "track", title = "Play now", icon = "play", order = 10, message = |ctx| -> { type = "playTrack", trackId = assert(ctx.track).id, restart = true } })
+	handle.action({ menu = "track", title = "Add to playlist", icon = "playlists", order = 20, message = |ctx| -> { type = "open", overlay = "playlist_picker", kind = "track", id = assert(ctx.track).id } })
 end })
