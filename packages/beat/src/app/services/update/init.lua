@@ -548,7 +548,7 @@ Update.on = {
 
 ---@param now number
 ---@return boolean changed
----@return boolean busy
+---@return boolean|number busy
 function Update:step(now)
 	local changed = self.dirty
 	self.dirty = false
@@ -561,7 +561,7 @@ function Update:step(now)
 		end
 	end
 
-	local busy = self.status == "checking" or self.status == "downloading"
+	local busy = (self.status == "checking" or self.status == "downloading") and 0.25 or false
 	return changed, busy
 end
 

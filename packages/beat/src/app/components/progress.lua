@@ -69,6 +69,11 @@ function progress.view(app, props)
 	local gap = theme:px(8)
 	local trackWidth = width - clockWidth * 2 - gap * 2
 
+	-- The playhead is drawn across this many pixels. The player keeps it so a tick can tell
+	-- whether moving on by a fraction of a second would change the pixel on screen: while it would
+	-- not, the canvas is the same and no frame is asked for. It changes only when the bar does.
+	player.playheadWidth = trackWidth
+
 	-- The styles are the same for every frame of every track: they are kept on the theme rather
 	-- than built again, for the width they were built for -- the one thing they depend on besides
 	-- the theme. A second progress bar in the same frame (the now-playing screen's) has its own

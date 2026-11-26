@@ -58,8 +58,6 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	private static final String CHANNEL = "playback";
 	private static final int NOTIFICATION = 1;
 	private static final String ACTION = "beat.MEDIA_CONTROL";
-	/** How often the media stream's volume is read while playing, in milliseconds. */
-	private static final long VOLUME_INTERVAL = 500;
 	private static final long ACTIONS = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
 		| PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
 		| PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_STOP;
@@ -85,22 +83,28 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	private boolean pauseForOtherAudio = true;
 	/** Whether playback is playing, as of the last report; the focus callback reads it. */
 	private boolean playing;
+	/** Whether the session has been made active, so a repeat report need not tell it again. */
+	private boolean active;
+	/** What the last report showed, so one that only moved the playhead need not rebuild it. */
+	private String reportedTitle;
+	private String reportedArtist;
+	private String reportedAlbum;
+	private long reportedDuration;
 	private boolean watchingVolume;
 	private int lastVolume;
 
 	private final AudioManager.OnAudioFocusChangeListener focusListener = this::onFocusChange;
 
-	/** Reads the media stream's volume twice a second while playing, and not at all otherwise. */
-	private final Runnable volumeWatch = new Runnable() {
+	/** Hears the media stream's volume change while playing, and not at all otherwise. */
+	private final BroadcastReceiver volumeReceiver = new BroadcastReceiver() {
 		@Override
-		public void run() {
-			if (!watchingVolume) return;
+		public void onReceive(Context ignored, Intent intent) {
+			if (intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != AudioManager.STREAM_MUSIC) return;
 			int volume = audio == null ? -1 : audio.getStreamVolume(AudioManager.STREAM_MUSIC);
 			if (pauseForOtherAudio && playing && volume == 0 && lastVolume > 0) {
 				commands.add(VOLUME_ZERO);
 			}
 			if (volume >= 0) lastVolume = volume;
-			main.postDelayed(this, VOLUME_INTERVAL);
 		}
 	};
 
@@ -203,49 +207,81 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	private void update(Bundle state) {
 		if (session == null) return;
 
+		boolean pauseBefore = pauseForOtherAudio;
 		pauseForOtherAudio = state.getBoolean("pauseForOtherAudio", true);
 		if (!pauseForOtherAudio) pausedByFocus = false;
 		if (!state.getBoolean("active")) {
 			playing = false;
+			active = false;
 			pausedByFocus = false;
 			stopVolumeWatch();
 			abandonFocus();
 			PlaybackService.release();
 			notifications.cancel(NOTIFICATION);
 			session.setActive(false);
+			// The notification and the cover are what keep the album art in memory; both are gone
+			// now, and the next report starts afresh.
+			artPath = null;
+			art = null;
+			reportedTitle = null;
+			reportedArtist = null;
+			reportedAlbum = null;
+			reportedDuration = 0;
 			return;
 		}
 
 		String title = state.getString("title", "");
 		String artist = state.getString("artist", "");
 		String album = state.getString("album", "");
-		boolean playing = state.getBoolean("playing");
+		String cover = state.getString("art");
+		if (cover != null && cover.isEmpty()) cover = null;
+		long duration = state.getLong("duration");
+		long position = state.getLong("position");
+		boolean plays = state.getBoolean("playing");
+		boolean wasPlaying = playing;
 		// Playback starting from a stop means the listener asked for it, even if it was a focus
 		// pause; a repeat report while it already plays must not drop a pause a loss just made.
-		if (playing && !this.playing) pausedByFocus = false;
-		this.playing = playing;
-		applyFocus(playing);
-		if (playing && pauseForOtherAudio) {
+		if (plays && !wasPlaying) pausedByFocus = false;
+
+		boolean sameTrack = active
+			&& title.equals(reportedTitle)
+			&& artist.equals(reportedArtist)
+			&& album.equals(reportedAlbum)
+			&& duration == reportedDuration
+			&& (cover == null ? artPath == null : cover.equals(artPath));
+		if (sameTrack && plays == wasPlaying && pauseBefore == pauseForOtherAudio) {
+			// Only the playhead moved: the session's own copy advances while it plays, so the
+			// state alone needs the new position. No metadata, no notification, no new bitmap.
+			session.setPlaybackState(playbackState(plays, position));
+			return;
+		}
+
+		playing = plays;
+		applyFocus(plays);
+		if (plays && pauseForOtherAudio) {
 			startVolumeWatch();
 		} else {
 			stopVolumeWatch();
 		}
-		loadArt(state.getString("art"));
+		loadArt(cover);
+		reportedTitle = title;
+		reportedArtist = artist;
+		reportedAlbum = album;
+		reportedDuration = duration;
 
 		MediaMetadata.Builder metadata = new MediaMetadata.Builder()
 			.putString(MediaMetadata.METADATA_KEY_TITLE, title)
 			.putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
 			.putString(MediaMetadata.METADATA_KEY_ALBUM, album)
-			.putLong(MediaMetadata.METADATA_KEY_DURATION, state.getLong("duration"));
+			.putLong(MediaMetadata.METADATA_KEY_DURATION, duration);
 		if (art != null) metadata.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art);
 		session.setMetadata(metadata.build());
 
-		session.setPlaybackState(new PlaybackState.Builder()
-			.setActions(ACTIONS)
-			.setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
-				state.getLong("position"), playing ? 1f : 0f, SystemClock.elapsedRealtime())
-			.build());
-		session.setActive(true);
+		session.setPlaybackState(playbackState(plays, position));
+		if (!active) {
+			session.setActive(true);
+			active = true;
+		}
 
 		Notification.Builder builder = Build.VERSION.SDK_INT >= 26
 			? new Notification.Builder(context, CHANNEL)
@@ -261,7 +297,7 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 			.setOnlyAlertOnce(true)
 			.setDeleteIntent(control(STOP))
 			.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "Previous", control(PREVIOUS)).build())
-			.addAction(playing
+			.addAction(plays
 				? new Notification.Action.Builder(android.R.drawable.ic_media_pause, "Pause", control(PAUSE)).build()
 				: new Notification.Action.Builder(android.R.drawable.ic_media_play, "Play", control(PLAY)).build())
 			.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Next", control(NEXT)).build())
@@ -272,12 +308,22 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		Notification shown = builder.build();
 		notifications.notify(NOTIFICATION, shown);
 		// While it plays the app has to keep running off screen, which only a foreground service
-		// earns it; paused, it gives that up and keeps the notification.
-		if (playing) {
-			PlaybackService.hold(context, shown);
+		// earns it; paused, it gives that up and keeps the notification. Promoting it again on
+		// every report is a second startForeground, so only the start of playback does it.
+		if (plays) {
+			if (!wasPlaying) PlaybackService.hold(context, shown);
 		} else {
 			PlaybackService.release();
 		}
+	}
+
+	/** The session's view of playback, at `position` milliseconds. */
+	private PlaybackState playbackState(boolean plays, long position) {
+		return new PlaybackState.Builder()
+			.setActions(ACTIONS)
+			.setState(plays ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
+				position, plays ? 1f : 0f, SystemClock.elapsedRealtime())
+			.build();
 	}
 
 	/**
@@ -350,17 +396,27 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	}
 
 	private void startVolumeWatch() {
-		if (watchingVolume || audio == null) return;
+		if (watchingVolume || audio == null || context == null) return;
 		watchingVolume = true;
 		// Starting at zero is not a fall to zero: only a drop while playing pauses.
 		lastVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-		main.postDelayed(volumeWatch, VOLUME_INTERVAL);
+		IntentFilter filter = new IntentFilter(AudioManager.VOLUME_CHANGED_ACTION);
+		if (Build.VERSION.SDK_INT >= 33) {
+			// VOLUME_CHANGED_ACTION is a system broadcast, which NOT_EXPORTED would not deliver.
+			context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED);
+		} else {
+			context.registerReceiver(volumeReceiver, filter);
+		}
 	}
 
 	private void stopVolumeWatch() {
 		if (!watchingVolume) return;
 		watchingVolume = false;
-		main.removeCallbacks(volumeWatch);
+		try {
+			context.unregisterReceiver(volumeReceiver);
+		} catch (IllegalArgumentException alreadyGone) {
+			// Not registered any more; nothing to take down.
+		}
 	}
 
 	private PendingIntent control(int command) {

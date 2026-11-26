@@ -3,6 +3,7 @@
 -- puts on `emit` for the moment each transition happens.
 local test = require("lde-test")
 local fs = require("fs")
+local json = require("json")
 local paths = require("beat.paths")
 local Playback = require("beat.app.services.playback")
 local Queue = require("beat.app.services.playback.queue")
@@ -427,4 +428,64 @@ test.it("adds an album to the end of the queue", function()
 	test.falsy(service.player.pendingNextAt)
 	test.equal(assert(service.player.queue).order[3], 3, "the album follows everything already queued")
 	test.equal(assert(service.player.queue).order[4], 4)
+end)
+
+test.it("asks for thirty frames a second while a track plays", function()
+	local service = start()
+	service:playAlbum(albumA.id, false)
+
+	local _, busy = service:step(0)
+	test.equal(busy, 1 / 30, "a playing track's playhead and meter move at thirty frames a second")
+
+	service:pause()
+	local _, idle = service:step(0)
+	test.equal(idle, false, "a paused player with no meter easing asks for nothing")
+end)
+
+test.it("writes the session every thirty seconds while visible", function()
+	local service = start()
+	service:playAlbum(albumA.id, false)
+	-- The queue change settles after SESSION_DELAY and is that baseline write.
+	service:step(0)
+	service:step(1)
+	test.equal(service.sessionDueAt, nil, "the queue change was written")
+
+	local position = 0
+	local backend = assert(service.player.player)
+	backend.position = function() return position end
+	position = 29
+	service:step(2)
+	test.equal(service.sessionDueAt, nil, "a play head under the stride is not written")
+
+	position = 30
+	service:step(3)
+	test.truthy(service.sessionDueAt ~= nil, "a stride reached schedules a write")
+	service:step(4)
+	test.equal(service.sessionDueAt, nil, "and writes it a second later")
+
+	local saved = assert(json.decode(assert(fs.read(paths.file("session.json"))))):unpack()
+	---@cast saved { seconds: number }
+	test.equal(math.floor(saved.seconds), 30, "the file holds the place the stride reached")
+end)
+
+test.it("writes the session once a minute while hidden", function()
+	local service = start()
+	service:playAlbum(albumA.id, false)
+
+	local position = 0
+	local backend = assert(service.player.player)
+	backend.position = function() return position end
+	service:step(0)
+	service:step(1)
+	service.player:setBackground(true)
+	service:flush()
+	test.equal(service.sessionDueAt, nil)
+
+	position = 59
+	service:step(2)
+	test.equal(service.sessionDueAt, nil, "under a hidden stride nothing is written")
+
+	position = 60
+	service:step(3)
+	test.truthy(service.sessionDueAt ~= nil, "a minute hidden is a stride")
 end)

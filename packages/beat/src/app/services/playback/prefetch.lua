@@ -19,7 +19,10 @@ local native = require("threading.native")
 -- the reader stops filling here and waits for the audio side to drain.
 local READ_AHEAD_SECONDS = 2.5
 
--- How long a state that must wait for the reader sleeps before looking for messages again.
+-- How long a side that can only poll sleeps, and how long a reader that failed sleeps before it lets
+-- go of its channels: long enough for the app to attach and read the error. A reader with nothing
+-- left to do does not poll at all -- it blocks on its command channel until the app seeks or closes
+-- it, which costs no wakeups.
 local WAIT_MS = 50
 
 ---@class beat.PrefetchLib
@@ -177,7 +180,9 @@ function Prefetch.run(path, commandAddress, eventAddress, startFrame)
 		if quit then break end
 
 		if stoppedReading then
-			commands:wait(WAIT_MS)
+			-- The file ended, failed, or the app asked for nothing more: no data can be produced
+			-- until a seek resets the generation or a quit ends the reader, and both push.
+			commands:wait(math.huge)
 		else
 			local lead = writeFrame - consumed
 			local room = math.min(capacity - lead, chunkFrames)
@@ -188,8 +193,9 @@ function Prefetch.run(path, commandAddress, eventAddress, startFrame)
 					events:push({ kind = "ended", generation = generation })
 					stoppedReading = true
 				else
-					-- The ring is full: wait for the audio side to take some, or for a seek.
-					commands:wait(WAIT_MS)
+					-- The ring is full: wait for the audio side to take some, which pushes a
+					-- `consumed` token, or for a seek or a close, which push too.
+					commands:wait(math.huge)
 				end
 			else
 				local frames, readError = source:read(scratch, room)
@@ -229,6 +235,8 @@ end
 ---@field ringChannels number
 ---@field readPos number
 ---@field buffered number
+---@field consumedAt number # The read position the reader was last told about
+---@field consumedLead number # How much the audio side may take before the reader is woken again
 ---@field generation number
 ---@field ended boolean
 ---@field error string?
@@ -254,6 +262,8 @@ function Prefetch.new(track)
 		ringChannels = 0,
 		readPos = 0,
 		buffered = 0,
+		consumedAt = 0,
+		consumedLead = 1024,
 		generation = 0,
 		ended = false,
 		error = nil,
@@ -338,6 +348,9 @@ function Source:take(block)
 			if type(address) == "string" then self.ring = ffi.cast("int16_t*", decode(address)) end
 			self.capacity = event.capacity or self.capacity
 			self.ringChannels = event.channels or self.ringChannels
+			-- Wake the reader when half the ring has drained rather than on every read: the audio
+			-- side then has half a ring to fill from, and the reader sleeps between those wakes.
+			self.consumedLead = math.max(1024, math.floor(self.capacity / 2))
 			if self.sampleRate <= 0 then self.sampleRate = event.sampleRate or 0 end
 			if self.channels <= 0 then self.channels = event.channels or 0 end
 			if self.frameCount <= 0 then self.frameCount = event.frameCount or 0 end
@@ -391,7 +404,12 @@ function Source:read(out, frames)
 				end
 				self.readPos += count
 				local commands = self.commands
-				if commands ~= nil then commands:push({ kind = "consumed", read = self.readPos }) end
+				if commands ~= nil and self.readPos - self.consumedAt >= self.consumedLead then
+					-- One token per half ring is what wakes a reader waiting on a full ring; a
+					-- token per read would wake it fifty times a second for nothing.
+					self.consumedAt = self.readPos
+					commands:push({ kind = "consumed", read = self.readPos })
+				end
 				return count
 			end
 		end
@@ -411,6 +429,7 @@ function Source:seek(frame)
 	self.generation += 1
 	self.readPos = frame
 	self.buffered = frame
+	self.consumedAt = frame
 	self.ended = false
 	if self.commands ~= nil then
 		self.commands:push({ kind = "seek", frame = frame, generation = self.generation })

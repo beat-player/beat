@@ -85,6 +85,55 @@ local function accentChannels(theme)
 	return accent
 end
 
+-- How many steps an alpha is quantised to. A canvas keeps a packed colour by the table it was
+-- handed, so a table whose alpha is written again for each bar would draw the first bar's alpha on
+-- every bar after it. Sixteen steps are under what the eye resolves at these opacities, and they
+-- mean sixteen stable tables per shape for the whole strip.
+local PALETTE_STEPS = 16
+
+---@class beat.components.SpectrumPalette
+---@field wash { r: number, g: number, b: number, a: number }[]
+---@field core { r: number, g: number, b: number, a: number }[]
+---@field baseAlpha number
+---@field levelAlpha number
+---@field maxAlpha number
+
+--- The wash and core colours of a meter, made once per mode and intensity and then never written
+--- again: every table handed to `canvas:rect` keeps one colour for as long as the theme lives, so
+--- the canvas can pack it once. A new theme -- or a step of a crossfade -- has a new cache.
+---@param theme beat.Theme
+---@param meter beat.components.SpectrumMeter
+---@param mobile boolean
+---@param intensity number
+---@return beat.components.SpectrumPalette
+local function paletteFor(theme, meter, mobile, intensity)
+	local palette = meter.palettes[mobile]
+	if palette ~= nil then return palette end
+
+	local accent = accentChannels(theme)
+	local baseAlpha = mobile and MOBILE_ALPHA_FLOOR or ALPHA_FLOOR
+	local levelAlpha = mobile and MOBILE_ALPHA_RANGE or ALPHA_RANGE
+	local maxAlpha = (baseAlpha + levelAlpha) * intensity
+	---@type { r: number, g: number, b: number, a: number }[]
+	local wash = {}
+	---@type { r: number, g: number, b: number, a: number }[]
+	local core = {}
+	for step = 0, PALETTE_STEPS - 1 do
+		local alpha = maxAlpha * step / (PALETTE_STEPS - 1)
+		wash[step] = { r = accent.r, g = accent.g, b = accent.b, a = alpha * 0.35 }
+		core[step] = { r = accent.r, g = accent.g, b = accent.b, a = alpha }
+	end
+	palette = { wash = wash, core = core, baseAlpha = baseAlpha, levelAlpha = levelAlpha, maxAlpha = maxAlpha }
+	meter.palettes[mobile] = palette
+	return palette
+end
+
+-- The level of every bar a draw works out, filled by a pass of its own before the shapes are
+-- drawn: a loop inside the draw loop is a root trace the compiler aborts on, so the levels are
+-- computed flat first and read flat after. Draws run one at a time and every pass fills the whole
+-- array before anything reads it, so one array serves every strip.
+local BAR_LEVELS = {}
+
 --- The strip, in the room the element was given. The levels are read here, when the shapes are
 --- drawn, and not when the view was built: the service mutates the table it hands out, so a
 --- repaint of the screen already built draws the meter as it is now. A strip that is silent draws
@@ -92,78 +141,81 @@ end
 ---@param app beat.App
 ---@param canvas wonderland.Canvas
 ---@param theme beat.Theme
----@param levels number[]
+---@param meter beat.components.SpectrumMeter
 ---@param intensity number
 ---@param reach number
 ---@param bold boolean
-local function drawMeter(app, canvas, theme, levels, intensity, reach, bold)
+local function drawMeter(app, canvas, theme, meter, intensity, reach, bold)
+	local levels = meter.levels
+	-- A flat scan rather than one that breaks: a loop left early is a root trace the compiler
+	-- abandons. The strip is a few dozen bands, so reading them all costs nothing.
 	local active = false
 	for at = 1, #levels do
-		if levels[at] > 0.01 then
-			active = true
-			break
-		end
+		active = active or levels[at] > 0.01
 	end
 	if not active then return end
 
 	-- The phone breakpoint is the window's, read from the strip's own width so the same view is a
 	-- phone or a desktop depending on the window it lands in.
 	local mobile = metrics.mobile(app, canvas.width)
-	local baseAlpha = mobile and MOBILE_ALPHA_FLOOR or ALPHA_FLOOR
-	local levelAlpha = mobile and MOBILE_ALPHA_RANGE or ALPHA_RANGE
-	-- The two shapes of a bar, kept as tables across the loop and across the frames: a canvas reads
-	-- the colour when the shape is added to the frame, so only the alpha has to be set for each
-	-- bar, and the tables themselves are the same ones the last frame drew with.
-	---@type table<string, any>
-	local cache = theme:cache()
-	local wash = cache.spectrumWash --[[@as { r: number, g: number, b: number, a: number }?]]
-	if wash == nil then
-		local accent = accentChannels(theme)
-		wash = { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-		cache.spectrumWash, cache.spectrumCore = wash, { r = accent.r, g = accent.g, b = accent.b, a = 0 }
-	end
-	local core = cache.spectrumCore --[[@as { r: number, g: number, b: number, a: number }]]
+	local palette = paletteFor(theme, meter, mobile, intensity)
+	local washColours, coreColours = palette.wash, palette.core
+	local baseAlpha, levelAlpha, maxAlpha = palette.baseAlpha, palette.levelAlpha, palette.maxAlpha
 	local count, gap, barWidth = barLayout(theme, canvas.width, mobile, bold)
 	local bands = #levels
 	local spread = math.max(1, count - 1)
+	local height = canvas.height
+	local barLevels = BAR_LEVELS
 
-	for at = 1, count do
-		local level
-		if count < bands then
-			-- Fewer bars than bands: a bar is the loudest of the bands it covers, so a hit in any
-			-- of them moves it rather than falling between two sampled ones.
-			local first = math.floor((at - 1) * bands / count) + 1
-			local last = math.max(first, math.floor(at * bands / count))
-			level = 0
-			for band = first, last do
-				if levels[band] > level then level = levels[band] end
-			end
-		else
+	-- Every bar's level first, in a flat pass: the drawing loop below holds no loop of its own,
+	-- which is what the trace compiler needs. Each pass writes all `count` entries, so nothing
+	-- from an earlier, wider strip is read back.
+	if count < bands then
+		-- Fewer bars than bands: a bar is the loudest of the bands it covers, so a hit in any of
+		-- them moves it rather than falling between two sampled ones. Each band belongs to exactly
+		-- one bar -- `ceil(band * count / bands)` -- so one pass over the bands fills them all.
+		for at = 1, count do barLevels[at] = 0 end
+		for band = 1, bands do
+			local at = math.floor((band * count + bands - 1) / bands)
+			local value = levels[band] or 0
+			if value > barLevels[at] then barLevels[at] = value end
+		end
+	else
+		for at = 1, count do
 			local position = (at - 1) / spread * (bands - 1) + 1
 			local lower = math.floor(position)
 			local upper = math.min(bands, lower + 1)
 			local mix = position - lower
-			level = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
+			barLevels[at] = (levels[lower] or 0) * (1 - mix) + (levels[upper] or 0) * mix
 		end
-		local barHeight = math.max(2, level * canvas.height * reach)
-		local x = (at - 1) * (barWidth + gap)
-		local alpha = (baseAlpha + level * levelAlpha) * intensity
+	end
 
-		-- A wider, nearly transparent pass and a narrower core: at this opacity it reads as a
-		-- blurred wash behind the bar rather than a row of hard rectangles.
-		wash.a = alpha * 0.35
-		canvas:rect(x - 2, canvas.height - barHeight - 1, barWidth + 4, barHeight + 1, wash, 3)
-		core.a = alpha
-		canvas:rect(x, canvas.height - barHeight, barWidth, barHeight, core, math.max(1, barWidth / 3))
+	for at = 1, count do
+		local level = barLevels[at]
+		-- A bar under a percent of its height is a two-pixel smudge at the faintest alpha: nothing
+		-- to see, and one rect fewer to pack on a quiet passage.
+		if level > 0.01 then
+			local step = math.floor((baseAlpha + level * levelAlpha) / maxAlpha * (PALETTE_STEPS - 1) + 0.5)
+			if step > PALETTE_STEPS - 1 then step = PALETTE_STEPS - 1 end
+			local barHeight = math.max(2, level * height * reach)
+			local x = (at - 1) * (barWidth + gap)
+
+			-- A wider, nearly transparent pass and a narrower core: at this opacity it reads as a
+			-- blurred wash behind the bar rather than a row of hard rectangles. The colours are
+			-- the palette's own tables, so a repaint packs the same colour instead of a new one.
+			canvas:rect(x - 2, height - barHeight - 1, barWidth + 4, barHeight + 1, washColours[step], 3)
+			canvas:rect(x, height - barHeight, barWidth, barHeight, coreColours[step], math.max(1, barWidth / 3))
+		end
 	end
 end
 
 --- The strip's draw, kept for the theme and what it is asked for rather than made for every
 --- frame: the bar and the now-playing screen ask for it with their own intensity, and a closure
 --- made in the view is one the trace compiler gives up on.
---- One strip a frame draws, as its draw and the levels it was made for.
+--- One strip a frame draws, as its draw, the levels it was made for, and the colours per mode.
 ---@class beat.components.SpectrumMeter
 ---@field levels number[]
+---@field palettes table<boolean, beat.components.SpectrumPalette> # Colours, one palette per phone-or-desktop
 ---@field draw fun(canvas: wonderland.Canvas)
 
 --- The draw of one meter, made where the meter is made: it reads the levels from the record so a
@@ -179,7 +231,7 @@ end
 ---@return fun(canvas: wonderland.Canvas)
 local function meterDraw(app, theme, intensity, reach, bold, meter)
 	return function(canvas)
-		drawMeter(app, canvas, theme, meter.levels, intensity, reach, bold)
+		drawMeter(app, canvas, theme, meter, intensity, reach, bold)
 	end
 end
 
@@ -207,7 +259,7 @@ local function meterOf(app, theme, levels, intensity, reach, bold)
 	end
 	local meter = byIntensity[reach]
 	if meter == nil then
-		meter = { levels = levels }
+		meter = { levels = levels, palettes = {} }
 		meter.draw = meterDraw(app, theme, intensity, reach, bold, meter)
 		byIntensity[reach] = meter
 	end

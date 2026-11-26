@@ -154,11 +154,11 @@ end
 
 ---@param now number
 ---@return boolean? changed
----@return boolean? busy
+---@return boolean|number? busy
 function Metadata:step(now)
 	local handle = self.handle
 	if handle == nil then return nil end
-	if not handle:done() then return nil, true end
+	if not handle:done() then return nil, 0.25 end
 
 	local job = assert(self.running)
 	self.handle = nil
@@ -174,7 +174,7 @@ function Metadata:step(now)
 	end
 	self.nextJob = self.nextJob + 1
 	startNext(self)
-	return true, self.handle ~= nil
+	return true, self.handle ~= nil and 0.25 or false
 end
 
 function Metadata:close()

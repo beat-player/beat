@@ -26,6 +26,8 @@ local AudioClient = require("beat.app.services.playback.audio_client")
 ---@field pendingNextAt number?
 ---@field loaded boolean
 ---@field lastPosition number
+---@field playheadWidth number? # Pixels the progress bar draws its playhead across; the view keeps it here
+---@field lastPlayheadPixel number? # The pixel the playhead was last drawn at, so it asks for a frame only when it moves
 ---@field orderDirty boolean
 ---@field loadedRepeatMode "off"|"all"|"one"
 ---@field fadeGain number
@@ -57,6 +59,8 @@ function Player.new()
 		pendingNextAt = nil,
 		loaded = false,
 		lastPosition = 0,
+		playheadWidth = nil,
+		lastPlayheadPixel = nil,
 		orderDirty = false,
 		loadedRepeatMode = "off",
 		fadeGain = 1,
@@ -137,6 +141,7 @@ function Player:reload(isPlaying, fade)
 	player:close()
 	self.loaded = false
 	self.lastPosition = 0
+	self.lastPlayheadPixel = nil
 	local startAt = self.startAt
 	self.startAt = nil
 
@@ -343,6 +348,7 @@ function Player:stop()
 	endTrack(self, false)
 	self.loaded = false
 	self.lastPosition = 0
+	self.lastPlayheadPixel = nil
 	self.pendingNextAt = nil
 	self.fadeGain = 1
 	self.fadeActive = false
@@ -638,6 +644,20 @@ function Player:update(now)
 	local position = player:position()
 	if position == self.lastPosition then return false, false end
 	self.lastPosition = position
+
+	-- What the bar draws is a nub at a whole pixel: a move inside the pixel the last frame drew
+	-- is the same picture, so it is not worth a frame. The width is what the view that draws the
+	-- bar kept here; without one, or with a track whose length is not known yet, every move is
+	-- drawn as it always was.
+	local width = self.playheadWidth
+	if width ~= nil and width > 0 then
+		local duration = self:duration()
+		if duration > 0 then
+			local pixel = math.floor(position / duration * width)
+			if pixel == self.lastPlayheadPixel then return false, false end
+			self.lastPlayheadPixel = pixel
+		end
+	end
 
 	return true, false
 end

@@ -16,6 +16,10 @@ local MIN_DURATION = 30
 local MAX_THRESHOLD = 240
 local SEEK_SLOP = 2
 
+-- What `take` hands back when there is nothing queued: a shared table no caller writes, so the
+-- per-tick call allocates nothing. The next queued scrobble starts a fresh table.
+local EMPTY = {}
+
 ---@class beat.Scrobble
 ---@field trackId number
 ---@field title string
@@ -76,8 +80,14 @@ function Scrobbler:update(track, position, playing, now)
 
 	if not self.queued and track.duration >= MIN_DURATION and self.played >= threshold(track.duration) then
 		self.queued = true
-		if #self.queue >= 512 then table.remove(self.queue, 1) end
-		self.queue[#self.queue + 1] = {
+		local queue = self.queue
+		if queue == EMPTY then
+			queue = {}
+			self.queue = queue
+		elseif #queue >= 512 then
+			table.remove(queue, 1)
+		end
+		queue[#queue + 1] = {
 			trackId = track.id,
 			title = track.title,
 			artist = track.artist,
@@ -94,7 +104,8 @@ end
 ---@return beat.Scrobble[]
 function Scrobbler:take()
 	local queue = self.queue
-	self.queue = {}
+	if #queue == 0 then return EMPTY end
+	self.queue = EMPTY
 	return queue
 end
 

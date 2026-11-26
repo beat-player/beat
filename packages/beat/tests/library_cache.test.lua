@@ -45,6 +45,18 @@ local function file(name, artist)
 	}
 end
 
+--- Every track as the cache writes it, so what a save and a load kept can be compared field by field.
+---@param library beat.Library
+---@return table[]
+local function packed(library)
+	local records = {}
+	for i, track in ipairs(library.tracks) do
+		local album = library:album(track.albumId)
+		records[i] = LibraryCache.pack(track, album?.key)
+	end
+	return records
+end
+
 test.it("loads a scan's albums back as the scan made them", function()
 	local library = Library.new(ROOT)
 	library:add(file("01 - Heard Em Say", "Kanye West, Adam Levine"))
@@ -169,6 +181,59 @@ test.it("keeps each track's fingerprint, so tags stay attached across a launch",
 
 	local loaded = assert(LibraryCache.load(ROOT))
 	test.equal(loaded.tracks[1].fingerprint, "0123456789abcdef")
+end)
+
+test.it("writes every field of a track and reads it back", function()
+	local library = Library.new(ROOT)
+	for i, name in ipairs({ "01 - Heard Em Say", "02 - Gold Digger", "03 - Touch The Sky" }) do
+		local info, entry = file(name, "Kanye West")
+		info.tags.track = i
+		info.tags.disc = 1
+		info.tags.date = "2005-08-30"
+		info.tags.genre = "Hip-Hop"
+		info.tags.albumArtist = "Kanye West"
+		info.fingerprint = string.rep(tostring(i), 16)
+		library:add(info, entry, ROOT .. "/Late Registration/cover.jpg", "/cache/cover-" .. i .. ".jpg")
+	end
+	library:finish()
+
+	test.equal(LibraryCache.save(library), true)
+	local loaded = assert(LibraryCache.load(ROOT))
+	test.equal(#loaded.tracks, 3, "every track is read back")
+	test.deepEqual(packed(loaded), packed(library), "with every field the cache writes")
+	test.falsy(fs.isfile(paths.file("library.json") .. ".tmp"), "and no temp file is left behind")
+	fs.delete(paths.file("library.json"))
+end)
+
+test.it("writes a library larger than one batch and reads every track back", function()
+	local library = Library.new(ROOT)
+	-- Small records, but enough of them to cross many 64 KiB batches, including a track split across
+	-- two writes and the last one landing exactly at a flush.
+	for i = 1, 2000 do
+		local title = "Track " .. i
+		local info = {
+			format = "FLAC",
+			duration = 200,
+			sampleRate = 44100,
+			channels = 2,
+			hasPicture = false,
+			tags = { title = title, artist = "Kanye West", album = "Late Registration", track = i }
+		}
+		library:add(info, {
+			path = ROOT .. "/Late Registration/" .. title .. ".flac",
+			dir = ROOT .. "/Late Registration",
+			name = title .. ".flac",
+			ext = "flac",
+			modifyTime = i
+		})
+	end
+	library:finish()
+
+	test.equal(LibraryCache.save(library), true)
+	local loaded = assert(LibraryCache.load(ROOT))
+	test.equal(#loaded.tracks, 2000, "every track is read back")
+	test.deepEqual(packed(loaded), packed(library), "across every batch boundary")
+	fs.delete(paths.file("library.json"))
 end)
 
 test.it("hands a scan records for the tracks a cache could vouch for", function()

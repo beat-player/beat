@@ -295,3 +295,35 @@ test.it("starts a paused track again when it was paused at its end", function()
 	test.truthy(player:isPlaying())
 	test.truthy(calls.closes > closes, "the queue is staged again rather than resumed at the end")
 end)
+
+test.it("asks for a frame only when the playhead moves a pixel", function()
+	local player = Player.new()
+	local position = 0
+	player.player = fake({
+		isPlaying = function() return true end,
+		position = function() return position end,
+		duration = function() return 100 end,
+		close = function() end,
+		enqueue = function() end,
+		play = function() end,
+		pause = function() end,
+		seek = function() end,
+		stop = function() end,
+		update = function() end,
+		setVolume = function() end
+	})
+	player:playTracks({ track(1, "/tmp/one.wav", 100) }, 1)
+	player.playheadWidth = 100
+	player.lastPlayheadPixel = 0
+	player.lastPosition = 0
+
+	position = 0.5
+	test.falsy(player:update(10), "a move inside the pixel the bar drew is the same frame")
+
+	position = 1.5
+	test.truthy(player:update(10), "the next pixel is worth a frame")
+
+	player.playheadWidth = nil
+	position = 1.6
+	test.truthy(player:update(10), "with no width a move is drawn as it always was")
+end)

@@ -10,9 +10,63 @@ local Session = require("beat.app.services.playback.session")
 local Spectrum = require("beat.app.services.playback.spectrum")
 
 -- A change to the queue comes in bursts -- a shuffle, then a skip -- so it is written once they
--- settle. While a track plays, its place is written this often, so a crash loses little of it.
+-- settle. While a track plays, its place is written this often, so a crash loses little of it: once
+-- every thirty seconds on a window somebody is looking at, and every minute once it is hidden and
+-- nothing is drawn. Both are only the place inside the track: the queue itself is encoded once and
+-- reused until one of its own fields changes.
 local SESSION_DELAY = 1
-local SESSION_STRIDE = 10
+local SESSION_STRIDE = 30
+local BACKGROUND_SESSION_STRIDE = 60
+
+--- Whether the part of the session the queue owns -- everything `Queue:pack` writes -- differs
+--- from what was last written. The queue mutates in place, so the arrays it replaces and the
+--- numbers it moves are compared rather than a string built from them.
+---@param self beat.PlaybackService
+---@param queue beat.Queue
+local function queueChangedForSession(self, queue)
+	return queue ~= self.sessionQueue
+		or queue.tracks ~= self.sessionTracks
+		or queue.order ~= self.sessionOrder
+		or queue.naturalOrder ~= self.sessionNaturalOrder
+		or #queue.order ~= self.sessionOrderCount
+		or queue.position ~= self.sessionPosition
+		or queue.repeatMode ~= self.sessionRepeatMode
+		or queue.shuffle ~= self.sessionShuffle
+		or queue.source ~= self.sessionSource
+end
+
+--- Takes the queue and play head as they stand for the next comparison, after a write or at
+--- start-up. The encoded queue string is kept: a later write that only moves the play head reuses
+--- it rather than encoding the paths, order and settings again.
+---@param self beat.PlaybackService
+local function rememberSession(self)
+	local queue = self.player.queue
+	if queue ~= nil then
+		self.sessionQueue = queue
+		self.sessionTracks = queue.tracks
+		self.sessionOrder = queue.order
+		self.sessionNaturalOrder = queue.naturalOrder
+		self.sessionOrderCount = #queue.order
+		self.sessionPosition = queue.position
+		self.sessionRepeatMode = queue.repeatMode
+		self.sessionShuffle = queue.shuffle
+		self.sessionSource = queue.source
+	else
+		self.sessionQueue = nil
+		self.sessionTracks = nil
+		self.sessionOrder = nil
+		self.sessionNaturalOrder = nil
+		self.sessionOrderCount = 0
+		self.sessionPosition = 0
+		self.sessionRepeatMode = nil
+		self.sessionShuffle = nil
+		self.sessionSource = nil
+		self.sessionQueueJson = nil
+	end
+	local stride = self.player.background and BACKGROUND_SESSION_STRIDE or SESSION_STRIDE
+	self.sessionBucket = math.floor(self.player:position() / stride)
+	self.sessionKey = self:sessionKeyOf()
+end
 
 ---@class beat.PlaybackService: beat.Service
 ---@field player beat.Player
@@ -25,6 +79,17 @@ local SESSION_STRIDE = 10
 ---@field emit fun(message: table) # Sends an event to whoever is listening; delivered after this message
 ---@field sessionKey string # What the session file holds, as `sessionKeyOf` puts it
 ---@field sessionDueAt number? # When a changed session is to be written
+---@field sessionQueue beat.Queue? # The queue as last written, and the fields below, so a tick compares numbers instead of building a key
+---@field sessionTracks beat.Track[]?
+---@field sessionOrder number[]?
+---@field sessionNaturalOrder number[]?
+---@field sessionOrderCount number
+---@field sessionPosition number
+---@field sessionRepeatMode string?
+---@field sessionShuffle boolean?
+---@field sessionSource string?
+---@field sessionBucket number? # The SESSION_STRIDE-sized step of the play head last written
+---@field sessionQueueJson string? # The queue's encoded part, reused until the queue itself changes
 ---@field shownSecond number? # The second of the track the bar's clock was last laid out for
 ---@field shownTrackId number? # And the track and whether it played, which the bar is laid out from
 ---@field shownPlaying boolean?
@@ -52,7 +117,20 @@ function Playback.new(deps)
 		-- The audio thread writes the PCM the meter is made of into the ring the player made.
 		spectrum = nil,
 		shownLoading = nil,
-		lastListenedTrackId = nil
+		lastListenedTrackId = nil,
+		sessionKey = "",
+		sessionDueAt = nil,
+		sessionQueue = nil,
+		sessionTracks = nil,
+		sessionOrder = nil,
+		sessionNaturalOrder = nil,
+		sessionOrderCount = 0,
+		sessionPosition = 0,
+		sessionRepeatMode = nil,
+		sessionShuffle = nil,
+		sessionSource = nil,
+		sessionBucket = nil,
+		sessionQueueJson = nil
 	}, Playback)
 
 	local pcm = self.player.pcm --[[@as beat.PcmRing]]
@@ -63,7 +141,7 @@ function Playback.new(deps)
 	self.player.isMuted = values.isMuted
 
 	self:restoreSession()
-	self.sessionKey = self:sessionKeyOf()
+	rememberSession(self)
 
 	-- The player knows when a track actually starts or stops; everything listening to playback
 	-- -- the tag store, Last.fm, a plugin -- hears it as a message rather than watching the queue.
@@ -99,11 +177,12 @@ function Playback:restoreSession()
 end
 
 --- What would be written, in a form that changes when the file would: the queue, where its play
---- head is, and -- to a stride -- how far into the track.
+--- head is, and -- to the stride the window's state asks for -- how far into the track.
 ---@return string
 function Playback:sessionKeyOf()
 	local queue = self.player.queue
 	if queue == nil then return "" end
+	local stride = self.player.background and BACKGROUND_SESSION_STRIDE or SESSION_STRIDE
 	return table.concat({
 		tostring(queue),
 		tostring(queue.tracks),
@@ -113,8 +192,21 @@ function Playback:sessionKeyOf()
 		queue.repeatMode,
 		tostring(queue.shuffle),
 		queue.source,
-		math.floor(self.player:position() / SESSION_STRIDE)
+		math.floor(self.player:position() / stride)
 	}, "|")
+end
+
+--- Whether a tick would write something the file does not already hold. Compared field by field:
+--- this runs every tick, so it does not build the key or pack the queue to find out. The queue
+--- itself is everything `Queue:pack` keeps; the play head in it moves on a skip, while how far
+--- into the track it is moves every frame and is compared only once per stride.
+---@return boolean
+function Playback:sessionChanged()
+	local queue = self.player.queue
+	if queue == nil then return self.sessionKey ~= "" end
+	if queueChangedForSession(self, queue) then return true end
+	local stride = self.player.background and BACKGROUND_SESSION_STRIDE or SESSION_STRIDE
+	return math.floor(self.player:position() / stride) ~= self.sessionBucket
 end
 
 --- Writes where listening is now. The window closing asks for it at once. A launch that never had
@@ -122,8 +214,24 @@ end
 function Playback:flush()
 	local queue = self.player.queue
 	if queue == nil and self.sessionKey == "" then return end
-	Session.save({ queue = queue ? (queue:pack()) : nil, seconds = (self.player:position()) })
-	self.sessionKey = self:sessionKeyOf()
+
+	-- The queue is most of the file and changes rarely. A write that only moves the play head
+	-- hands `Session.save` the queue's encoded part from the last one instead of encoding it again;
+	-- while the same queue is playing, this is what keeps a position save from touching its paths.
+	local packed = nil
+	local queueJson = nil
+	if queue ~= nil then
+		if self.sessionQueueJson == nil or queueChangedForSession(self, queue) then
+			local packedQueue = queue:pack()
+			packed = packedQueue
+			queueJson = Session.encodeQueue(packedQueue)
+			self.sessionQueueJson = queueJson
+		else
+			queueJson = self.sessionQueueJson
+		end
+	end
+	Session.save({ queue = packed, seconds = self.player:position() }, nil, queueJson)
+	rememberSession(self)
 	self.sessionDueAt = nil
 end
 
@@ -165,6 +273,9 @@ end
 
 function Playback:pause()
 	self.player:pause()
+	-- A pause is a place worth remembering at once: the next launch carries on there even if the
+	-- process ends before the stride's next write.
+	self:flush()
 end
 
 function Playback:stop()
@@ -389,17 +500,19 @@ Playback.on = {
 	stop = function(self, message) self:stop() end
 }
 
---- A tick of the player and of the meter. Returns whether the view has to be built again, whether
---- there is still a frame worth drawing every tick (a track playing), and whether what only the
---- canvases draw moved -- the playhead and the spectrum -- which a repaint of the screen already
---- built shows.
+--- A tick of the player and of the meter. Returns whether the view has to be built again, how soon
+--- it wants the next tick -- `true` for the display's rate, a number of seconds for anything slower,
+--- false when nothing moves -- and whether what only the canvases draw moved -- the playhead and the
+--- spectrum -- which a repaint of the screen already built shows.
 ---
---- What playing moves every frame is a canvas: the bar's fill and nub, and the meter behind it.
+--- What playing moves is a canvas: the bar's fill and nub, and the meter behind it. The audio
+--- thread reports thirty times a second and the playhead asks for a frame only when it moves a
+--- pixel, so thirty frames a second is enough for both; sixty would draw the same ones again.
 --- What it moves once a second is text -- the elapsed clock -- and a track that changes or starts
 --- or stops is the whole bar laid out again, so those are the rebuilds.
 ---@param now number
 ---@return boolean changed
----@return boolean busy
+---@return boolean|number busy
 ---@return boolean repaint
 function Playback:step(now)
 	local changed = false
@@ -467,14 +580,20 @@ function Playback:step(now)
 		changed = true
 	end
 
-	if self.sessionDueAt == nil and self:sessionKeyOf() ~= self.sessionKey then
+	if self.sessionDueAt == nil and self:sessionChanged() then
 		self.sessionDueAt = now + SESSION_DELAY
 	end
 	if self.sessionDueAt ~= nil and now >= self.sessionDueAt then self:flush() end
 
-	-- The meter falling back to rest after the music stops, and a track still being opened, are as
-	-- much a reason to come back next frame as a track that is playing is.
-	return changed, playing or meterEasing or loading, repaint
+	-- The meter falling back to rest after the music stops is worth the slower tick a moving meter
+	-- asks for; a track still being opened is the spinner, which is drawn at the display's rate.
+	local busy = false
+	if loading then
+		busy = true
+	elseif playing or meterEasing then
+		busy = 1 / 30
+	end
+	return changed, busy, repaint
 end
 
 --- The old player goes when the app is set up again, so a test that makes many apps does not keep

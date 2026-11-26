@@ -81,15 +81,15 @@ Lastfm.on = {
 }
 
 --- What playback has been doing since the last tick: a listen that reached the scrobbler's
---- threshold is sent, and what is playing is reported. Last.fm is busy while a request it started
---- is still out, which keeps the ticker at a frame rate until the answer arrives.
+--- threshold is sent, and what is playing is reported. While a request it started is still out the
+--- ticker comes back four times a second: the answer has nothing on screen moving.
 function Lastfm:step(_now)
 	local changed = false
 	local current = self.playback:current()
 	local playing = self.playback.player:isPlaying()
 	self.scrobbler:update(current, self.playback.player:position(), playing, os.time())
 	if self.client:update(current, playing, self.scrobbler:take()) then changed = true end
-	return changed, self.client:isBusy()
+	return changed, self.client:isBusy() and 0.25 or false
 end
 
 --- The libcurl handle goes when the app is set up again, so a test that makes many apps does not

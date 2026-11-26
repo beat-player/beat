@@ -19,6 +19,10 @@ local platform = require("beat.platform")
 local INGEST_BUDGET = 0.004
 local INGEST_BATCH = 128
 
+-- Showing a permission dialog leaves the app waiting for a person, not for a frame: asking the
+-- system whether access was granted is a JNI call, and once a second is plenty.
+local ACCESS_INTERVAL = 1
+
 ---@class beat.ScanSummary
 ---@field tracks number
 ---@field albums number
@@ -37,6 +41,7 @@ local INGEST_BATCH = 128
 ---@field skipped number # Files the last finished scan could not read
 ---@field errors { path: string, message: string }[]
 ---@field awaitingAccess boolean? # Asked the system for access to the music folder; the scan starts once it is granted
+---@field accessCheckedAt number? # When `canReadMusic` was last asked while waiting for access
 ---@field settings beat.SettingsService
 ---@field library beat.LibraryService
 ---@field covers beat.CoversService
@@ -73,6 +78,7 @@ function Scan.new(deps)
 			summary = nil,
 			skipped = 0,
 			errors = {},
+			accessCheckedAt = nil,
 			settings = deps.settings,
 			library = deps.library,
 			covers = deps.covers,
@@ -107,14 +113,16 @@ end
 --- manual Rescan replaces what is there. `App:init` used to decide this before anything had a
 --- chance to draw. A cache from the previous layout can still be drawn, but the tracks it may
 --- have grouped by folder are read again by a scan that takes the rest from the cache.
-function Scan:resume()
+---@param granted boolean? # The caller just found access granted; do not ask the system again
+function Scan:resume(granted)
 	local root = self.settings.values.root
 	if root == nil or self.options.scan == false then return end
 	if self.library.current ~= nil and (self.library.outdated == nil or #self.library.outdated == 0) then return end
 	-- A phone keeps the music folder behind a permission. Without it the folder reads as empty,
 	-- and a scan of it would save an empty library over the one the listener is about to allow.
-	if not platform.canReadMusic() then
+	if granted ~= true and not platform.canReadMusic() then
 		self.awaitingAccess = true
+		self.accessCheckedAt = time.now()
 		platform.requestMusicAccess()
 		return
 	end
@@ -341,10 +349,17 @@ Scan.on = {
 function Scan:step(now)
 	local changed = false
 
-	if self.awaitingAccess and platform.canReadMusic() then
-		self.awaitingAccess = false
-		self:resume()
-		changed = true
+	if self.awaitingAccess then
+		local checkedAt = self.accessCheckedAt
+		if checkedAt == nil or now - checkedAt >= ACCESS_INTERVAL then
+			self.accessCheckedAt = now
+			if platform.canReadMusic() then
+				self.awaitingAccess = false
+				self.accessCheckedAt = nil
+				self:resume(true)
+				changed = true
+			end
+		end
 	end
 
 	if self.pick ~= nil then
@@ -452,7 +467,9 @@ function Scan:step(now)
 		changed = true
 	end
 
-	return changed, self.job ~= nil or self.addJob ~= nil or self.pick ~= nil or self.awaitingAccess == true
+	if self.job ~= nil or self.addJob ~= nil or self.pick ~= nil then return changed, true end
+	if self.awaitingAccess == true then return changed, ACCESS_INTERVAL end
+	return changed, false
 end
 
 --- The app is being set up again, so nothing will read this job's events any more: tell the

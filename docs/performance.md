@@ -66,10 +66,17 @@ Android tags heap pointers above 2^53 and a double rounds them.
 ## In the background
 
 A hidden window draws nothing, so nothing may run at the display's rate while it is hidden:
-`App:tick` returns a quarter of a second instead of a frame, and tells the audio thread, which then
-wakes every 40 ms instead of every 5 and stops feeding the spectrum. Per-sample work on the audio
-thread (equalizer, volume, the spectrum tap) runs for every second of music whether or not the app
-is shown; keep it in flat numeric loops over ffi arrays.
+`App:tick` sleeps a second instead of a frame. A service that has something to do sooner returns how
+many seconds away it wants the next tick -- a thirtieth of a second while a track plays, a quarter
+of a second for a toast the pointer may land on -- and a tick that no service asks for is a second
+away as well. A shown window playing a track ticks thirty times a second: the playhead asks for a
+frame only when it moves a pixel, and the meter is fed thirty times a second. A hidden window tells
+the audio thread, which then wakes every 75 ms instead of every 20 and stops feeding the spectrum. A
+paused player releases the device after five seconds, after which the audio thread blocks untimed on
+its command channel until the app asks for something; a prefetch reader whose ring is full blocks
+until the audio side consumes it. Per-sample work on the audio thread (equalizer, volume, the
+spectrum tap) runs for every second of music whether or not the app is shown; keep it in flat
+numeric loops over ffi arrays.
 
 To measure a phone playing in the background, read each thread's CPU ticks and context switches
 from `/proc/<pid>/task/*/stat` and `status` over `adb shell` twice, 30 seconds apart. Compare runs

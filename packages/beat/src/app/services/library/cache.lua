@@ -4,6 +4,7 @@
 -- when a cover is first requested.
 local fs = require("fs")
 local json = require("json")
+local buffer = require("string.buffer")
 local path = require("path")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
@@ -40,6 +41,36 @@ local function cacheFile()
 	return paths.file("library.json")
 end
 
+--- Fills `record` with one track, reusing tables that are already there: a save packs every track
+--- into the same scratch table so a large library does not build a second full copy of itself.
+--- Every field is assigned each time, so a value a previous track wrote is gone when this one does
+--- not have one.
+---@param record json.Object
+---@param track beat.Track
+---@param key string? # The album the scan put it in, which its tags alone do not always say
+local function packInto(record, track, key)
+	record.path = track.path
+	record.key = key
+	record.title = track.title
+	record.artist = track.artist
+	record.album = track.album
+	record.albumArtist = track.albumArtist
+	record.number = track.number
+	record.disc = track.disc
+	record.year = track.year
+	record.genre = track.genre
+	record.duration = track.duration
+	record.format = track.format
+	record.sampleRate = track.sampleRate
+	record.channels = track.channels
+	record.hasPicture = track.hasPicture
+	record.coverPath = track.coverPath
+	record.coverCache = track.coverCache
+	record.modified = track.modified
+	record.fingerprint = track.fingerprint
+	return record
+end
+
 --- One track as a cache record: only the fields a Track is made from, plus the album key the scan
 --- filed it under. A scan also writes these for the library already loaded, so an inspector can
 --- take a file it has not touched from one instead of reading it again.
@@ -47,51 +78,82 @@ end
 ---@param key string? # The album the scan put it in, which its tags alone do not always say
 ---@return table
 function LibraryCache.pack(track, key)
-	return {
-		path = track.path,
-		key = key,
-		title = track.title,
-		artist = track.artist,
-		album = track.album,
-		albumArtist = track.albumArtist,
-		number = track.number,
-		disc = track.disc,
-		year = track.year,
-		genre = track.genre,
-		duration = track.duration,
-		format = track.format,
-		sampleRate = track.sampleRate,
-		channels = track.channels,
-		hasPicture = track.hasPicture,
-		coverPath = track.coverPath,
-		coverCache = track.coverCache,
-		modified = track.modified,
-		fingerprint = track.fingerprint
-	}
+	return packInto({}, track, key)
 end
 
+-- Records are batched into strings of this many bytes before a write: one write per track is a
+-- syscall per track, while one string for the whole library is the copy a save is avoiding.
+local CHUNK = 64 * 1024
+
+--- Writes the cache a track at a time, into a temp file renamed over the old one once it is
+--- complete, so a crash or a full disk leaves the previous cache readable. Nothing holds the whole
+--- library twice: one scratch record is encoded at a time and a bounded batch is written out.
 ---@param library beat.Library
 ---@return boolean
 ---@return string? err
 function LibraryCache.save(library)
-	local tracks = {}
-	for _, track in ipairs(library.tracks) do
-		local album = library:album(track.albumId)
-		tracks[#tracks + 1] = LibraryCache.pack(track, album?.key)
-	end
-
-	local ok, encoded = pcall(json.encode, { version = VERSION, root = library.root, tracks = tracks })
-	if not ok then return false, tostring(encoded) end
-
 	local folder = paths.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
 		if not fs.isdir(folder) then return false, "cannot create " .. folder end
 	end
 
-	if not fs.write(cacheFile(), encoded) then
-		Log.write("error", "library cache could not be written to " .. cacheFile())
+	local file = cacheFile()
+	local tmp = file .. ".tmp"
+	local out, openErr = io.open(tmp, "wb")
+	if not out then
+		Log.write("error", "library cache could not be written to " .. file)
+		return false, openErr
+	end
+
+	local batch = buffer.new(CHUNK)
+	---@type json.Object
+	local record = {}
+
+	---@param chunk string
+	local function put(chunk)
+		if not out:write(chunk) then error("library cache write failed", 0) end
+	end
+
+	local ok, failure = pcall(function()
+		put('{"version":' .. tostring(VERSION) .. ',"root":' .. json.encode(library.root) .. ',"tracks":[')
+		local first = true
+		for _, track in ipairs(library.tracks) do
+			local album = library:album(track.albumId)
+			packInto(record, track, album?.key)
+			if first then
+				first = false
+			else
+				batch:put(",")
+			end
+			---@cast record json.Data
+			batch:put(json.encode(record))
+			if #batch >= CHUNK then
+				put(batch:get())
+			end
+		end
+		put(batch:get())
+		put("]}")
+	end)
+
+	if not ok then
+		out:close()
+		fs.delete(tmp)
+		Log.write("error", "library cache could not be written to " .. file)
+		return false, tostring(failure)
+	end
+
+	if not out:close() then
+		fs.delete(tmp)
+		Log.write("error", "library cache could not be written to " .. file)
 		return false
+	end
+
+	local moved, moveErr = fs.move(tmp, file)
+	if not moved then
+		fs.delete(tmp)
+		Log.write("error", "library cache could not be written to " .. file)
+		return false, moveErr
 	end
 
 	return true

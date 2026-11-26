@@ -29,6 +29,9 @@ local VOLUME_ZERO = 9
 -- again: the system moves its own copy on at the playback speed, so only a seek or a stall drifts.
 local DRIFT = 1.5
 
+-- The longest the Java command queue is left alone while a track is loaded.
+local COMMAND_INTERVAL = 0.1
+
 -- The bridge the process loaded, kept across the app being set up again: a second MediaBridge
 -- would be a second session, and a second player on the lock screen.
 ---@type ffi.cdata*?
@@ -40,11 +43,13 @@ local shared = nil
 ---@field settings beat.SettingsService
 ---@field bridge ffi.cdata*? # The MediaBridge, as a global reference
 ---@field failed boolean # Loading the bridge failed once; it is not tried every tick
----@field sentKey string? # What the last report said, apart from the position
+---@field sentTrackId number? # The track the last report named; nil when none was sent
+---@field sentDuration number # The whole seconds the last report's duration was compared by
 ---@field sentPosition number
 ---@field sentAt number
 ---@field sentPlaying boolean
 ---@field sentPause boolean? # Whether the last report said other audio may pause playback
+---@field lastCommandAt number # When the Java control queue was last polled
 ---@field pausedByFocus boolean # This service paused playback for a transient loss, so the gain resumes it
 local Media = {}
 Media.__index = Media
@@ -59,11 +64,13 @@ function Media.new(deps)
 		settings = deps.settings,
 		bridge = nil,
 		failed = false,
-		sentKey = nil,
+		sentTrackId = nil,
+		sentDuration = 0,
 		sentPosition = 0,
 		sentAt = 0,
 		sentPlaying = false,
 		sentPause = nil,
+		lastCommandAt = -1,
 		pausedByFocus = false
 	}, Media)
 end
@@ -189,14 +196,21 @@ function Media:step(now)
 		self.bridge = shared
 	end
 
-	takeCommands(self)
-
-	local pauseForOtherAudio = self.settings.values.pauseForOtherAudio ~= false
+	-- The controls are a Java queue polled through JNI, and only a session with something in it can
+	-- use them: with no track the app is not the phone's player. Four times a second is enough for
+	-- a button or a focus change to be felt as a press.
 	local player = self.playback.player
 	local track = player:current()
+	if track ~= nil and now - self.lastCommandAt >= COMMAND_INTERVAL then
+		self.lastCommandAt = now
+		takeCommands(self)
+		track = player:current()
+	end
+
+	local pauseForOtherAudio = self.settings.values.pauseForOtherAudio ~= false
 	if track == nil then
-		if self.sentKey ~= "" then
-			self.sentKey = ""
+		if self.sentTrackId ~= nil then
+			self.sentTrackId = nil
 			report(self, { active = false })
 		end
 		return false, false
@@ -205,13 +219,18 @@ function Media:step(now)
 	local playing = player:isPlaying()
 	local position = player:position()
 	local duration = player:duration()
-	local key = string.format("%d|%s|%d", track.id, tostring(playing), math.floor(duration))
+	local seconds = math.floor(duration)
 	local expected = self.sentPosition + (self.sentPlaying and (now - self.sentAt) or 0)
-	if key ~= self.sentKey or math.abs(position - expected) > DRIFT or pauseForOtherAudio ~= self.sentPause then
+	if track.id ~= self.sentTrackId
+		or playing ~= self.sentPlaying
+		or seconds ~= self.sentDuration
+		or math.abs(position - expected) > DRIFT
+		or pauseForOtherAudio ~= self.sentPause
+	then
 		local library = self.library.current
 		local album = library ~= nil and library:album(track.albumId) or nil
-		self.sentKey, self.sentPosition, self.sentAt, self.sentPlaying, self.sentPause =
-			key, position, now, playing, pauseForOtherAudio
+		self.sentTrackId, self.sentDuration, self.sentPosition, self.sentAt, self.sentPlaying, self.sentPause =
+			track.id, seconds, position, now, playing, pauseForOtherAudio
 		report(self, {
 			active = true,
 			title = track.title,
@@ -229,7 +248,7 @@ end
 --- The app is going: the lock screen should not keep a player for a process that has gone.
 function Media:flush()
 	if self.bridge == nil then return end
-	self.sentKey = ""
+	self.sentTrackId = nil
 	report(self, { active = false })
 end
 

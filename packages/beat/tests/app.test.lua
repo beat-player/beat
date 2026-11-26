@@ -311,6 +311,64 @@ test.it("keeps an error toast under the pointer", function()
 	test.greater(App.services.toasts.list[1].expires, now, "its expiry moved forward")
 end)
 
+test.it("ticks at the smallest rate a service asks for", function()
+	App:init({ scan = false })
+	local realOrder = App.serviceOrder
+	local window = { width = 1200, height = 720, visible = true, shouldRedraw = false }
+
+	App.serviceOrder = { { step = function() return false, 0.1, false end } }
+	test.equal(App:tick(10, window), 0.1, "a service's wait in seconds is the tick's own wait")
+
+	App.serviceOrder = { { step = function() return false, true, false end } }
+	test.equal(App:tick(11, window), 1 / 60, "true asks for the display's rate")
+
+	App.serviceOrder = {
+		{ step = function() return false, 2, false end },
+		{ step = function() return false, 0.25, false end }
+	}
+	test.equal(App:tick(12, window), 0.25, "the smallest request wins")
+
+	App.serviceOrder = { { step = function() return false, false, false end } }
+	test.equal(App:tick(13, window), 1, "with no request the ticker sleeps a second")
+
+	window.visible = false
+	App.serviceOrder = { { step = function() return false, true, false end } }
+	test.equal(App:tick(14, window), 1, "a hidden window ticks at least a second apart")
+
+	App.serviceOrder = realOrder
+	App.wasHidden = nil
+	App.services.playback.player:close()
+end)
+
+test.it("gives the covers back when hidden and builds the screen again when shown", function()
+	App:init({ scan = false })
+	local window = { width = 1200, height = 720, visible = true, shouldRedraw = false }
+	App:tick(10, window)
+
+	local covers = App.services.covers
+	local realRelease = covers.releaseAll
+	local released = 0
+	covers.releaseAll = function(self)
+		released += 1
+		return realRelease(self)
+	end
+
+	window.visible = false
+	window.shouldRedraw = false
+	App:tick(11, window)
+	test.equal(released, 1, "the hidden window's covers gave their GPU textures back")
+	test.truthy(window.shouldRedraw, "the frame that named the released pictures is owed a rebuild")
+
+	window.visible = true
+	window.shouldRedraw = false
+	App:tick(12, window)
+	test.truthy(window.shouldRedraw, "coming back asks for a full frame")
+
+	covers.releaseAll = realRelease
+	App.wasHidden = nil
+	App.services.playback.player:close()
+end)
+
 test.skipIf(not canRender)("focuses the new tag field for typing", function()
 	App:init({ scan = false })
 	App.services.settings.values.root = "/beat-fixtures"

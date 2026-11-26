@@ -151,6 +151,12 @@ local TRAY_MESSAGES = {
 ---@field backTaken boolean? # The window's back gesture comes to the app rather than closing it
 ---@field loopHandler winit.EventManager? # What the last event came with: what leaving ends the loop through
 ---@field trayShown boolean? # True while the minimize-to-tray icon is in the notification area
+---@field trayTrackId number? # What the icon was last built for, so an unchanged message does not build it again
+---@field trayTitle string?
+---@field trayArtist string?
+---@field trayPlaying boolean?
+---@field trayIcon table?
+---@field wasHidden boolean? # Whether the last tick saw a window nothing is showing
 ---@field instance beat.Instance? # The claim on the config directory this copy runs under; another launch asks through it for the window
 ---@field registry beat.Registry # What plugins registered, and what the app asks it for
 ---@field pluginStates beat.PluginStatus[] # Every plugin the page lists: loaded, off, failed, doesn't fit. Not `plugins`: that is wonderland's own list of its screen plugins, and the window's events are walked down it
@@ -456,14 +462,53 @@ function App:trayData()
 	}
 end
 
+--- Records what the tray was just built from, so a later message that changes none of it does not
+--- build the tooltip, labels and icon wrapper again.
+---@param icon table?
+function App:rememberTray(icon)
+	local playback = self.services.playback
+	local current = playback:current()
+	self.trayTrackId = current ~= nil and current.id or nil
+	self.trayTitle = current ~= nil and current.title or nil
+	self.trayArtist = current ~= nil and current.artist or nil
+	self.trayPlaying = playback.player:isPlaying()
+	self.trayIcon = icon
+end
+
 --- Keeps the icon in step with what is loaded and playing. Only while it is showing: a window
 --- that was never minimized has no icon to update.
+---
+--- Messages arrive every time the player moves, and the menu shows only a track's name and its
+--- play state: what `trayData` reads is compared first, and an unchanged tray is left alone rather
+--- than built again for a tooltip that reads the same.
 function App:updateTray()
 	if not self.trayShown then return end
 	local window = self.window
 	if window == nil or window.setTray == nil then return end
+
+	local playback = self.services.playback
+	local current = playback:current()
+	local trackId = current ~= nil and current.id or nil
+	local title = current ~= nil and current.title or nil
+	local artist = current ~= nil and current.artist or nil
+	local playing = playback.player:isPlaying()
+	local icon = self:icon()
+	if
+		icon ~= nil
+		and icon == self.trayIcon
+		and trackId == self.trayTrackId
+		and title == self.trayTitle
+		and artist == self.trayArtist
+		and playing == self.trayPlaying
+	then
+		return
+	end
+
 	local tray = self:trayData()
-	if tray ~= nil then window:setTray(tray) end
+	if tray ~= nil then
+		window:setTray(tray)
+		self:rememberTray(icon)
+	end
 end
 
 --- A minimized window goes off the screen and the taskbar, with its loop, media keys and sound
@@ -478,6 +523,7 @@ function App:minimizeToTray(window)
 	window:hide()
 	self.trayShown = true
 	window:setTray(tray)
+	self:rememberTray(self:icon())
 	self:flush()
 end
 
@@ -533,6 +579,9 @@ function App:init(opts)
 	self.delivering = false
 	self.uiContext = nil
 	self.trayShown = nil
+	self.trayTrackId, self.trayTitle, self.trayArtist = nil, nil, nil
+	self.trayPlaying, self.trayIcon = nil, nil
+	self.wasHidden = nil
 	self.messages = Signal.new()
 	self.registry = Registry.new(self)
 	-- Read once, before any service exists, because what is switched off decides which plugin
@@ -1030,11 +1079,14 @@ end
 -- the ticker
 -- ────────────────────────────────────────────────────────────────
 
--- How long the ticker sleeps: a frame while something on screen moves, a quarter of a second while
--- something moves on a window nobody can see, and half a second when nothing moves.
+-- How long the ticker sleeps: a service's `step` returns its next wake-up as the second value.
+-- `true` means the display's rate, a positive number asks for a tick that many seconds away, and
+-- false or nil asks for nothing. The smallest request wins, never faster than a frame; nothing is
+-- drawn while the window is hidden, so a hidden tick is at least a second apart, and with no
+-- request at all the ticker sleeps a second.
 local FRAME_TICK = 1 / 60
-local HIDDEN_TICK = 0.25
-local IDLE_TICK = 0.5
+local HIDDEN_TICK = 1
+local IDLE_TICK = 1
 
 ---@param now number
 ---@param window wonderland.RenderWindow
@@ -1047,13 +1099,25 @@ function App:tick(now, window)
 	end
 	local hidden = window.visible == false
 	self.services.playback.player:setBackground(hidden)
-	local changed, serviceBusy, repaint = false, false, false
+
+	-- The edge between shown and hidden: nothing on a hidden window is seen, and a hidden window
+	-- has no frame worth drawing, so its covers give their textures back and the session is
+	-- written once (the process may be killed while hidden). Coming back asks for a full frame:
+	-- the screen was not built while the covers were gone.
+	local becameHidden = hidden and self.wasHidden ~= true
+	local becameVisible = not hidden and self.wasHidden == true
+	self.wasHidden = hidden
+
+	local changed, repaint = false, false
+	local want = math.huge
 	-- Each service does what it does on its own -- a scan coming in, a toast fading -- in the
 	-- order they were made, so a service steps after everything it depends on. `changed` is what
 	-- the view has to be built again for, and `repaint` what only what a canvas draws moved: a
 	-- track that is playing is a playhead and a spectrum, which a repaint of the screen already
 	-- built shows without the view and the solve a rebuild would cost on every frame of it.
-	for _, service in ipairs(self.serviceOrder) do
+	local services = self.serviceOrder
+	for at = 1, #services do
+		local service = services[at]
 		if service.step ~= nil then
 			local stepChanged, stepBusy, stepRepaint = service:step(now)
 			if stepChanged then
@@ -1061,23 +1125,36 @@ function App:tick(now, window)
 			elseif stepRepaint then
 				repaint = true
 			end
-			if stepBusy then serviceBusy = true end
+			if stepBusy == true then
+				want = math.min(want, FRAME_TICK)
+			elseif type(stepBusy) == "number" and stepBusy > 0 then
+				want = math.min(want, stepBusy)
+			end
 		end
 	end
 
-	if changed then
+	if changed or becameVisible then
 		self:present(window)
 	elseif repaint then
 		self:repaint(window)
 	end
+	if becameHidden then
+		self.services.covers:releaseAll()
+		self.services.playback:flush()
+		-- The frame the gpu still has names the pictures just given back, and a window on its way
+		-- back is drawn before this tick runs again: asking for one now leaves the screen owed a
+		-- rebuild, so that draw builds the screen again instead of drawing textures that are gone.
+		self:present(window)
+	end
+
 	-- A hidden window -- an app sent to the background, a phone with its screen off -- shows no
 	-- frame, so a track playing is no reason to come back at the display's rate: the audio thread
 	-- plays the queue through on its own, and what the services still do there (a track ending, a
 	-- scrobble, the session saved) is in no hurry. Stepping them sixty times a second is what made
 	-- music playing in the background cost a phone most of its battery.
-	if not serviceBusy then return IDLE_TICK end
-	if hidden then return HIDDEN_TICK end
-	return FRAME_TICK
+	if want == math.huge then return IDLE_TICK end
+	if hidden then return math.max(want, HIDDEN_TICK) end
+	return math.max(want, FRAME_TICK)
 end
 
 ---@param window wonderland.RenderWindow

@@ -40,6 +40,7 @@ public final class PlaybackService extends Service {
 		} catch (RuntimeException refused) {
 			// Android refuses a foreground service started from the background. The notification
 			// is still posted by MediaBridge; the next start from the screen or a control retries.
+			notification = null;
 		}
 	}
 
@@ -53,6 +54,8 @@ public final class PlaybackService extends Service {
 			service.stopForeground(false);
 		}
 		service.stopSelf();
+		// Nothing should keep the last notification, and the album art it holds, in memory.
+		notification = null;
 	}
 
 	@Override
@@ -79,6 +82,7 @@ public final class PlaybackService extends Service {
 	@Override
 	public void onDestroy() {
 		if (running == this) running = null;
+		notification = null;
 		super.onDestroy();
 	}
 

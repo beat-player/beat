@@ -503,7 +503,7 @@ jit.off(pump)
 --- Moves waiting transfers onto the batch, pumps it, and hands finished ones to their callbacks.
 ---@param _now number
 ---@return boolean changed
----@return boolean busy
+---@return boolean|number busy
 function Http:step(_now)
 	local changed = false
 
@@ -553,7 +553,7 @@ function Http:step(_now)
 		changed = true
 	end
 
-	return changed, self.batch ~= nil or #self.queue > 0
+	return changed, (self.batch ~= nil or #self.queue > 0) and 0.1 or false
 end
 
 return Http

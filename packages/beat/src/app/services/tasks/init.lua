@@ -185,16 +185,17 @@ Tasks.on = {
 
 --- Done and cancelled tasks leave after `LINGER`; failed ones wait for a dismiss. A running task
 --- keeps the app awake so an indeterminate bar moves and `task:update` from the owner's own step
---- is drawn.
+--- is drawn. The bar is a moving band drawn by time, so it is followed at thirty frames a second
+--- rather than the display's sixty.
 ---@param now number
 ---@return boolean changed
----@return boolean busy
+---@return boolean|number busy
 function Tasks:step(now)
 	local changed = self.dirty
 	self.dirty = false
 
 	-- Only a task that is due to go makes a new list: a step while anything is running happens
-	-- every frame, and most of them have nothing to remove.
+	-- every tick, and most of them have nothing to remove.
 	---@type beat.Task[]?
 	local kept
 	for at, task in ipairs(self.list) do
@@ -214,7 +215,7 @@ function Tasks:step(now)
 	local busy = false
 	for _, task in ipairs(self.list) do
 		if task.state == "running" or task.state == "cancelling" then
-			busy = true
+			busy = 1 / 30
 			break
 		end
 	end

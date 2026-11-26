@@ -1,5 +1,6 @@
 -- A rating is a message like any click: whichever screen sends `rateTrack`, the collections
--- service rates the track and tags.json holds it before the next frame.
+-- service rates the track at once and tags.json holds it once the hand has been still, or on a
+-- flush when the app goes.
 local test = require("lde-test")
 local fs = require("fs")
 local paths = require("beat.paths")
@@ -39,7 +40,7 @@ local function library()
 	return lib
 end
 
-test.it("a rateTrack message rates the track and writes it to tags.json", function()
+test.it("a rateTrack message rates the track and reaches tags.json when the write settles", function()
 	App:init({ scan = false })
 	local lib = library()
 	App.services.library.current = lib
@@ -48,10 +49,17 @@ test.it("a rateTrack message rates the track and writes it to tags.json", functi
 
 	App:act({ type = "rateTrack", id = track.id, stars = 4 })
 	test.equal(App.services.collections.taxonomy:rating(key), 4)
+	test.equal(TagStore.load():rating(key), 0, "the write waits for the hand to be still")
+
+	App.services.collections:flush()
 	test.equal(TagStore.load():rating(key), 4, "tags.json holds it")
 
 	App:act({ type = "rateTrack", id = track.id, stars = 0 })
-	test.equal(TagStore.load():rating(key), 0, "and none takes it back on disk too")
+	test.equal(App.services.collections.taxonomy:rating(key), 0)
+	test.equal(TagStore.load():rating(key), 4, "and a later rating waits instead of writing at once")
+
+	App.services.collections:flush()
+	test.equal(TagStore.load():rating(key), 0, "none takes it back on disk too")
 
 	App.services.playback.player:close()
 end)

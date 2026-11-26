@@ -6,12 +6,20 @@
 local names = require("beat.music.names")
 local TagStore = require("beat.app.services.collections.store")
 local Signal = require("beat.app.signal")
+local time = require("wonderland.time")
+
+-- Each track start bumps a play count and each rating a star, and both land in tags.json. A run of
+-- them -- skipping through an album, tapping a few stars -- rewrites the whole file each time, so
+-- the write waits until the hand has been still for a moment; a structural edit (a tag, a playlist)
+-- still writes at once, because the listener watches for its result.
+local SAVE_DELAY = 2
 
 ---@class beat.CollectionsService: beat.Service
 ---@field taxonomy beat.Taxonomy
 ---@field library beat.LibraryService
 ---@field toasts beat.ToastsService
 ---@field changed beat.Signal # Fired after tags or playlists changed and were written
+---@field dirtyAt number? # When the deferred tags.json write is due; nil when disk has the current taxonomy
 ---@field playlistTracksCache table<beat.Playlist, beat.CollectionsService.PlaylistTracksEntry> # By the playlist itself: its id is a number, and a table keyed by both the positive ids and the built-in lists' negative ones is mixed, which the trace compiler will not index
 ---@field recentPlaylistsCache beat.CollectionsService.RecentPlaylistsEntry?
 local Collections = {}
@@ -42,6 +50,7 @@ function Collections.new(deps)
 		library = deps.library,
 		toasts = deps.toasts,
 		changed = Signal.new(),
+		dirtyAt = nil,
 		playlistTracksCache = {},
 		recentPlaylistsCache = nil
 	}, Collections)
@@ -73,12 +82,43 @@ end
 --- Writes the taxonomy. A read-only config directory must not take the screen, so the failure is
 --- a toast; listeners are told only once disk agrees with memory.
 function Collections:save()
+	self.dirtyAt = nil
 	local ok = TagStore.save(self.taxonomy)
 	if not ok then
 		self.toasts:show("Could not save tags", "error")
 		return
 	end
 	self.changed:fire()
+end
+
+--- A change that can wait: a play count or a rating, which come in runs. The write happens in
+--- `step` once the last of them is `SAVE_DELAY` old.
+function Collections:saveLater()
+	self.dirtyAt = time.now() + SAVE_DELAY
+end
+
+---@param now number
+---@return boolean changed
+---@return boolean|number busy
+function Collections:step(now)
+	local dirtyAt = self.dirtyAt
+	if dirtyAt == nil then return false, false end
+	if now >= dirtyAt then
+		self:save()
+		return false, false
+	end
+	return false, dirtyAt - now
+end
+
+--- The window is closing: a write still settling happens now rather than being lost.
+function Collections:flush()
+	if self.dirtyAt ~= nil then self:save() end
+end
+
+-- The app is being set up again: the taxonomy in memory may be the only thing that has the last
+-- play counts, so it is written before the service is dropped.
+function Collections:close()
+	self:flush()
 end
 
 --- Removes a tag and its automatic playlist. The caller draws the frame; a used tag comes here
@@ -117,7 +157,7 @@ Collections.on = {
 		local track = library ~= nil and library:track(message.id) or nil
 		if track then
 			self.taxonomy:setRating(names.trackKey(track), message.stars)
-			self:save()
+			self:saveLater()
 		end
 	end,
 	---@param self beat.CollectionsService
@@ -127,7 +167,7 @@ Collections.on = {
 		local album = library ~= nil and library:album(message.id) or nil
 		if album then
 			self.taxonomy:setAlbumRating(album.key, message.stars)
-			self:save()
+			self:saveLater()
 		end
 	end
 }
@@ -208,13 +248,13 @@ function Collections:recentPlaylists(limit)
 end
 
 --- A listen counts towards the playlist it was started from, the album it is on and its tags.
---- Saved at once: the counts are small and losing the last few on a crash is worse than the write.
+--- Written after the hand settles: every track start would otherwise rewrite the whole file.
 ---@param track beat.Track
 ---@param playlistId number?
 ---@param at number?
 function Collections:recordListen(track, playlistId, at)
 	self.taxonomy:recordListen(track, assert(self.library.current), playlistId, at)
-	self:save()
+	self:saveLater()
 end
 
 return Collections

@@ -1,15 +1,20 @@
 -- A small FFT for the now-playing visualiser. Samples arrive from treble's PCM tap in int16 frames,
 -- well before they are heard: the player decodes into a staging buffer ahead of the device. So the
 -- tap only fills a ring of mono samples numbered on the device's timeline, and every step analyses
--- the window that ends at the frame being heard right now. The meter moves with what is heard, at
--- the frame rate, rather than jumping a fifth of a second early whenever a chunk is decoded.
--- The FFT is iterative Cooley-Tukey, on tables because the window is short.
+-- the window that ends at the frame being heard right now. The meter moves with what is heard, rather
+-- than jumping a fifth of a second early whenever a chunk is decoded.
+--
+-- The FFT is iterative Cooley-Tukey. Its buffers, the window and the twiddles are ffi double arrays
+-- made once, and the bit-reversal permutation is folded into two module-level swap lists, so a step
+-- neither allocates nor re-derives what the previous step already knew. The meter is analysed at
+-- 30 Hz and only eased in between: the FFT is not what the eye needs at 60 Hz.
 local ffi = require("ffi")
 local bit = require("bit")
 local PcmRing = require("beat.app.services.playback.pcm")
 
 local N = 1024
 local BANDS = 48
+local HALF = N / 2
 
 -- The ring holds this many mono frames: more than the staging buffer and the device's own latency
 -- put between a decoded frame and a heard one, at any sample rate the player opens.
@@ -35,15 +40,63 @@ local RELEASE = 0.06
 -- rather than holding the last window up.
 local STALE = 0.12
 
+-- How often the spectrum is worked out. Twice the animation's own 30 Hz: a fast 30 Hz animation
+-- reading a 60 Hz meter sees every other window, while a 60 Hz animation reading a 30 Hz meter is
+-- what a display-rate repaint has always shown. The bars ease between analyses.
+local ANALYSIS = 1 / 30
+
+-- The ffi types are looked up once: `ffi.typeof` in a hot function is a per-call allocation.
+local DOUBLE = ffi.typeof("double[?]")
+local FLOAT = ffi.typeof("float[?]")
+
+-- The Hann window, shared by every instance because nothing writes to it.
+local WINDOW = ffi.new(DOUBLE, N)
+for at = 0, N - 1 do WINDOW[at] = 0.5 - 0.5 * math.cos(2 * math.pi * at / (N - 1)) end
+
+-- The twiddles of every stage of the FFT: stage `size` reads index `at * N / size`, and no stage
+-- needs more than `N / 2` of them. Precomputing also stops the recurrence's rounding drift.
+local TWIDDLE_COS = ffi.new(DOUBLE, HALF)
+local TWIDDLE_SIN = ffi.new(DOUBLE, HALF)
+for at = 0, HALF - 1 do
+	local angle = -2 * math.pi * at / N
+	TWIDDLE_COS[at] = math.cos(angle)
+	TWIDDLE_SIN[at] = math.sin(angle)
+end
+
+-- The bit-reversal permutation as the swaps it comes to: a pair of indices per swap, made once
+-- per FFT size rather than reversed per element on every analysis.
+local SWAP_FROM = ffi.new("uint16_t[?]", N)
+local SWAP_TO = ffi.new("uint16_t[?]", N)
+local SWAP_COUNT = 0
+do
+	local reversed = {}
+	for at = 0, N - 1 do
+		local value, out = at, 0
+		for _ = 1, 10 do
+			out = out * 2 + bit.band(value, 1)
+			value = bit.rshift(value, 1)
+		end
+		reversed[at] = out
+	end
+	for at = 0, N - 1 do
+		local to = reversed[at]
+		if to > at then
+			SWAP_FROM[SWAP_COUNT] = at
+			SWAP_TO[SWAP_COUNT] = to
+			SWAP_COUNT = SWAP_COUNT + 1
+		end
+	end
+end
+
 ---@class beat.Spectrum
----@field real number[]
----@field imag number[]
----@field window number[]
+---@field real ffi.cdata* # double[N], the FFT's real part
+---@field imag ffi.cdata* # double[N], the FFT's imaginary part
 ---@field ring ffi.cdata* # Mono samples, indexed by device frame modulo RING
 ---@field written number # The device frame after the last one the tap wrote
 ---@field floor number # The first frame of the current timeline: earlier ones are not this track's
 ---@field analysedAt number? # The heard frame the levels were last worked out for
 ---@field heardAt number? # When the heard frame last moved
+---@field lastAnalysis number? # When the FFT last ran, which is what the analysis rate is timed by
 ---@field steppedAt number? # When `step` last ran, which is what the easing is timed by
 ---@field levels number[]
 ---@field display number[] # What the meter shows, eased toward `levels` every frame
@@ -56,21 +109,18 @@ Spectrum.__index = Spectrum
 ---@param ring ffi.cdata*? # The mono ring to read; by default one of this instance's own
 ---@return beat.Spectrum
 function Spectrum.new(ring)
-	local window = {}
-	for at = 0, N - 1 do window[at] = 0.5 - 0.5 * math.cos(2 * math.pi * at / (N - 1)) end
-
 	local levels, display, peaks = {}, {}, {}
 	for at = 1, BANDS do levels[at], display[at], peaks[at] = 0, 0, 0 end
 
 	return setmetatable({
-		real = {},
-		imag = {},
-		window = window,
-		ring = ring or ffi.new("float[?]", RING),
+		real = ffi.new(DOUBLE, N),
+		imag = ffi.new(DOUBLE, N),
+		ring = ring or ffi.new(FLOAT, RING),
 		written = 0,
 		floor = 0,
 		analysedAt = nil,
 		heardAt = nil,
+		lastAnalysis = nil,
 		steppedAt = nil,
 		levels = levels,
 		display = display,
@@ -80,51 +130,47 @@ function Spectrum.new(ring)
 	}, Spectrum)
 end
 
-local function reverseBits(value)
-	local out = 0
-	for _ = 1, 10 do
-		out = out * 2 + value % 2
-		value = math.floor(value / 2)
-	end
-	return out
-end
-
+---@param real ffi.cdata*
+---@param imag ffi.cdata*
 local function fft(real, imag)
-	for at = 0, N - 1 do
-		local reversed = reverseBits(at)
-		if reversed > at then
-			real[at], real[reversed] = real[reversed], real[at]
-			imag[at], imag[reversed] = imag[reversed], imag[at]
-		end
+	local from, to = SWAP_FROM, SWAP_TO
+	for at = 0, SWAP_COUNT - 1 do
+		local even, odd = from[at], to[at]
+		local tr, ti = real[even], imag[even]
+		real[even], imag[even] = real[odd], imag[odd]
+		real[odd], imag[odd] = tr, ti
 	end
 
+	local cosines, sines = TWIDDLE_COS, TWIDDLE_SIN
 	local size = 2
 	while size <= N do
-		local angle = -2 * math.pi / size
-		local stepReal, stepImag = math.cos(angle), math.sin(angle)
+		local half = size / 2
+		local step = N / size
 		for start = 0, N - 1, size do
-			local wr, wi = 1, 0
-			local half = size / 2
+			local index = 0
 			for at = 0, half - 1 do
 				local even = start + at
 				local odd = even + half
+				local wr, wi = cosines[index], sines[index]
 				local tr = wr * real[odd] - wi * imag[odd]
 				local ti = wr * imag[odd] + wi * real[odd]
 				real[odd] = real[even] - tr
 				imag[odd] = imag[even] - ti
-				real[even] += tr
-				imag[even] += ti
-				wr, wi = wr * stepReal - wi * stepImag, wr * stepImag + wi * stepReal
+				real[even] = real[even] + tr
+				imag[even] = imag[even] + ti
+				index = index + step
 			end
 		end
-		size *= 2
+		size = size * 2
 	end
 end
 
 --- Writes a decoded chunk into the ring, mixed to mono, at the device frames it will be heard at.
 --- A chunk that starts before the last one ended is a new timeline -- a seek, a stop, another
 --- track loaded -- and what the ring held before it is not this audio.
----@param samples ffi.cdata*
+--- The mono and stereo cases are flat loops of their own: a track is almost always one or the
+--- other, and the inner per-channel loop only pays when the device is neither.
+---@param samples ffi.cdata* # int16 samples
 ---@param frames number
 ---@param channels number
 ---@param startFrame number? # The device frame of its first sample; default right after the last chunk
@@ -135,18 +181,32 @@ function Spectrum:feed(samples, frames, channels, startFrame)
 	if startFrame ~= self.written then
 		self.floor = startFrame
 		self.analysedAt = nil
+		self.lastAnalysis = nil
 	end
 
 	local skip = math.max(0, frames - RING)
-	local scale = 1 / (channels * 32768)
-	local data = ffi.cast("int16_t*", samples)
-	local ring = self.ring
+	local ring, mask = self.ring, RING_MASK
+	local data = samples
+	local scale = 1 / 32768
 
-	for at = skip, frames - 1 do
-		local sum = 0
-		local sampleAt = at * channels
-		for channel = 0, channels - 1 do sum += data[sampleAt + channel] end
-		ring[bit.band(startFrame + at, RING_MASK)] = sum * scale
+	if channels == 1 then
+		for at = skip, frames - 1 do
+			ring[bit.band(startFrame + at, mask)] = data[at] * scale
+		end
+	elseif channels == 2 then
+		local mixed = 0.5 * scale
+		for at = skip, frames - 1 do
+			local index = at * 2
+			ring[bit.band(startFrame + at, mask)] = (data[index] + data[index + 1]) * mixed
+		end
+	else
+		local channelScale = 1 / (channels * 32768)
+		for at = skip, frames - 1 do
+			local index = at * channels
+			local sum = 0
+			for channel = 0, channels - 1 do sum = sum + data[index + channel] end
+			ring[bit.band(startFrame + at, mask)] = sum * channelScale
+		end
 	end
 
 	self.written = startFrame + frames
@@ -166,6 +226,7 @@ function Spectrum:sync(written, floor)
 		self.floor = floor or 0
 		self.analysedAt = nil
 		self.heardAt = nil
+		self.lastAnalysis = nil
 	end
 	self.written = written
 end
@@ -226,9 +287,9 @@ local function bandsInto(self, elapsed)
 	end
 end
 
---- Analyses the window that ends at the frame being heard, when that has moved, and eases the
---- shown meter toward it. Returns whether the meter changed, and whether it is still easing --
---- which is what says a frame is worth drawing every tick even after the audio has stopped.
+--- Analyses the window that ends at the frame being heard, when that has moved and a step is due,
+--- and eases the shown meter toward it. Returns whether the meter changed, and whether it is still
+--- easing -- which is what says a frame is worth drawing every tick even after the audio has stopped.
 ---@param now number
 ---@param heard number? # The device frame being heard now; default the last frame fed
 ---@return boolean changed
@@ -241,23 +302,32 @@ function Spectrum:step(now, heard)
 
 	local finish = math.min(heard or self.written, self.written)
 	if finish > self.floor and finish ~= self.analysedAt then
-		local sinceAnalysis = self.heardAt ~= nil and math.max(0, now - self.heardAt) or 0
-		self.analysedAt = finish
-		self.heardAt = now
+		-- The bands move with the music, but the FFT only runs as often as the eye can read it:
+		-- between analyses the display eases toward the bands the last one left.
+		if self.lastAnalysis == nil or now - self.lastAnalysis >= ANALYSIS then
+			local sinceAnalysis = self.heardAt ~= nil and math.max(0, now - self.heardAt) or 0
+			self.lastAnalysis = now
+			self.analysedAt = finish
+			self.heardAt = now
 
-		local real, imag, window, ring = self.real, self.imag, self.window, self.ring
-		local oldest = math.max(self.floor, self.written - RING)
-		local from = finish - N
-		for at = 0, N - 1 do
-			local frame = from + at
-			real[at] = frame >= oldest and ring[bit.band(frame, RING_MASK)] * window[at] or 0
-			imag[at] = 0
+			local real, imag, window, ring = self.real, self.imag, WINDOW, self.ring
+			local oldest = math.max(self.floor, self.written - RING)
+			local from = finish - N
+			for at = 0, N - 1 do
+				local frame = from + at
+				if frame >= oldest then
+					real[at] = ring[bit.band(frame, RING_MASK)] * window[at]
+				else
+					real[at] = 0
+				end
+				imag[at] = 0
+			end
+
+			fft(real, imag)
+			bandsInto(self, sinceAnalysis)
+			changed = true
+			easing = true
 		end
-
-		fft(real, imag)
-		bandsInto(self, sinceAnalysis)
-		changed = true
-		easing = true
 	elseif self.heardAt ~= nil and now - self.heardAt > STALE then
 		-- Nothing new is being heard: the meter comes down rather than freezing on the last window.
 		for band = 1, BANDS do self.levels[band] = 0 end
@@ -265,23 +335,24 @@ function Spectrum:step(now, heard)
 
 	local rise = 1 - math.exp(-elapsed / ATTACK)
 	local fall = 1 - math.exp(-elapsed / RELEASE)
+	local levels, display = self.levels, self.display
 	for band = 1, BANDS do
-		local target = self.levels[band]
-		local shown = self.display[band]
+		local target = levels[band]
+		local shown = display[band]
 
 		if not self.shown then
 			shown = target
 		elseif target > shown then
-			shown += (target - shown) * rise
+			shown = shown + (target - shown) * rise
 		else
-			shown += (target - shown) * fall
+			shown = shown + (target - shown) * fall
 		end
 
-		if math.abs(shown - self.display[band]) > 0.0005 then
+		if math.abs(shown - display[band]) > 0.0005 then
 			changed = true
 			easing = true
 		end
-		self.display[band] = shown
+		display[band] = shown
 	end
 	self.shown = true
 
@@ -302,6 +373,7 @@ function Spectrum:clear()
 	self.floor = 0
 	self.analysedAt = nil
 	self.heardAt = nil
+	self.lastAnalysis = nil
 	self.steppedAt = nil
 end
 

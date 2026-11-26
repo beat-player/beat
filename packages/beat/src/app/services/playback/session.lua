@@ -41,8 +41,9 @@ end
 -- A failure is logged rather than shown: a read-only config directory must not interrupt playback.
 ---@param session beat.Session
 ---@param dir string?
+---@param queueJson string? # The queue already encoded, so a write that only moves the play head need not encode it again
 ---@return boolean
-function Session.save(session, dir)
+function Session.save(session, dir, queueJson)
 	local folder = dir or paths.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
@@ -52,16 +53,38 @@ function Session.save(session, dir)
 		end
 	end
 
-	local ok, encoded = pcall(json.encode, { version = VERSION, queue = session.queue, seconds = session.seconds })
-	if not ok then
-		Log.write("error", "the session could not be encoded: " .. tostring(encoded))
-		return false
+	local ok, encoded
+	if queueJson ~= nil then
+		-- The queue's part was encoded by `encodeQueue` and is still valid; only the number beside
+		-- it moved. The keys and their order are the same as an encode of the whole table would
+		-- write, so a session file written this way is read by the same loader.
+		encoded = '{"version":' .. tostring(VERSION) .. ',"queue":' .. queueJson .. ',"seconds":' .. tostring(session.seconds) .. '}'
+	else
+		ok, encoded = pcall(json.encode, { version = VERSION, queue = session.queue, seconds = session.seconds })
+		if not ok then
+			Log.write("error", "the session could not be encoded: " .. tostring(encoded))
+			return false
+		end
 	end
 	if not fs.write(sessionFile(folder), encoded) then
 		Log.write("error", "the session could not be written to " .. sessionFile(folder))
 		return false
 	end
 	return true
+end
+
+--- Encodes one queue for `save` to put in a session file. The playback service keeps the result
+--- while the queue stays the same, so saving only the play head does not encode every track path
+--- again.
+---@param packed table
+---@return string?
+function Session.encodeQueue(packed)
+	local ok, encoded = pcall(json.encode, packed)
+	if not ok then
+		Log.write("error", "the session queue could not be encoded: " .. tostring(encoded))
+		return nil
+	end
+	return encoded --[[@as string]]
 end
 
 return Session

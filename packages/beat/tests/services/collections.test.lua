@@ -10,6 +10,7 @@ local Library = require("beat.music.library")
 local Collections = require("beat.app.services.collections")
 local Signal = require("beat.app.signal")
 local names = require("beat.music.names")
+local time = require("wonderland.time")
 
 local configDirectory = os.tmpname() .. "-beat-collections"
 os.remove(configDirectory)
@@ -128,4 +129,35 @@ test.it("adopts entries a later library brings a path for", function()
 
 	test.equal(service.taxonomy:rating(names.trackKey(secondLibrary.tracks[2])), 3, "the new library claims it")
 	test.equal(next(service.taxonomy.legacy.ratings), nil)
+end)
+
+test.it("waits to write play counts and ratings, and writes them on the ticker or a flush", function()
+	clean()
+	local current = library({ { path = "/music/a.flac", fingerprint = "abcdef0123456789" } })
+	local libraries = libraryService(current)
+	---@cast libraries beat.LibraryService
+	local service = Collections.new({ library = libraries, toasts = toasts })
+	local track = current.tracks[1]
+
+	service:recordListen(track, nil, 100)
+	test.equal(fs.exists(paths.file("tags.json")), false, "a track start does not rewrite the file")
+
+	local changed, busy = service:step(time.now())
+	test.falsy(changed)
+	test.truthy(busy, "the ticker is asked back for the deferred write")
+	test.equal(fs.exists(paths.file("tags.json")), false, "still nothing before the delay")
+
+	local due = assert(service.dirtyAt)
+	service:step(due)
+	local written = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
+	test.equal(written.metrics.tracks[1].count, 1, "the play count reaches disk once it settles")
+
+	local on = assert(Collections.on)
+	on.rateTrack(service, { type = "rateTrack", id = track.id, stars = 5 })
+	local immediate = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
+	test.equal(#(immediate.ratings or {}), 0, "a rating waits too")
+
+	service:flush()
+	local flushed = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
+	test.equal(flushed.ratings[1].value, 5, "a flush writes it at once")
 end)
