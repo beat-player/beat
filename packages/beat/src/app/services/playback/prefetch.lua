@@ -19,11 +19,14 @@ local native = require("threading.native")
 -- the reader stops filling here and waits for the audio side to drain.
 local READ_AHEAD_SECONDS = 2.5
 
--- How long a side that can only poll sleeps, and how long a reader that failed sleeps before it lets
--- go of its channels: long enough for the app to attach and read the error. A reader with nothing
--- left to do does not poll at all -- it blocks on its command channel until the app seeks or closes
--- it, which costs no wakeups.
+-- How long a reader that failed sleeps before it lets go of its channels: long enough for the app
+-- to attach and read the error. A reader with nothing left to do does not poll at all -- it blocks
+-- on its command channel until the app seeks or closes it, which costs no wakeups.
 local WAIT_MS = 50
+-- How long a read that finds its ring empty waits for the reader before answering nought. One
+-- loop's worth: longer would be a device that cannot be fed, shorter would answer treble's end of
+-- track before the reader has had a chance to deliver.
+local READ_WAIT_MS = 20
 
 ---@class beat.PrefetchLib
 ---@field threading_alloc fun(size: number): ffi.cdata*
@@ -273,11 +276,11 @@ function Prefetch.new(track)
 	}, Source)
 end
 
---- Starts the reader and the ring it fills. Answers once the reader is running; with no metadata
---- to hand treble yet, it waits for the reader to report the file's own.
----@param waitForFormat boolean? # Wait for the reader's report even when the track had a rate
+--- Starts the reader and the ring it fills, and answers at once: the audio thread must never wait
+--- for a file, so even the format is left to the reader's `ready` event, which the gate in
+--- `audio_thread.lua` waits for before it lets treble read the source.
 ---@return boolean started
-function Source:prefetch(waitForFormat)
+function Source:prefetch()
 	if self.prefetched or self.closed then return self.prefetched end
 
 	local commands = threading.channel()
@@ -300,12 +303,7 @@ function Source:prefetch(waitForFormat)
 	self.handle = handle
 	self.prefetched = true
 
-	if waitForFormat or self.sampleRate <= 0 or self.channels <= 0 then
-		while self.ring == nil and self.error == nil and not self:dead() do
-			self:take(true)
-		end
-	end
-	return self.error == nil and self.ring ~= nil
+	return true
 end
 
 ---@param handle threading.Handle
@@ -330,18 +328,15 @@ function Source:dead()
 	return false
 end
 
---- Takes the reader's messages. With `block`, waits for one when none is queued.
----@param block boolean?
----@return boolean got
-function Source:take(block)
+--- Takes the reader's messages. Never waits: the audio thread calls this between steps, and a
+--- thread parked here is a device that cannot be fed.
+function Source:take()
 	local events = self.events
-	if events == nil then return false end
+	if events == nil then return end
 
-	local got = false
 	for _ = 1, 256 do
 		local event = events:pop() --[[@as table?]]
 		if event == nil then break end
-		got = true
 		local kind = event.kind
 		if kind == "ready" then
 			local address = event.address
@@ -369,16 +364,75 @@ function Source:take(block)
 			self.error = event.message or "the audio reader failed"
 		end
 	end
-
-	if not got and block then
-		events:wait(WAIT_MS)
-		return true
-	end
-	return got
 end
 
---- Copies decoded frames out, waiting only when the ring has none left. treble answers the number
---- of frames it got, and nil plus a message for a source that failed.
+--- Frames decoded and not yet read out of the ring. Zero until the reader has allocated it, so a
+--- caller can treat "not ready" and "empty" alike: there is nothing to read either way.
+---@return number frames
+function Source:available()
+	if self.closed then return 0 end
+	self:take()
+	if self.ring == nil then return 0 end
+	local available = self.buffered - self.readPos
+	return available > 0 and available or 0
+end
+
+--- Whether the reader has reported the format and the ring it fills.
+---@return boolean ready
+function Source:ready()
+	if self.closed then return false end
+	self:take()
+	return self.ring ~= nil
+end
+
+--- Whether no more data can arrive for this source: the reader reached the end of the file, failed,
+--- or is gone. A gate that waits for a buffer must let a finished source play its tail out.
+---@return boolean finished
+function Source:finished()
+	if self.closed then return true end
+	self:take()
+	return self.ended or self.error ~= nil or self:dead()
+end
+
+--- Copies what the ring holds out, or answers nil when it holds nothing. Never waits.
+---@param self beat.PrefetchSource
+---@param out ffi.cdata*
+---@param frames number
+---@return number? count
+local function copyOut(self, out, frames)
+	local ring = self.ring
+	if ring == nil then return nil end
+	local available = self.buffered - self.readPos
+	if available <= 0 then return nil end
+
+	local channels = self.ringChannels
+	local count = math.min(frames, available)
+	local at = self.readPos % self.capacity
+	local first = math.min(count, self.capacity - at)
+	ffi.copy(out, ring + at * channels, first * channels * 2)
+	if first < count then
+		ffi.copy(out + first * channels, ring, (count - first) * channels * 2)
+	end
+	self.readPos += count
+	local commands = self.commands
+	if commands ~= nil and self.readPos - self.consumedAt >= self.consumedLead then
+		-- One token per half ring is what wakes a reader waiting on a full ring; a token per read
+		-- would wake it fifty times a second for nothing.
+		self.consumedAt = self.readPos
+		commands:push({ kind = "consumed", read = self.readPos })
+	end
+	return count
+end
+
+--- Copies decoded frames out, waiting at most one loop's worth for the reader. treble answers the
+--- number of frames it got, and nil plus a message for a source that failed.
+---
+--- treble's fill treats a nought as the end of the track, so the audio thread's gate only calls a
+--- read when `available()` covers whatever fill will ask for; a seek is applied before the gate
+--- looks and resets the count, so the read that follows it still finds data. The one case the gate
+--- cannot cover is a source whose ring holds less than the staging buffer after a rate change: a
+--- read can then run the ring dry mid-fill, and this waits one loop's worth for the reader rather
+--- than answering the nought treble would take for the end of the track.
 ---@param out ffi.cdata*
 ---@param frames number
 ---@return number? frames
@@ -386,56 +440,57 @@ end
 function Source:read(out, frames)
 	if self.closed then return 0 end
 
-	while true do
-		self:take(false)
+	self:take()
+	if self.error ~= nil then return nil, self.error end
+
+	local count = copyOut(self, out, frames)
+	if count ~= nil then return count end
+
+	if self.ended then return 0 end
+	if self:dead() then return nil, self.error or "the audio reader stopped" end
+
+	local events = self.events
+	if events ~= nil and events:wait(READ_WAIT_MS) then
+		self:take()
 		if self.error ~= nil then return nil, self.error end
-
-		local ring = self.ring
-		if ring ~= nil then
-			local available = self.buffered - self.readPos
-			if available > 0 then
-				local channels = self.ringChannels
-				local count = math.min(frames, available)
-				local at = self.readPos % self.capacity
-				local first = math.min(count, self.capacity - at)
-				ffi.copy(out, ring + at * channels, first * channels * 2)
-				if first < count then
-					ffi.copy(out + first * channels, ring, (count - first) * channels * 2)
-				end
-				self.readPos += count
-				local commands = self.commands
-				if commands ~= nil and self.readPos - self.consumedAt >= self.consumedLead then
-					-- One token per half ring is what wakes a reader waiting on a full ring; a
-					-- token per read would wake it fifty times a second for nothing.
-					self.consumedAt = self.readPos
-					commands:push({ kind = "consumed", read = self.readPos })
-				end
-				return count
-			end
-		end
-
+		count = copyOut(self, out, frames)
+		if count ~= nil then return count end
 		if self.ended then return 0 end
-		if self:dead() then return nil, self.error or "the audio reader stopped" end
-		self:take(true)
 	end
+	return 0
 end
 
 --- Moves the reader to a frame without decoding the part before it. treble has already dropped
---- what the device held, so this answers at once; the first read after it may wait for the reader.
+--- what the device held, so this answers at once; the first read after it only finds data once the
+--- reader has decoded from there, which the audio thread's gate waits for.
 ---@param frame number
 ---@return boolean
 function Source:seek(frame)
 	if self.closed then return false end
+	if self.ring ~= nil and frame == self.readPos then
+		-- Already at that frame, with the ring holding what follows it: nothing before it is lost.
+		-- treble seeks a source to the top when it adopts it, and a prefetched ring that has not
+		-- been read from is exactly that; resetting it would throw away the audio the gate waited
+		-- for and make the first read find an empty ring.
+		return true
+	end
+	local commands = self.commands
+	if commands == nil then
+		-- The reader has not started yet: this only says where it should begin, so there is no
+		-- generation to retire and no message to send.
+		self.readPos = frame
+		self.buffered = frame
+		self.consumedAt = frame
+		self.startFrame = frame
+		self.ended = false
+		return true
+	end
 	self.generation += 1
 	self.readPos = frame
 	self.buffered = frame
 	self.consumedAt = frame
 	self.ended = false
-	if self.commands ~= nil then
-		self.commands:push({ kind = "seek", frame = frame, generation = self.generation })
-	else
-		self.startFrame = frame
-	end
+	commands:push({ kind = "seek", frame = frame, generation = self.generation })
 	return true
 end
 

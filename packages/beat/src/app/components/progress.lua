@@ -61,8 +61,17 @@ function progress.view(app, props)
 	local theme = app.services.appearance.theme
 	local track, player, width = props.track, props.player, props.width
 	local mobile = props.mobile == true
-	local duration = track.duration > 0 and track.duration or player:duration()
-	local position = player:position()
+	-- A track still being opened has no place and no length to show: the last snapshot's numbers
+	-- describe where it will start, and the one before it describes another track. Both clocks stay
+	-- at the placeholder until the first frames of this track are heard, and the slider holds at 0.
+	local unknown = player:isLoading() and not player:hasHeard()
+	local duration, position
+	if unknown then
+		duration, position = 0, 0
+	else
+		duration = track.duration > 0 and track.duration or player:duration()
+		position = player:position()
+	end
 	local height = progress.height(theme, mobile)
 	-- Room for `12:34` at body size, and the same on the desktop for its caption.
 	local clockWidth = mobile and theme:px(48) or theme:px(34)
@@ -94,6 +103,11 @@ function progress.view(app, props)
 		cache.progress = styles
 	end
 
+	-- Nothing audible has a place to follow: the slider holds still at the placeholder until the
+	-- track is heard, then the player's own position is what every repaint reads.
+	local liveValue = styles.liveValue
+	if unknown then liveValue = nil end
+
 	return div():style(styles.row):children({
 		clock(styles, position),
 		slider.view(app, {
@@ -105,7 +119,7 @@ function progress.view(app, props)
 			-- The playhead moves every frame of a track while the clock beside it moves
 			-- once a second, so the bar follows the player when the frame is drawn: a
 			-- repaint shows where it is without laying the row out again.
-			liveValue = styles.liveValue,
+			liveValue = liveValue,
 			-- The bar and the now-playing screen have a slider each for the same player; the
 			-- player is what says a slider is this one rather than another of the same size.
 			instance = player,

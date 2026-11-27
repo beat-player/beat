@@ -26,6 +26,8 @@ local threading = require("threading")
 ---@field position number?
 ---@field duration number?
 ---@field playing boolean?
+---@field buffering boolean? # The thread wants to play but holds the device paused until enough is buffered
+---@field buffered number? # Seconds of decoded audio ready ahead of the device; 0 when unknown
 ---@field completed boolean?
 ---@field last boolean? # Whether nothing is staged or repeated after the track that ended
 ---@field heard number?
@@ -50,7 +52,7 @@ local threading = require("threading")
 ---@field trackDuration number
 ---@field playing boolean
 ---@field endedId number? # The command whose last track played out with nothing after it
----@field sampledAt number # `now` when the snapshot was applied
+---@field sampledAt number? # `now` when the last snapshot reporting play was applied
 ---@field heard number
 ---@field sampleRate number?
 ---@field written number?
@@ -59,6 +61,8 @@ local threading = require("threading")
 ---@field audioIndex number?
 ---@field loading boolean # Whether a requested track has yet to be heard
 ---@field loadingId number # The command that requested it
+---@field buffering boolean # Whether the thread holds the device paused waiting for data
+---@field buffered number # Seconds of decoded audio the thread has ahead of the device
 ---@field released boolean # Whether the thread was only told to stop, never joined
 ---@field unjoined boolean # Whether a shutdown left the thread (and its channels) running
 ---@field dead boolean # Whether the audio thread ended without being asked
@@ -130,6 +134,8 @@ function AudioClient.attach(commands, events, handle)
 		audioIndex = nil,
 		loading = false,
 		loadingId = 0,
+		buffering = false,
+		buffered = 0,
 		released = false,
 		unjoined = false,
 		dead = false,
@@ -170,10 +176,25 @@ function AudioClient:beginLoading()
 	self.loadingId = self.commandId
 end
 
---- Whether the track the user asked for has yet to produce heard audio.
+--- Whether the track the user asked for has yet to produce heard audio, or the thread is holding
+--- the device paused while it buffers enough of it.
 ---@return boolean
 function AudioClient:isLoading()
-	return self.loading
+	return self.loading or self.buffering
+end
+
+--- Whether any of the current track has actually been heard. Until it has, the bar has no place to
+--- show: a snapshot's position is where the device will start, not somewhere it has been.
+---@return boolean
+function AudioClient:hasHeard()
+	return self.heard > 0
+end
+
+--- Whether frames are being heard now: playing, with a snapshot of this track's audio behind it.
+--- A load the thread is still buffering is not audible, however much the user wants it to be.
+---@return boolean
+function AudioClient:isAudible()
+	return self.playing and not self.loading and not self.buffering
 end
 
 ---@param command beat.AudioMessage
@@ -232,6 +253,15 @@ function AudioClient:load(tracks, startAt, autoplay, repeatOne)
 	self.collecting = false
 	self.endedId = nil
 	self.at = startAt or 0
+	-- A load has nothing of this track heard yet: any place or length from before it belongs to the
+	-- track being replaced, and the clocks stay placeholders until snapshots bring the new ones.
+	self.trackDuration = 0
+	self.heard = 0
+	self.written = nil
+	self.floor = nil
+	self.buffering = false
+	self.buffered = 0
+	self.sampledAt = nil
 	self:send({
 		kind = "load",
 		tracks = queued,
@@ -242,9 +272,9 @@ function AudioClient:load(tracks, startAt, autoplay, repeatOne)
 	}, true)
 	if autoplay ~= false then
 		self.playing = true
-		self.sampledAt = self.now
 		self:beginLoading()
 	else
+		self.playing = false
 		self.loading = false
 	end
 end
@@ -274,33 +304,41 @@ function AudioClient:play()
 		return
 	end
 	self.playing = true
-	self.sampledAt = self.now
 	self:send({ kind = "play" }, true)
 	self:beginLoading()
 end
 
+--- Pauses at once, including a track the thread is still opening or buffering: the user hears
+--- nothing of it, so the place the bar keeps is the one the last snapshot reported, never one
+--- interpolated towards a moment nothing was audible.
 function AudioClient:pause()
+	local waiting = self.loading or self.buffering
 	self.loading = false
-	if not self.playing then return end
-	self.at = self:position()
-	self.sampledAt = self.now
+	self.buffering = false
+	self.buffered = 0
+	if not waiting and not self.playing then return end
+	-- A playing track freezes at the place on screen; a loading one keeps the snapshot's place.
+	if not waiting then self.at = self:position() end
 	self.playing = false
+	self.sampledAt = nil
 	self:send({ kind = "pause" }, true)
 end
 
 function AudioClient:stop()
 	self.loading = false
+	self.buffering = false
+	self.buffered = 0
 	self.playing = false
 	self.at = 0
 	self.trackDuration = 0
-	self.sampledAt = self.now
+	self.sampledAt = nil
 	self:send({ kind = "stop" }, true)
 end
 
 ---@param seconds number
 function AudioClient:seek(seconds)
 	self.at = math.max(0, seconds or 0)
-	self.sampledAt = self.now
+	self.sampledAt = nil
 	self:send({ kind = "seek", seconds = self.at }, true)
 	-- Asking where a paused track would start is not a wait for audio: nothing was asked to play.
 	if self.playing then self:beginLoading() end
@@ -320,6 +358,9 @@ function AudioClient:close()
 	self.heard = 0
 	self.written = nil
 	self.floor = nil
+	self.buffering = false
+	self.buffered = 0
+	self.sampledAt = nil
 	self:send({ kind = "close" }, true)
 end
 
@@ -351,27 +392,42 @@ function AudioClient:apply(snapshot)
 	-- is the truth again.
 	local afterEnd = self.endedId == nil or (commandId or 0) > self.endedId
 	self.appliedId = commandId or self.appliedId
-	self.trackDuration = snapshot.duration or 0
 	self.audioIndex = snapshot.index or self.audioIndex
 	local rate = snapshot.sampleRate
 	if type(rate) == "number" then self.sampleRate = rate end
 
 	-- A snapshot is the state after the commands it says it applied. Anything newer than that from
-	-- this side -- a play, a seek -- is what the user is looking at, even though the device has not
-	-- caught up yet; the next snapshot carries its command id and becomes the truth.
+	-- this side -- a play, a pause, a seek -- is what the user is looking at, even though the device
+	-- has not caught up yet; the next snapshot carries its command id and becomes the truth.
+	-- The length is gated with the place: a snapshot from before a load still describes the track
+	-- being replaced, and its end time must not sit beside the new track's place.
 	if self.appliedId >= self.stateId then
-		if afterEnd then self.playing = snapshot.playing == true end
+		if afterEnd then
+			self.playing = snapshot.playing == true
+			self.buffering = snapshot.buffering == true
+		end
 		self.at = snapshot.position or 0
+		self.trackDuration = snapshot.duration or 0
 		self.heard = snapshot.heard or 0
 		self.written = snapshot.written
 		self.floor = snapshot.floor
-		self.sampledAt = self.now
+		self.buffered = type(snapshot.buffered) == "number" and snapshot.buffered or 0
+		-- Only a snapshot of audio actually playing is a clock to move on from: one taken while
+		-- the thread buffers holds a place the device has not reached.
+		self.sampledAt = (self.playing and not self.buffering and self.now > 0) and self.now or nil
 	end
 
 	-- The command that asked for the track has been applied and the device has played some of it:
 	-- the wait is over. The heard frame is treble's own count from the track's timeline, so a
-	-- snapshot from before a load or seek has nought there and cannot end the wait early.
-	if self.loading and self.appliedId >= self.loadingId and snapshot.playing == true and (snapshot.heard or 0) > 0 then
+	-- snapshot from before a load or seek has nought there and cannot end the wait early. A thread
+	-- still buffering has not started the device, so its place is not a heard frame yet.
+	if
+		self.loading
+		and self.appliedId >= self.loadingId
+		and self.playing
+		and not self.buffering
+		and (snapshot.heard or 0) > 0
+	then
 		self.loading = false
 	end
 end
@@ -390,12 +446,14 @@ function AudioClient:update(now)
 			self:apply(event)
 		elseif kind == "ended" then
 			self.loading = false
+			self.buffering = false
+			self.buffered = 0
+			self.sampledAt = nil
 			-- The audio thread says nothing follows: the device has stopped, whatever a snapshot
 			-- from before this moment still says. The pause button must not outlive the track.
 			if event.last == true then
 				self.endedId = self.appliedId
 				self.playing = false
-				self.sampledAt = self.now
 			end
 			if self.onTrackEnd ~= nil then self.onTrackEnd(event.completed == true) end
 		elseif kind == "started" then
@@ -407,6 +465,8 @@ function AudioClient:update(now)
 			end
 		elseif kind == "error" then
 			self.loading = false
+			self.buffering = false
+			self.buffered = 0
 			local message = event.message or "the audio thread reported an error"
 			self.error = message
 			if self.onError ~= nil then self.onError(message) end
@@ -424,19 +484,29 @@ function AudioClient:update(now)
 		self.events:close()
 		self.dead = true
 		self.loading = false
+		self.buffering = false
+		self.buffered = 0
 		self.at = self:position()
 		self.playing = false
+		self.sampledAt = nil
 		self.error = ok and "the audio thread stopped" or tostring(err)
 		if self.onError ~= nil then self.onError(self.error) end
 	end
 end
 
---- Seconds into the current track, moved on since the last snapshot while it is playing.
+--- Seconds into the current track, moved on since the last snapshot while it is playing. A track
+--- still loading or buffering stays at the place its snapshot reported: nothing has been heard
+--- there, so nothing on the bar may move. The place never leaves the track.
 ---@return number
 function AudioClient:position()
 	local position = self.at
-	if self.playing then position += math.max(0, self.now - self.sampledAt) end
-	if self.trackDuration > 0 and position > self.trackDuration then position = self.trackDuration end
+	if self.playing and not self.loading and not self.buffering and self.sampledAt ~= nil then
+		local elapsed = self.now - self.sampledAt
+		if elapsed > 0 then position += elapsed end
+	end
+	local duration = self.trackDuration
+	if duration > 0 and position > duration then position = duration end
+	if position < 0 then position = 0 end
 	return position
 end
 
@@ -451,13 +521,19 @@ function AudioClient:isPlaying()
 end
 
 --- The device frame being heard, moved on like the position: what the spectrum's window ends at.
+--- A track still loading or buffering keeps the frame its snapshot reported, so the meter never
+--- reads a window of audio that is not on the device yet.
 ---@return number
 function AudioClient:heardFrame()
 	local heard = self.heard
-	if self.playing and self.sampleRate ~= nil then
-		heard += math.max(0, self.now - self.sampledAt) * self.sampleRate
-		if self.written ~= nil and heard > self.written then heard = self.written end
+	if self.playing and not self.loading and not self.buffering and self.sampleRate ~= nil and self.sampledAt ~= nil then
+		local elapsed = self.now - self.sampledAt
+		if elapsed > 0 then
+			heard += elapsed * self.sampleRate
+			if self.written ~= nil and heard > self.written then heard = self.written end
+		end
 	end
+	if heard < 0 then heard = 0 end
 	return math.floor(heard)
 end
 

@@ -468,6 +468,71 @@ test.it("writes the session every thirty seconds while visible", function()
 	test.equal(math.floor(saved.seconds), 30, "the file holds the place the stride reached")
 end)
 
+test.it("pauses a track that is still loading instead of starting it again", function()
+	local service = start()
+	local on = assert(Playback.on)
+	service:playAlbum(albumA.id, false)
+
+	local backend = assert(service.player.player)
+	local state = { playing = true, loading = true, pauses = 0, plays = 0 }
+	backend.isPlaying = function() return state.playing end
+	backend.isLoading = function() return state.loading end
+	backend.isAudible = function() return state.playing and not state.loading end
+	backend.play = function()
+		state.plays = state.plays + 1
+		state.playing = true
+	end
+	backend.pause = function()
+		state.pauses = state.pauses + 1
+		state.playing = false
+		state.loading = false
+	end
+
+	test.truthy(service.player:isPlaying(), "loading is playback the user asked for")
+	service:toggle()
+	test.equal(state.pauses, 1, "the transport pauses the load")
+	test.equal(state.plays, 0, "and does not start it a second time")
+	test.falsy(service.player:isPlaying())
+	test.falsy(service:isLoading())
+
+	-- The current track's row is the same control: tapping it pauses a loading track again.
+	state.playing, state.loading = true, true
+	on.playTrack(service, { type = "playTrack", trackId = 1 })
+	test.equal(state.pauses, 2, "the current row pauses the load")
+	test.equal(state.plays, 0)
+end)
+
+test.it("leaves the meter at rest while a track is still loading", function()
+	local service = start()
+	service:playAlbum(albumA.id, false)
+	local backend = assert(service.player.player)
+	local loading = true
+	backend.isLoading = function() return loading end
+
+	local stepped, cleared = 0, 0
+	service.spectrum = {
+		sync = function() end,
+		step = function()
+			stepped = stepped + 1
+			return false, false
+		end,
+		clear = function()
+			cleared = cleared + 1
+		end
+	}
+
+	local _, busy, repaint = service:step(0)
+	test.equal(stepped, 0, "no window is analysed while nothing of the track is heard")
+	test.equal(cleared, 1, "the previous track's bars are cleared")
+	test.truthy(busy, "the spinner still asks for frames")
+	test.truthy(repaint)
+
+	loading = false
+	service:step(1)
+	test.equal(stepped, 1, "the meter runs once the track is heard")
+	test.equal(cleared, 1, "and is not cleared again")
+end)
+
 test.it("writes the session once a minute while hidden", function()
 	local service = start()
 	service:playAlbum(albumA.id, false)

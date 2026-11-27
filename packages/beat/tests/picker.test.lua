@@ -36,3 +36,23 @@ test.it("does nothing while the dialog has not written a result", function()
 	test.falsy(status)
 	fs.delete(file)
 end)
+
+test.it("reads a chosen file and tells it from a folder", function()
+	local file = os.tmpname() .. "-beat-picker-file.txt"
+	assert(fs.write(file, "profile"))
+	local handle = resultFile(file .. "\n")
+	handle.kind = "file"
+	local path, status = picker.poll(handle)
+	test.equal(path, file)
+	test.falsy(status)
+	fs.delete(file)
+end)
+
+test.it("a file pick refuses a folder answer", function()
+	local directory = os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"
+	local handle = resultFile(directory .. "\n")
+	handle.kind = "file"
+	local path, status = picker.poll(handle)
+	test.falsy(path)
+	test.equal(status, "cancelled")
+end)

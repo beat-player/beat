@@ -1,6 +1,7 @@
 local test = require("lde-test")
 local fs = require("fs")
 local path = require("path")
+local json = require("json")
 local paths = require("beat.paths")
 local settingsModel = require("beat.app.services.settings.model")
 
@@ -102,6 +103,79 @@ test.it("survives a settings file that is not JSON", function()
 	local loaded = settingsModel.load(dir)
 	test.equal(loaded.theme, "night", "a broken file is the defaults")
 
+	fs.delete(paths.file("settings.json", dir))
+	fs.rmdir(dir)
+end)
+
+test.it("starts with no preamp and no profile", function()
+	local dir = tempDir()
+	local loaded = settingsModel.load(dir)
+	test.equal(loaded.equalizerPreamp, 0)
+	test.falsy(loaded.equalizerProfile)
+	fs.rmdir(dir)
+end)
+
+test.it("round-trips the preamp and an imported profile", function()
+	local dir = tempDir()
+	local value = settingsModel.load(dir)
+	value.equalizerPreamp = -3.5
+	value.equalizerProfile = {
+		name = "HD 650",
+		preamp = -4.5,
+		filters = { { type = "peak", frequency = 105, gain = -2.3, q = 0.7 } }
+	}
+
+	local ok, err = settingsModel.save(value, dir)
+	test.truthy(ok, err)
+
+	local again = settingsModel.load(dir)
+	test.equal(again.equalizerPreamp, -3.5)
+	local profile = assert(again.equalizerProfile)
+	test.equal(profile.name, "HD 650")
+	test.equal(profile.preamp, -4.5)
+	test.equal(#profile.filters, 1)
+	test.equal(profile.filters[1].type, "peak")
+	test.equal(profile.filters[1].frequency, 105)
+
+	fs.delete(paths.file("settings.json", dir))
+	fs.rmdir(dir)
+end)
+
+test.it("holds a hand-edited preamp and profile to what can play", function()
+	local dir = tempDir()
+	local filters = {}
+	for at = 1, 25 do
+		filters[at] = { type = "PK", frequency = 100 + at, gain = 99, q = 1 }
+	end
+	filters[#filters + 1] = { type = "??", frequency = 100, gain = 1, q = 1 }
+	filters[#filters + 1] = { type = "PK", frequency = -5, gain = 1, q = 1 }
+	fs.write(
+		paths.file("settings.json", dir),
+		json.encode({
+			equalizerPreamp = 99,
+			equalizerProfile = { name = "  AutoEq  ", preamp = -99, filters = filters }
+		})
+	)
+
+	local loaded = settingsModel.load(dir)
+	test.equal(loaded.equalizerPreamp, 6, "the fader stops at its top")
+	local profile = assert(loaded.equalizerProfile)
+	test.equal(profile.name, "AutoEq")
+	test.equal(profile.preamp, -24)
+	test.equal(#profile.filters, 20, "a file with more filters than the cap keeps the first playable ones")
+	test.equal(profile.filters[1].frequency, 101)
+	test.equal(profile.filters[1].gain, 24)
+
+	fs.delete(paths.file("settings.json", dir))
+	fs.rmdir(dir)
+end)
+
+test.it("drops a profile that is not a profile", function()
+	local dir = tempDir()
+	fs.write(paths.file("settings.json", dir), '{ "equalizerPreamp": "loud", "equalizerProfile": { "name": 7 } }')
+	local loaded = settingsModel.load(dir)
+	test.equal(loaded.equalizerPreamp, 0)
+	test.falsy(loaded.equalizerProfile)
 	fs.delete(paths.file("settings.json", dir))
 	fs.rmdir(dir)
 end)

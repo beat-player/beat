@@ -216,7 +216,9 @@ function Media:step(now)
 		return false, false
 	end
 
-	local playing = player:isPlaying()
+	-- What the status reports is what is heard: a loading or buffering track is shown as paused
+	-- until its first frames reach the device.
+	local playing = player:isAudible()
 	local position = player:position()
 	local duration = player:duration()
 	local seconds = math.floor(duration)

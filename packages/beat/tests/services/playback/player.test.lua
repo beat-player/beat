@@ -245,6 +245,69 @@ test.it("goes on from a pause without staging the queue again", function()
 	test.equal(calls.closes, closes)
 end)
 
+test.it("keeps each band's shape and the preamp when it copies the equalizer", function()
+	local player = Player.new()
+	---@type treble.Equalizer.Band[]
+	local bands = {
+		{ type = "peak", frequency = 100, gain = 3, q = 1 },
+		{ type = "lowpass", frequency = 16000, gain = 0, q = 0.7 },
+		preamp = -2
+	}
+
+	player:setEqualizer(bands)
+	local kept = assert(player.equalizerBands)
+	test.truthy(kept ~= bands, "the player keeps its own copy")
+	test.equal(kept.preamp, -2, "the preamp survives a reload with the bands")
+	test.equal(kept[1].type, "peak")
+	test.equal(kept[2].type, "lowpass", "a shelf or a pass keeps its shape")
+	test.equal(kept[2].frequency, 16000)
+end)
+
+test.it("counts a track still loading as playback the user wants, and pauses it", function()
+	local player = Player.new()
+	local loading = true
+	local playing = true
+	local pauses, plays = 0, 0
+	player.player = fake({
+		close = function() end,
+		enqueue = function() end,
+		play = function()
+			plays = plays + 1
+			playing = true
+		end,
+		pause = function()
+			pauses = pauses + 1
+			playing = false
+			loading = false
+		end,
+		stop = function()
+			playing = false
+			loading = false
+		end,
+		seek = function() end,
+		update = function() end,
+		position = function() return 0 end,
+		duration = function() return 100 end,
+		isPlaying = function() return playing end,
+		isLoading = function() return loading end,
+		isAudible = function() return playing and not loading end,
+		setVolume = function() end
+	})
+	player:playTracks({ oneTrack }, 1)
+
+	test.truthy(player:isPlaying(), "the loading track is what the user asked to play")
+	test.falsy(player:isAudible(), "though nothing is heard yet")
+
+	-- Pausing now must reach the device through the load, not start the track a second time.
+	player:toggle()
+	test.equal(pauses, 1, "the loading track is paused")
+	test.falsy(player:isPlaying(), "and the control turns back to play")
+	test.falsy(player:isLoading(), "the load is over")
+
+	player:toggle()
+	test.equal(plays, 2, "playing again starts the track")
+end)
+
 test.it("opens no audio device for controls with nothing queued", function()
 	local player = Player.new()
 	player:pause()

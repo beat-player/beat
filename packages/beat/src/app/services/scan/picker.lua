@@ -10,6 +10,7 @@ local picker = {}
 ---@class beat.FolderPick
 ---@field file string
 ---@field platform string
+---@field kind "folder"|"file"? # What the dialog asks for; a handle without one is a folder pick
 
 --- Starts the dialog. A file is returned even when no native picker exists; `poll` says which.
 ---@param window winit.Window?
@@ -46,7 +47,38 @@ function picker.start(window, opts)
 	return { file = file, platform = osName }
 end
 
---- The chosen folder, or a status when the dialog was cancelled or is not available.
+--- The same dialog asking for one file. A build whose platform names no file chooser answers
+--- `no-picker` rather than pretending to have asked, which is what hides the choice on a phone.
+---@param window winit.Window?
+---@param opts { title: string?, filters: winit.FileFilter[]? }?
+---@return beat.FolderPick
+function picker.startFile(window, opts)
+	local file = os.tmpname() .. "-beat-file"
+	local osName = jit.os or ""
+	local dialog = winit.FileDialog
+
+	fs.delete(file)
+
+	local pickFile = dialog ~= nil and dialog.pickFile or nil
+	if pickFile == nil then
+		fs.write(file, "__NO_PICKER__")
+		return { file = file, platform = osName, kind = "file" }
+	end
+
+	local title = opts ~= nil and opts.title or "Choose profile"
+	local ok, path = pcall(pickFile, window, { title = title, filters = opts ~= nil and opts.filters or nil })
+	if not ok or type(path) ~= "string" then
+		fs.write(file, "__NO_PICKER__")
+	elseif path == "" then
+		fs.write(file, "__CANCEL__")
+	else
+		fs.write(file, path)
+	end
+
+	return { file = file, platform = osName, kind = "file" }
+end
+
+--- The chosen path, or a status when the dialog was cancelled or is not available.
 ---@param pick beat.FolderPick
 ---@return string? path
 ---@return string? status # "cancelled", "no-picker", or nil while the dialog is still open
@@ -60,7 +92,11 @@ function picker.poll(pick)
 	value = value:gsub("[\r\n]+$", "")
 	if value == "__NO_PICKER__" then return nil, "no-picker" end
 	if value == "__CANCEL__" then return nil, "cancelled" end
-	if value ~= "" and fs.isdir(value) then return value end
+	if pick.kind == "file" then
+		if value ~= "" and fs.isfile(value) then return value end
+	elseif value ~= "" and fs.isdir(value) then
+		return value
+	end
 	return nil, "cancelled"
 end
 

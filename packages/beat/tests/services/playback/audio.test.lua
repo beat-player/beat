@@ -85,8 +85,10 @@ test.it("loads a queue from the path it starts at, seeks, and says the track sta
 	test.equal(calls[1], "close")
 	test.equal(calls[2], "enqueue:tests/fixtures/tone.wav", "the queue is staged as prefetch sources")
 	test.equal(calls[3], "enqueue:tests/fixtures/tone.wav")
-	test.equal(calls[4], "play")
-	test.equal(calls[5], "seek:12")
+	test.equal(calls[4], "seek:12", "the start place is held until the gate opens the device")
+	test.equal(#calls, 4, "a load never starts the device before the ring has data")
+	test.truthy(state.wantsPlay, "the user did ask for playback")
+	test.truthy(state.buffering, "so it starts out buffering")
 	test.equal(events[1].kind, "started")
 	test.equal(events[1].index, 1)
 
@@ -156,6 +158,352 @@ test.it("reports a device whose heard frame stops moving as stalled, and its rec
 	test.equal(AudioThread.watchStall(stall, true, 5000, 1.5), false, "and not again while it lasts")
 	test.equal(AudioThread.watchStall(stall, true, 6000, 1.6), true, "a moving frame ends it")
 	test.equal(stall.stalled, false)
+end)
+
+--- A player with just the fields the buffering gate reads, recording what it is asked to do.
+---@return table player
+local function gatePlayer()
+	local calls = {}
+	---@type table
+	local player = { playing = nil, decoding = nil, queue = {}, paused = false, heardFrames = 0, seconds = 0 }
+	function player:play()
+		calls[#calls + 1] = "play"
+		self.paused = false
+	end
+	function player:pause()
+		calls[#calls + 1] = "pause"
+		self.paused = true
+	end
+	function player:isPlaying() return self.playing ~= nil and not self.paused end
+	function player:playedFrames() return self.heardFrames end
+	function player:position() return self.seconds end
+	player.calls = calls
+	return player
+end
+
+--- A prefetch source as the gate sees it: a ring with `frames` decoded and not yet read. Reading
+--- an empty ring is an error, so a test fails loudly if the gate ever lets that happen.
+---@param frames number
+---@param opts { ready: boolean?, finished: boolean?, rate: number?, capacity: number? }?
+---@return table source
+local function gateSource(frames, opts)
+	opts = opts or {}
+	---@type table
+	local source = {
+		sampleRate = opts.rate or 44100,
+		channels = 1,
+		frameCount = opts.frameCount or 0,
+		capacity = opts.capacity or 44100 * 2.5,
+		frames = frames,
+		isReady = opts.ready ~= false,
+		isFinished = opts.finished == true,
+		reads = 0
+	}
+	function source:available() return self.frames end
+	function source:ready() return self.isReady end
+	function source:finished() return self.isFinished end
+	function source:prefetch() self.prefetched = true end
+	function source:seek() return true end
+	function source:read(_, frames)
+		self.reads += 1
+		if self.frames <= 0 then error("the gate let a read reach an empty ring") end
+		local count = math.min(frames or self.frames, self.frames)
+		self.frames -= count
+		return count
+	end
+	return source
+end
+
+test.it("holds a load in buffering and never reads an empty ring", function()
+	local player = gatePlayer()
+	local source = gateSource(0)
+	-- A fresh load: treble has staged the source but the device has not adopted it yet.
+	player.queue = { { item = source } }
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	local feed = AudioThread.gate(state, player)
+	test.falsy(feed, "update must not run when there is nothing to read")
+	test.truthy(state.buffering, "the load stays buffering")
+	test.equal(#player.calls, 0, "the device is never started")
+	test.equal(source.reads, 0, "and the ring is never read")
+end)
+
+test.it("starts playback when the start buffer has arrived", function()
+	local player = gatePlayer()
+	local source = gateSource(44100)
+	player.playing = { source = source }
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	local feed, changed = AudioThread.gate(state, player)
+	test.truthy(feed)
+	test.truthy(changed, "leaving buffering is news for the snapshot")
+	test.falsy(state.buffering)
+	test.equal(player.calls[1], "play", "enough decoded audio opens the device")
+end)
+
+test.it("re-enters buffering when the ring runs low, and wants a full second to resume", function()
+	local player = gatePlayer()
+	local source = gateSource(4410) -- 0.1 s, under one staging plus one device buffer
+	player.playing = { source = source }
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = false, starting = false, sampleRate = 44100 }
+
+	local feed, changed = AudioThread.gate(state, player)
+	test.falsy(feed, "the device is paused instead of reading an almost empty ring")
+	test.truthy(changed)
+	test.truthy(state.buffering)
+	test.equal(player.calls[1], "pause")
+	test.equal(state.bufferHeard, 0, "the frame it had reached is kept for the snapshot")
+	test.equal(state.bufferPosition, 0, "and so is the place")
+
+	-- Half a second is more than the low threshold but under the one a resume waits for.
+	source.frames = 22050
+	player.paused = true
+	test.falsy(AudioThread.gate(state, player), "a resume needs the start buffer, not just the low one")
+	test.truthy(state.buffering)
+
+	source.frames = 44100
+	test.truthy(AudioThread.gate(state, player), "a full second starts it again")
+	test.falsy(state.buffering)
+	test.equal(player.calls[#player.calls], "play")
+end)
+
+test.it("plays out a source whose reader has finished", function()
+	local player = gatePlayer()
+	local source = gateSource(100, { finished = true })
+	player.playing = { source = source }
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	local feed, changed = AudioThread.gate(state, player)
+	test.truthy(feed, "a source at the end of its file has no more data to wait for")
+	test.truthy(changed)
+	test.falsy(state.buffering)
+end)
+
+test.it("a pause during buffering stops asking for playback", function()
+	local player = gatePlayer()
+	local source = gateSource(0)
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	AudioThread.apply(state, player, { kind = "pause" }, function() end)
+	test.falsy(state.wantsPlay)
+	test.falsy(state.buffering)
+	test.equal(player.calls[1], "pause")
+	test.falsy(AudioThread.gate(state, player), "the next step does not read or pause again")
+	test.equal(#player.calls, 1)
+end)
+
+test.it("reports buffering, the decoded seconds ahead and the held place", function()
+	local player = fakePlayer()
+	local source = gateSource(88200) -- 2 s at 44.1 kHz
+	local state = {
+		index = 1,
+		sources = { source },
+		wantsPlay = true,
+		buffering = true,
+		bufferHeard = 4410,
+		bufferPosition = 12.5,
+		sampleRate = 44100
+	}
+
+	local snapshot = AudioThread.snapshot(state, player, nil)
+	test.truthy(snapshot.buffering, "the snapshot says why nothing is audible")
+	test.equal(snapshot.playing, false)
+	test.equal(snapshot.position, 12.5, "the place is the one the device was paused at")
+	test.equal(snapshot.heard, 4410, "and the heard frame does not move")
+	test.equal(snapshot.buffered, 2, "the decoded seconds ahead are reported")
+
+	-- A paused load with a start place treble has not adopted yet: nought is not the truth.
+	state.buffering = false
+	state.bufferPosition = nil
+	state.startPosition = 30
+	local held = AudioThread.snapshot(state, player, nil)
+	test.falsy(held.buffering)
+	test.equal(held.position, 30, "a load's start place is shown before the source is adopted")
+end)
+
+-- The gate's decision, then the real treble player's own fill: a read happens only when the gate
+-- has allowed one, and the staged chunk reaches the device.
+test.it("feeds a real treble player only when the gate has decoded audio", function()
+	local treble = require("treble")
+	local written = 0
+	---@type treble.OutputStream
+	local stream = {
+		sampleRate = 44100,
+		channels = 1,
+		write = function(_, _, frames)
+			written += frames
+			return frames
+		end,
+		avail = function() return 4096 end,
+		delay = function() return 0 end,
+		setPaused = function() end,
+		drain = function() end,
+		flush = function() end,
+		close = function() end
+	}
+	local player = treble.Player.new({
+		stagingSeconds = 0.2,
+		stream = function() return stream end
+	})
+	local source = gateSource(0)
+	player:enqueue(source)
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	test.falsy(AudioThread.gate(state, player), "an empty ring may not be fed")
+	test.equal(source.reads, 0, "so treble is not stepped and nothing is read")
+
+	source.frames = 44100
+	test.truthy(AudioThread.gate(state, player), "a second of audio opens the gate")
+	player:update()
+	test.equal(source.reads, 1, "one fill took what the staging buffer holds")
+	test.truthy(written > 0, "the staged audio reached the device")
+	player:close()
+end)
+
+-- The reader fills the ring on another thread. Its queries and a read must never wait for it, or the
+-- audio thread would hold the device empty just as it used to inside a file read.
+test.it("answers prefetch queries and reads without waiting for the reader", function()
+	local ffi = require("ffi")
+	local Prefetch = require("beat.app.services.playback.prefetch")
+	local source = Prefetch.new({ path = "tests/fixtures/tone.wav" })
+
+	test.equal(source:available(), 0, "nothing is decoded before the reader starts")
+	test.falsy(source:ready())
+	test.falsy(source:finished())
+
+	source:prefetch()
+	local out = ffi.new("int16_t[?]", 8192)
+
+	-- A read landing while the ring is still empty answers within one loop's wait, not after the
+	-- reader has decoded; the point is that it cannot park the audio thread on a file.
+	local started = time.now()
+	local frames = source:read(out, 8192)
+	test.truthy(time.now() - started < 0.2, "an empty read did not wait for the reader")
+	test.truthy(frames ~= nil)
+
+	local waited = 0
+	while not source:finished() and waited < 2000 do
+		threading.sleep(5)
+		waited += 5
+	end
+	test.truthy(source:ready(), "the reader reported the ring")
+	test.truthy(source:finished(), "the short fixture reaches its end")
+	test.truthy(source:available() > 0, "the decoded frames wait to be read")
+
+	local total = frames or 0
+	while true do
+		local got = source:read(out, 8192)
+		if got == nil or got == 0 then break end
+		total += got
+	end
+	test.equal(total, source.frameCount, "every decoded frame comes out of the ring")
+
+	source:close()
+	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
+end)
+
+-- treble seeks every non-owned source to the top when it adopts it. That must not throw away what
+-- the gate waited for: the ring is already at that head, and the first read after adoption has to
+-- find audio, not the nought treble reads as the end of the track.
+test.it("keeps a prefetched ring when treble seeks the source to its head", function()
+	local ffi = require("ffi")
+	local Prefetch = require("beat.app.services.playback.prefetch")
+	local source = Prefetch.new({ path = "tests/fixtures/tone.wav" })
+	source:prefetch()
+
+	local waited = 0
+	while source:available() == 0 and waited < 4000 do
+		threading.sleep(5)
+		waited += 5
+	end
+	local ready = source:available()
+	test.truthy(ready > 0, "the reader decoded some audio")
+
+	test.truthy(source:seek(0), "adoption seeks the source to its head")
+	test.truthy(source:available() >= ready, "the decoded ring survives the head seek")
+
+	local out = ffi.new("int16_t[?]", 8192)
+	local got = source:read(out, 8192)
+	test.truthy(got ~= nil and got > 0, "the first fill after adoption finds audio")
+
+	source:close()
+	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
+end)
+
+-- A queue restored at a place starts its reader there; the adoption seek lands on that same frame
+-- and must leave the ring alone.
+test.it("starts the reader at a queue's start place", function()
+	local ffi = require("ffi")
+	local Prefetch = require("beat.app.services.playback.prefetch")
+	local source = Prefetch.new({ path = "tests/fixtures/tone.wav" })
+	local startAt = 4410
+
+	test.truthy(source:seek(startAt), "the place is set before the reader starts")
+	source:prefetch()
+
+	local waited = 0
+	while source:available() == 0 and waited < 4000 do
+		threading.sleep(5)
+		waited += 5
+	end
+	test.truthy(source:available() > 0, "the reader decoded from the start place")
+	test.truthy(source:seek(startAt), "adoption seeks to the same frame")
+
+	local out = ffi.new("int16_t[?]", 8192)
+	local got = source:read(out, 8192)
+	test.truthy(got ~= nil and got > 0, "the first fill finds the audio decoded from there")
+	test.truthy(source.frameCount - startAt >= (got or 0), "and it is the audio after the start place")
+
+	source:close()
+	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
+end)
+
+-- The gate and a real prefetch reader through a real treble player with a fake device: the ring is
+-- never read empty, and the audio the reader decoded reaches the device.
+test.it("plays a prefetched source through treble without an empty read", function()
+	local Prefetch = require("beat.app.services.playback.prefetch")
+	local treble = require("treble")
+	local written = 0
+	---@type treble.OutputStream
+	local stream = {
+		sampleRate = 44100,
+		channels = 1,
+		write = function(_, _, frames)
+			written += frames
+			return frames
+		end,
+		avail = function() return 4096 end,
+		delay = function() return 0 end,
+		setPaused = function() end,
+		drain = function() end,
+		flush = function() end,
+		close = function() end
+	}
+	local player = treble.Player.new({
+		stagingSeconds = 0.2,
+		stream = function() return stream end
+	})
+	local source = Prefetch.new({ path = "tests/fixtures/tone.wav" })
+	player:enqueue(source)
+	---@type string[]
+	local errors = {}
+	player.onError = function(err) errors[#errors + 1] = err end
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true, starting = false, sampleRate = 44100 }
+
+	local waited = 0
+	while written == 0 and waited < 3000 do
+		if AudioThread.gate(state, player) then player:update() end
+		threading.sleep(5)
+		waited += 5
+	end
+
+	test.equal(#errors, 0, "no read failed")
+	test.truthy(written > 0, "decoded audio reached the device")
+	test.falsy(state.buffering, "and the gate let the device start")
+
+	player:close()
+	source:close()
+	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
 end)
 
 test.it("starts the real audio thread, loads paused and answers snapshots", function()
@@ -264,6 +612,159 @@ test.it("mirrors a snapshot and moves the position on between them", function()
 	client:update(2.0)
 	test.falsy(client:isPlaying())
 	test.equal(client:position(), 12)
+
+	client:shutdown()
+end)
+
+-- A load asks for a track nothing of which has been heard: the place is where the snapshot says
+-- the device will start, never where wall-clock time has got to, and the track being replaced
+-- cannot leave its length beside the new one.
+test.it("holds the place and the length at nothing until the track is heard", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+
+	client:load({ "/a.wav" }, 0, true, false)
+	local load = commands:pop() --[[@as beat.AudioMessage]]
+
+	-- The first step after a load: the client's own clock starts at nought while the app's uptime
+	-- does not; the place must not run on either before a snapshot reports playback.
+	client:update(100000)
+	test.equal(client:position(), 0, "a load does not run the playhead from the clock")
+	test.equal(client:duration(), 0, "and knows no length yet")
+
+	-- A snapshot from before the load still describes the track being replaced: neither its place
+	-- nor its end time is the new track's.
+	events:push({
+		kind = "snapshot",
+		commandId = load.id - 1,
+		position = 90,
+		duration = 180,
+		playing = true,
+		heard = 90 * 44100,
+		sampleRate = 44100
+	})
+	client:update(100001)
+	test.truthy(client:isLoading(), "the requested track is still loading")
+	test.equal(client:position(), 0, "the old track's place is not this one's")
+	test.equal(client:duration(), 0, "nor the old track's length")
+
+	-- The thread has applied the load and reports it is buffering, with a little decoded ahead.
+	events:push({
+		kind = "snapshot",
+		commandId = load.id,
+		position = 0,
+		duration = 120,
+		playing = false,
+		buffering = true,
+		buffered = 0.4,
+		heard = 0,
+		sampleRate = 44100
+	})
+	client:update(100002)
+	test.truthy(client:isLoading(), "buffering is still a load")
+	test.equal(client.buffered, 0.4, "the decoded seconds ahead are kept")
+	test.equal(client:position(), 0)
+	test.equal(client:heardFrame(), 0, "nothing is heard while the device is held")
+
+	-- Five seconds of ticks with the device still held: nothing may move.
+	for at = 1, 5 do client:update(100002 + at) end
+	test.equal(client:position(), 0, "the place does not move while nothing is heard")
+	test.equal(client:heardFrame(), 0, "nor the heard frame")
+
+	-- Enough is buffered: the device starts, and the first heard frames end the wait.
+	events:push({
+		kind = "snapshot",
+		commandId = load.id,
+		position = 0.1,
+		duration = 120,
+		playing = true,
+		buffering = false,
+		buffered = 2.5,
+		heard = 4410,
+		sampleRate = 44100
+	})
+	client:update(100010)
+	test.falsy(client:isLoading(), "heard frames and a started device end the wait")
+	test.equal(client:position(), 0.1)
+	client:update(100011)
+	test.truthy(client:position() > 0.5, "the place moves again once it plays")
+	test.truthy(client:heardFrame() > 4410)
+
+	client:shutdown()
+end)
+
+test.it("never lets the place pass the end of the track", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+
+	client:load({ "/a.wav" }, 0, true, false)
+	local load = commands:pop() --[[@as beat.AudioMessage]]
+	events:push({
+		kind = "snapshot",
+		commandId = load.id,
+		position = 99,
+		duration = 100,
+		playing = true,
+		heard = 99 * 44100,
+		sampleRate = 44100
+	})
+	client:update(10)
+	client:update(60)
+	test.equal(client:position(), 100, "a minute of ticks cannot walk past the length")
+
+	client:shutdown()
+end)
+
+test.it("pauses a track the thread is still buffering, keeping its snapshot place", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+
+	client:load({ "/a.wav" }, 0, true, false)
+	local load = commands:pop() --[[@as beat.AudioMessage]]
+	events:push({
+		kind = "snapshot",
+		commandId = load.id,
+		position = 0,
+		duration = 100,
+		playing = false,
+		buffering = true,
+		buffered = 0.2,
+		heard = 0,
+		sampleRate = 44100
+	})
+	client:update(4)
+	test.truthy(client:isLoading())
+
+	client:pause()
+	test.falsy(client:isLoading(), "the pause ends the load at once")
+	test.falsy(client:isPlaying())
+	local pause = commands:pop() --[[@as beat.AudioMessage]]
+	test.equal(pause.kind, "pause", "the thread is told to stop holding the device")
+	test.equal(client:position(), 0, "the place is the snapshot's, not an interpolated one")
+
+	-- A snapshot from before the pause cannot put the wait back.
+	events:push({
+		kind = "snapshot",
+		commandId = load.id,
+		position = 0,
+		duration = 100,
+		playing = false,
+		buffering = true,
+		buffered = 0.2,
+		heard = 0,
+		sampleRate = 44100
+	})
+	client:update(5)
+	test.falsy(client:isLoading(), "a stale buffering snapshot is not the truth again")
+
+	-- Playing again asks the thread to start, and waits while it buffers.
+	client:play()
+	test.truthy(client:isLoading())
+	local play = commands:pop() --[[@as beat.AudioMessage]]
+	test.equal(play.kind, "play")
 
 	client:shutdown()
 end)

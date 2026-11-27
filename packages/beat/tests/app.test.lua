@@ -946,6 +946,37 @@ test.it("creates tags and playlists from the app actions", function()
 	test.equal(#App.services.collections.taxonomy:playlistTracks(manual, library), 4, "a track is added by hand")
 end)
 
+test.it("makes a playlist around the item from an empty picker", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	App.services.collections.taxonomy = Taxonomy.new()
+	App.services.collections.save = function() end
+
+	local track = library.albums[2].tracks[2]
+	App:act({ type = "open", overlay = "playlist_picker", kind = "track", id = track.id })
+	test.truthy(App:overlay("playlist_picker"))
+	App:act({ type = "newPlaylistWithItem" })
+	test.falsy(App:overlay("playlist_picker"), "the picker closes once the playlist is made")
+	local made = assert(App.services.collections.taxonomy.playlists[1])
+	test.equal(made.name, "Track 2", "it takes the track's name")
+	test.equal(#App.services.collections.taxonomy:playlistTracks(made, library), 1, "the track is in it")
+	test.equal(
+		names.trackKey(assert(App.services.collections.taxonomy:playlistTracks(made, library)[1])),
+		names.trackKey(track)
+	)
+
+	App:act({ type = "open", overlay = "playlist_picker", kind = "album", id = library.albums[3].id })
+	App:act({ type = "newPlaylistWithItem" })
+	local albumPlaylist = assert(App.services.collections.taxonomy.playlists[2])
+	test.equal(albumPlaylist.name, "Album 3", "an album's playlist takes the album's name")
+	test.equal(#App.services.collections.taxonomy:playlistTracks(albumPlaylist, library), 3, "the whole album is in it")
+
+	App:act({ type = "open", overlay = "playlist_picker", kind = "track", id = track.id })
+	App:act({ type = "newPlaylistWithItem" })
+	test.equal(App.services.collections.taxonomy.playlists[3].name, "Track 2 2", "a name already taken gets a number")
+end)
+
 test.skipIf(not canRender)("types into the search field and opens search", function()
 	App:init({ scan = false })
 	App.services.settings.values.root = "/beat-fixtures"

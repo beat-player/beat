@@ -29,10 +29,24 @@ local AudioThread = {}
 -- below, so the staging buffer cannot empty before the loop feeds it again.
 local STAGING_SECONDS = 0.2
 
+-- How much decoded audio must be waiting in the prefetch ring before the device starts, and how
+-- much before it starts again after running dry. The ring itself holds READ_AHEAD_SECONDS; a
+-- second is the smallest that makes a slow drive's first read inaudible, and it is capped by the
+-- ring on a source whose file is shorter than that.
+local START_SECONDS = 1.0
+local RESUME_SECONDS = 1.0
+-- While buffering, the reader fills the ring on its own thread: look again soon enough that the
+-- first second of audio is not waiting on the loop's sleep.
+local WAIT_BUFFERING = 20
+
 -- The buffer treble opens on the device, in milliseconds: `DEVICE_LATENCY_US` in its ALSA backend
 -- (src/raw/alsa.lua) and `DEVICE_LATENCY_SECONDS` in its AAudio one (src/raw/aaudio.lua). How long
 -- the loop may sleep between feeds is a fraction of this, whatever else it does.
 local DEVICE_BUFFER_MS = 150
+
+-- What must stay decoded ahead while playing: one staging buffer plus one device buffer, so the
+-- next fill cannot reach an empty ring. Falling below that pauses the device into buffering.
+local LOW_SECONDS = STAGING_SECONDS + DEVICE_BUFFER_MS / 1000
 
 -- How long the loop sleeps between steps. While the app draws, a twentieth of a second: the
 -- position and the heard frame are interpolated between snapshots, and 20 ms is often enough to
@@ -81,6 +95,8 @@ local HIDDEN_SNAPSHOT_MS = 250
 ---@field position number?
 ---@field duration number?
 ---@field playing boolean?
+---@field buffering boolean? # The user wants playback but the device is held until data arrives
+---@field buffered number? # Seconds decoded and waiting ahead of the current source
 ---@field completed boolean?
 ---@field last boolean? # Whether nothing is staged or repeated after the track that ended
 ---@field heard number?
@@ -99,10 +115,18 @@ local HIDDEN_SNAPSHOT_MS = 250
 ---@field sampleRate number? # The last stream's rate, for counting heard frames between snapshots
 ---@field device string? # The output device the next player opens
 ---@field background boolean # The app shows nothing, so the loop wakes less
+---@field wantsPlay boolean # The user asked for playback; a load of a stopped queue is false
+---@field buffering boolean # The device is held paused until enough is decoded ahead
+---@field starting boolean # The next start of the current track needs the full start buffer
+---@field bufferHeard number? # The heard frame when the device was paused to buffer
+---@field bufferPosition number? # The track position when the device was paused to buffer
+---@field startPosition number? # A load or seek's place, before treble has adopted the track
 ---@field snapshot beat.AudioMessage? # Written into and pushed, so a report allocates nothing
 ---@field sentPosition number? # What the last pushed snapshot said, field by field
 ---@field sentDuration number?
 ---@field sentPlaying boolean?
+---@field sentBuffering boolean?
+---@field sentBuffered number?
 ---@field sentHeard number?
 ---@field sentSampleRate number?
 ---@field sentWritten number?
@@ -118,7 +142,7 @@ local function prefetchAt(state, at)
 	if sources == nil then return end
 	local source = sources[at]
 	if source ~= nil and not source.prefetched and not source.closed then
-		source:prefetch(false)
+		source:prefetch()
 	end
 end
 
@@ -177,15 +201,34 @@ function AudioThread.open(state, send, producer)
 		local nextTrack = tracks ~= nil and tracks[ended + 1] or nil
 		-- `last` says the device has stopped for good: nothing is staged and nothing repeats, so
 		-- the app must not read the pause button from a snapshot that predates this end.
-		send({ kind = "ended", completed = true, last = nextTrack == nil and not repeats })
+		local last = nextTrack == nil and not repeats
+		send({ kind = "ended", completed = true, last = last })
 		state.index = ended + 1
 
 		if repeats then
 			local fresh = Prefetch.new(track --[[@as beat.AudioTrack]])
-			fresh:prefetch(false)
+			fresh:prefetch()
 			player:enqueue(fresh --[[@as treble.Source]])
 			if sources ~= nil then sources[ended] = fresh end
 			state.index = ended
+		end
+
+		if last then
+			-- Nothing is coming: stop asking the device for audio, so the loop can let it go
+			-- after a pause rather than polling a queue that ended.
+			state.wantsPlay = false
+			state.buffering = false
+			state.starting = false
+			state.startPosition = nil
+			state.bufferHeard = nil
+			state.bufferPosition = nil
+		else
+			-- A new track starts with the start threshold, not the mid-track one; the gate holds
+			-- the device if this one has not decoded enough yet.
+			state.starting = state.wantsPlay == true
+			state.startPosition = nil
+			state.bufferHeard = nil
+			state.bufferPosition = nil
 		end
 
 		-- Only a track that exists is announced as started; at the end of the queue there is none.
@@ -206,9 +249,9 @@ function AudioThread.open(state, send, producer)
 		---@param frames number
 		---@param channels number
 		local function onSamples(samples, frames, channels)
-			-- Nobody sees the meter of an app in the background. The ring is left behind, and the
-			-- first feed after coming back starts a new timeline at the frame it is fed.
-			if state.background then return end
+			-- Nothing is fed while the device is held for data: the meter must not show audio the
+			-- user has not heard yet, and the ring is cleared on a load.
+			if state.background or state.buffering then return end
 			producer:feed(samples, frames, channels, timeline.framesWritten + timeline.stagedFrames)
 		end
 		player.onSamples = onSamples
@@ -236,14 +279,37 @@ function AudioThread.apply(state, player, command, send, producer)
 		local first = math.max(1, command.index or 1)
 		state.index = 1
 		state.repeatOne = command.repeatOne == true
+		-- The place the queue starts at, until treble has adopted the first source: the app shows
+		-- it instead of nought while the track is being opened.
+		state.startPosition = command.startAt ~= nil and command.startAt > 0 and command.startAt or nil
 		local sources = makeSources(state, tracks, first)
+		if #sources == 0 then state.startPosition = nil end
 		for at = 1, #sources do player:enqueue(sources[at] --[[@as treble.Source]]) end
-		if command.autoplay ~= false then
+		-- The load starts a new device timeline: the meter drops what it showed and the ring the
+		-- app reads from starts again at frame nought.
+		if producer ~= nil then producer:clear() end
+		if command.autoplay ~= false and #sources > 0 then
+			-- The reader starts where the queue starts, not at the top: treble seeks the source to
+			-- the start place when it adopts it, and with the ring already there that seek leaves
+			-- the prefetched audio alone.
+			if command.startAt ~= nil and command.startAt > 0 then sources[1]:seek(command.startAt) end
 			prefetchAt(state, 1)
 			prefetchAt(state, 2)
-			player:play()
+			-- Not played here: the gate starts the device once the reader has reported the format
+			-- and decoded enough, so a slow file is silent rather than choppy.
+			state.wantsPlay = true
+			state.buffering = true
+			state.starting = false
+			state.bufferHeard = nil
+			state.bufferPosition = nil
 			if command.startAt ~= nil and command.startAt > 0 then player:seek(command.startAt) end
 			send({ kind = "started", index = state.index })
+		else
+			state.wantsPlay = false
+			state.buffering = false
+			state.starting = false
+			state.bufferHeard = nil
+			state.bufferPosition = nil
 		end
 	elseif kind == "enqueue" then
 		local track = command.track
@@ -260,14 +326,40 @@ function AudioThread.apply(state, player, command, send, producer)
 			local tracks = state.tracks
 			if tracks ~= nil then tracks[#tracks + 1] = track end
 			player:enqueue(source --[[@as treble.Source]])
-			if at == state.index + 1 then source:prefetch(false) end
+			if at == state.index + 1 then source:prefetch() end
 		end
 	elseif kind == "play" then
-		prefetchAround(state)
-		player:play()
+		-- The gate opens the device: with enough decoded ahead it happens in this same step, and
+		-- with less the snapshot says the track is buffering instead of playing. A queue with
+		-- nothing left has nothing to ask for.
+		local sources = state.sources
+		local source = sources ~= nil and sources[state.index] or nil
+		if source ~= nil then
+			-- A load or seek held before treble adopted the track: start the reader at that place
+			-- so the adoption's own seek lands on the head and keeps the prefetched ring.
+			local startAt = state.startPosition
+			if startAt ~= nil and startAt > 0 then source:seek(startAt) end
+			prefetchAround(state)
+			state.wantsPlay = true
+			state.buffering = true
+			state.starting = false
+			state.bufferHeard = nil
+			state.bufferPosition = nil
+		end
 	elseif kind == "pause" then
+		state.wantsPlay = false
+		state.buffering = false
+		state.starting = false
+		state.bufferHeard = nil
+		state.bufferPosition = nil
 		player:pause()
 	elseif kind == "stop" then
+		state.wantsPlay = false
+		state.buffering = false
+		state.starting = false
+		state.startPosition = nil
+		state.bufferHeard = nil
+		state.bufferPosition = nil
 		player:stop()
 	elseif kind == "next" then
 		local previous = state.index
@@ -279,11 +371,33 @@ function AudioThread.apply(state, player, command, send, producer)
 				sources[previous] = nil
 			end
 			state.index = previous + 1
+			-- The new track starts from its beginning in the ring: it needs the start buffer, and
+			-- the paused position recorded for the old one no longer means anything.
+			state.starting = state.wantsPlay == true
+			state.startPosition = nil
+			state.bufferHeard = nil
+			state.bufferPosition = nil
 			prefetchAround(state)
 			send({ kind = "started", index = state.index })
 		end
 	elseif kind == "seek" then
-		player:seek(command.seconds or 0)
+		local seconds = command.seconds or 0
+		player:seek(seconds)
+		-- The source head moved and its ring starts again there: wait for the start buffer before
+		-- the device reads it, as for a fresh track. Until treble adopts a track, the seek is only
+		-- held for it, so the place has to be remembered here.
+		local tap = player --[[@as { playing: table? }]]
+		state.startPosition = tap.playing == nil and seconds or nil
+		if tap.playing == nil then
+			-- treble holds the seek until it adopts the track; move the source head too, so its
+			-- reader fills from the new place and the adoption's seek finds it already there.
+			local sources = state.sources
+			local source = sources ~= nil and sources[state.index] or nil
+			if source ~= nil then source:seek(seconds) end
+		end
+		state.bufferHeard = nil
+		state.bufferPosition = nil
+		if state.wantsPlay then state.starting = true end
 	elseif kind == "volume" then
 		player:setVolume(command.value or 0)
 	elseif kind == "equalizer" then
@@ -298,7 +412,15 @@ function AudioThread.apply(state, player, command, send, producer)
 			local sources = state.sources
 			local first = state.index
 			local wasPlaying = player:isPlaying()
-			local position = player:position()
+			local tap = player --[[@as { playing: table? }]]
+			local position
+			if state.buffering then
+				position = state.bufferPosition or state.startPosition or 0
+			elseif tap.playing == nil then
+				position = state.startPosition or 0
+			else
+				position = player:position()
+			end
 			player:close()
 			player = AudioThread.open(state, send, producer)
 			if sources ~= nil then
@@ -307,10 +429,18 @@ function AudioThread.apply(state, player, command, send, producer)
 					if source ~= nil then player:enqueue(source --[[@as treble.Source]]) end
 				end
 			end
-			if wasPlaying then
-				player:play()
-				if position > 0 then player:seek(position) end
+			if wasPlaying then player:play() end
+			-- The new player keeps the queue and the place: a held start is a pending seek, and
+			-- the gate opens the device from there. Moving the source head to the same frame keeps
+			-- the adoption's seek from resetting a ring the gate is about to wait on.
+			if position > 0 then
+				local lead = sources ~= nil and sources[first] or nil
+				if lead ~= nil and lead.sampleRate > 0 then
+					lead:seek(math.floor(position * lead.sampleRate))
+				end
+				player:seek(position)
 			end
+			state.startPosition = position > 0 and position or nil
 		end
 	elseif kind == "close" then
 		player:close()
@@ -318,8 +448,164 @@ function AudioThread.apply(state, player, command, send, producer)
 		state.sources = nil
 		state.tracks = nil
 		state.index = 0
+		state.wantsPlay = false
+		state.buffering = false
+		state.starting = false
+		state.startPosition = nil
+		state.bufferHeard = nil
+		state.bufferPosition = nil
 	end
 	return player
+end
+
+--- The prefetch source treble's next `update` would read from, or nil when that step would not read
+--- at all. treble fills the staging buffer for the track it decodes, or for the one playing when
+--- nothing is queued behind it; a spent decoder is swapped for the next queued track during the
+--- same update, so that is the source to gate. A read may only happen when this source has enough
+--- decoded ahead: its ring is memory, and reaching into an empty one is what used to freeze the
+--- thread inside a file read.
+---@param player treble.Player
+---@return beat.PrefetchSource?
+function AudioThread.feedSource(player)
+	local tap = player --[[@as { playing: treble.Player.Track?, decoding: treble.Player.Track?, queue: table[]? }]]
+	local track = tap.decoding or tap.playing
+	local source
+	if track == nil or track.isDone then
+		local queue = tap.queue
+		local queued = queue ~= nil and queue[1] or nil
+		local item = queued ~= nil and queued.item or nil
+		if item == nil then
+			-- Nothing is adopted, and a spent track is not read again.
+			return nil
+		end
+		if type(item) ~= "table" then return nil end
+		source = item
+	else
+		source = track.source
+	end
+	if source == nil or type(source.available) ~= "function" then return nil end
+	return source --[[@as beat.PrefetchSource]]
+end
+
+--- Holds the device paused while the reader catches up, and opens it again when it has. Called
+--- before every step: with too little decoded ahead -- or before the reader has reported the
+--- format -- treble's fill must not run, because its read would wait inside the source. The pause
+--- is taken at the spot the device had reached, so nothing more is heard and the snapshot keeps
+--- the playhead there while the ring fills.
+---@param state beat.AudioThread.State
+---@param player treble.Player
+---@return boolean feed # Whether `update` may run this step
+---@return boolean changed # Whether buffering began or ended
+function AudioThread.gate(state, player)
+	if not state.wantsPlay then
+		state.starting = false
+		if state.buffering then
+			state.buffering = false
+			state.bufferHeard = nil
+			state.bufferPosition = nil
+			return false, true
+		end
+		return false, false
+	end
+
+	local source = AudioThread.feedSource(player)
+	if source == nil then
+		state.starting = false
+		if state.buffering then
+			-- Nothing left to read: there is no data to wait for.
+			state.buffering = false
+			state.bufferHeard = nil
+			state.bufferPosition = nil
+			return true, true
+		end
+		return true, false
+	end
+	if player --[[@as { isStopped: boolean? }]].isStopped and not state.buffering then
+		-- treble stopped the device under playback -- it could not open it, or the sink went away
+		-- and it said so through onError. A fresh load or play sets buffering before the gate, so
+		-- reaching here stopped means there is nothing left to wait for; stop polling.
+		state.wantsPlay = false
+		state.starting = false
+		return true, false
+	end
+	if not source.prefetched and not source.closed then
+		-- treble reached a track whose reader was not scheduled yet: a short track runs its decoder
+		-- to the end and the next one is adopted while the current one still plays, which can be
+		-- further ahead than the prefetch schedule around the heard index. Starting it here keeps
+		-- the gate waiting for a ring that will actually fill.
+		source:prefetch()
+	end
+
+	local rate = source.sampleRate
+	if rate <= 0 then rate = state.sampleRate or 0 end
+	local available = source:available()
+	local finished = source:finished()
+	local seconds
+	if state.buffering then
+		seconds = RESUME_SECONDS
+	elseif state.starting then
+		seconds = START_SECONDS
+	else
+		seconds = LOW_SECONDS
+	end
+	local threshold = seconds * rate
+	local capacity = source.capacity
+	if capacity > 0 and threshold > capacity then threshold = capacity end
+	-- Whatever the seconds say, one fill can ask for every free frame of the staging buffer. On a
+	-- track of another rate that free space can be more frames than the threshold names, so it is
+	-- the bound that matters: a read the gate allows must never run the ring empty.
+	local staging = player --[[@as { stagingCapacity: number?, stagedFrames: number? }]]
+	local room = (staging.stagingCapacity or 0) - (staging.stagedFrames or 0)
+	if room > threshold then threshold = room end
+	local enough = finished or (source:ready() and available >= threshold)
+
+	if enough then
+		state.starting = false
+		if state.buffering then
+			state.buffering = false
+			state.startPosition = nil
+			state.bufferHeard = nil
+			state.bufferPosition = nil
+			player:play()
+			return true, true
+		end
+		state.startPosition = nil
+		return true, false
+	end
+
+	-- The device may still be running: it gets paused at the frame it had played to, and the
+	-- snapshot reports that frame rather than a playhead moving on with nothing behind it.
+	local changed = not state.buffering
+	if state.bufferHeard == nil then
+		state.bufferHeard = player:playedFrames()
+		state.bufferPosition = state.startPosition or player:position()
+	end
+	if player:isPlaying() then player:pause() end
+	state.buffering = true
+	state.starting = false
+	return false, changed
+end
+
+--- The source of the track the app numbers as current, whose decode-ahead the snapshot reports.
+---@param state beat.AudioThread.State
+---@return beat.PrefetchSource?
+local function currentSource(state)
+	local sources = state.sources
+	if sources == nil then return nil end
+	return sources[state.index]
+end
+
+--- Seconds of decoded audio the current source has ready ahead, nought when unknown.
+---@param state beat.AudioThread.State
+---@param fallbackRate number?
+---@return number seconds
+local function bufferedSeconds(state, fallbackRate)
+	local source = currentSource(state)
+	if source == nil then return 0 end
+	local rate = source.sampleRate
+	if rate <= 0 then rate = fallbackRate or 0 end
+	if rate <= 0 then return 0 end
+	return source:available() / rate
 end
 
 --- A picture of what the device is doing, including the ring's frame count so the app's spectrum
@@ -332,7 +618,7 @@ end
 ---@param heard number? # The heard frame this step read; read again when nil
 ---@return beat.AudioMessage
 function AudioThread.snapshot(state, player, producer, heard)
-	local tap = player --[[@as { stream: { sampleRate: number? }? }]]
+	local tap = player --[[@as { stream: { sampleRate: number? }?, playing: table? }]]
 	local stream = tap.stream
 	local rate = stream ~= nil and stream.sampleRate or nil
 	if type(rate) == "number" then state.sampleRate = rate end
@@ -345,16 +631,33 @@ function AudioThread.snapshot(state, player, producer, heard)
 
 	if heard == nil then heard = player:playedFrames() end
 
+	local buffering = state.buffering == true
+	if buffering and state.bufferHeard ~= nil then heard = state.bufferHeard end
+
 	local snapshot = state.snapshot
 	if snapshot == nil then
 		snapshot = { kind = "snapshot" }
 		state.snapshot = snapshot
 	end
 
-	snapshot.position = player:position()
+	-- While the device is held for data it is not playing and the playhead is the place it was
+	-- paused at, not a wall-clock guess from a position that cannot move. Before treble has
+	-- adopted the first source, a load or seek's place is the only one there is.
+	local adopted = tap.playing ~= nil
+	if buffering then
+		snapshot.position = state.bufferPosition or state.startPosition or 0
+		snapshot.playing = false
+	elseif not adopted and state.startPosition ~= nil then
+		snapshot.position = state.startPosition
+		snapshot.playing = player:isPlaying()
+	else
+		snapshot.position = player:position()
+		snapshot.playing = player:isPlaying()
+	end
 	snapshot.duration = player:duration()
-	snapshot.playing = player:isPlaying()
 	snapshot.heard = heard
+	snapshot.buffering = buffering
+	snapshot.buffered = bufferedSeconds(state, state.sampleRate)
 	snapshot.sampleRate = state.sampleRate
 	snapshot.written = written
 	snapshot.floor = floor
@@ -374,6 +677,8 @@ local function differs(state, snapshot)
 	return snapshot.position ~= state.sentPosition
 		or snapshot.duration ~= state.sentDuration
 		or snapshot.playing ~= state.sentPlaying
+		or snapshot.buffering ~= state.sentBuffering
+		or snapshot.buffered ~= state.sentBuffered
 		or snapshot.heard ~= state.sentHeard
 		or snapshot.sampleRate ~= state.sentSampleRate
 		or snapshot.written ~= state.sentWritten
@@ -389,6 +694,8 @@ local function remember(state, snapshot)
 	state.sentPosition = snapshot.position
 	state.sentDuration = snapshot.duration
 	state.sentPlaying = snapshot.playing
+	state.sentBuffering = snapshot.buffering
+	state.sentBuffered = snapshot.buffered
 	state.sentHeard = snapshot.heard
 	state.sentSampleRate = snapshot.sampleRate
 	state.sentWritten = snapshot.written
@@ -459,7 +766,13 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		commandId = 0,
 		sampleRate = nil,
 		device = nil,
-		background = false
+		background = false,
+		wantsPlay = false,
+		buffering = false,
+		starting = false,
+		bufferHeard = nil,
+		bufferPosition = nil,
+		startPosition = nil
 	}
 
 	---@param event beat.AudioMessage
@@ -511,8 +824,12 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		-- A command may have changed what the device does; its snapshot says which one it was.
 		if applied then forced = true end
 
-		local ok, err = pcall(player.update, player)
-		if not ok then send({ kind = "error", message = tostring(err) }) end
+		local feed, bufferingChanged = AudioThread.gate(state, player)
+		if bufferingChanged then forced = true end
+		if feed then
+			local ok, err = pcall(player.update, player)
+			if not ok then send({ kind = "error", message = tostring(err) }) end
+		end
 
 		-- Readers that finished are joined here; a command may be the last thing a source ever did,
 		-- so one that arrives reaps even in the middle of a long pause.
@@ -526,7 +843,9 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		local rawPlaying = player:isPlaying()
 		local heard = player:playedFrames()
 
-		if AudioThread.watchStall(stall, rawPlaying, heard, now) then
+		-- A track held for data is not stalled: the device is paused while the reader fills the
+		-- ring, so the watch starts over as if nothing were playing.
+		if AudioThread.watchStall(stall, rawPlaying and not state.buffering, heard, now) then
 			forced = true
 			if stall.stalled then
 				Log.write("warn", "the audio output stopped advancing; reporting the player as paused")
@@ -534,16 +853,21 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		end
 		local stalled = stall.stalled
 
-		local playing = rawPlaying and not stalled
+		local playing = rawPlaying and not stalled and not state.buffering
 
 		-- While playing, a snapshot goes out on a clock: the position moves every step. Otherwise
-		-- only news is worth a message, so a pause that lasts an hour sends nothing at all.
+		-- only news is worth a message, so a pause that lasts an hour sends nothing at all. A
+		-- buffering track is waiting for a reader, so its buffered depth is reported on the same
+		-- slow clock.
+		local active = playing or state.buffering
 		local due = forced
-		if not due and playing then
+		if not due and active then
 			due = quiet >= (state.background and HIDDEN_SNAPSHOT_MS or PLAYING_SNAPSHOT_MS)
 		end
-		if due or not playing then
+		if due or not active then
 			local snapshot = AudioThread.snapshot(state, player, producer, heard)
+			-- The snapshot's own `playing` is what treble says; a device that has stopped
+			-- advancing is reported as paused instead, and a buffering track never plays.
 			snapshot.playing = playing
 			if (due or differs(state, snapshot)) and send(snapshot) then
 				remember(state, snapshot)
@@ -552,8 +876,9 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 			end
 		end
 
-		-- How long to sleep: the display's cadence while a track plays, a slow poll while the device
-		-- is stalled, and nothing at all once the pause has released the device.
+		-- How long to sleep: the display's cadence while a track plays, a short poll while a
+		-- reader fills the ring, a slow poll while the device is stalled, and nothing at all once
+		-- the pause has released the device.
 		local waitMs
 		if playing then
 			pausedAt = now
@@ -561,6 +886,10 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 			waitMs = state.background and WAIT_BACKGROUND or WAIT_PLAYING
 		elseif stalled then
 			waitMs = WAIT_STALLED
+		elseif state.buffering or state.wantsPlay then
+			-- Wanted audio that is not playing yet: data is arriving on another thread, so look
+			-- again soon. The device is deliberately not released while the user asked to play.
+			waitMs = WAIT_BUFFERING
 		elseif suspended then
 			waitMs = math.huge
 		else

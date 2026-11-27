@@ -86,7 +86,8 @@ Lastfm.on = {
 function Lastfm:step(_now)
 	local changed = false
 	local current = self.playback:current()
-	local playing = self.playback.player:isPlaying()
+	-- What is scrobbled is what was heard: a track still loading or buffering is not a listen yet.
+	local playing = self.playback.player:isAudible()
 	self.scrobbler:update(current, self.playback.player:position(), playing, os.time())
 	if self.client:update(current, playing, self.scrobbler:take()) then changed = true end
 	return changed, self.client:isBusy() and 0.25 or false

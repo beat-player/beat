@@ -4,7 +4,7 @@
 -- messages, and never change the app themselves.
 local wonderland = require("wonderland")
 local cache = require("beat-ui.cache")
-local logo = require("beat.app.components.logo")
+local onboarding = require("beat.app.components.onboarding")
 local metrics = require("beat.app.components.helpers.metrics")
 local sidebar = require("beat.app.components.chrome.sidebar")
 local topbar = require("beat.app.components.chrome.topbar")
@@ -13,7 +13,7 @@ local mobileNav = require("beat.app.components.chrome.mobile_nav")
 local scanStatus = require("beat.app.components.chrome.scan_status")
 local toasts = require("beat.app.components.chrome.toasts")
 
-local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
+local div, sty = wonderland.div, wonderland.sty
 
 local shell = {}
 
@@ -252,24 +252,17 @@ function shell.view(app, window)
 	end
 
 	if app.services.scan:needsFolder() then
-		-- The first launch is the folder browser and nothing else; it is the page, too, so its
-		-- messages reach it.
+		-- The first launch is the welcome card and nothing else; it is the page, too, so its
+		-- messages reach it. The folder browser draws inside the same card.
 		if page.kind ~= "folders" then
 			app.page = app:pageFor({ kind = "folders" })
 			app:persistPage()
 			page = app.page
 		end
-		return div():style(sty():fill():column():bg(theme:color("bg")):fg(theme:color("text")):font(theme.fontFamily)):children({
-			div():style(sty():fill():column():align("center"):justify("center")):children({
-				div():style(sty():w(math.min(theme:px(620), width - metrics.pad(app, width) * 2)):h(theme:px(600)):column():gap(theme:space(18))):children({
-					div():style(sty():row():h(theme:px(28)):gap(theme:px(10)):align("center")):children({
-						logo.view(app, { size = theme:px(28), colour = theme:color("accent") }),
-						text("beat"):style(theme:s():text(theme:type("xxl")):weight("bold"):fg(theme:color("text")))
-					}),
-					app.registry:page("folders").view(app, page, window)
-				})
-			})
-		})
+		local card = onboarding.view(app, page, window, app.registry:page("folders").view)
+		local toastLayer = toasts.view(app, { window = window })
+		if toastLayer == nil then return card end
+		return div():style(fillStyle(uiCtx)):children({ card, toastLayer })
 	end
 
 	local surface = app.registry:page(page.kind)

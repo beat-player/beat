@@ -321,7 +321,7 @@ function Player:play()
 		end
 		self:reload(true)
 		if startAt ~= nil then self:seek(startAt) end
-	elseif not player:isPlaying() then
+	elseif not self:isPlaying() then
 		if atEnd(track, player:position()) then
 			self:reload(true)
 			return
@@ -357,7 +357,7 @@ end
 
 function Player:pause()
 	local player = self.player
-	if player ~= nil and player:isPlaying() then player:pause() end
+	if player ~= nil and self:isPlaying() then player:pause() end
 end
 
 function Player:toggle()
@@ -434,8 +434,10 @@ function Player:setEqualizer(bands)
 	else
 		local copy = {}
 		for at = 1, #bands do
-			copy[at] = { frequency = bands[at].frequency, gain = bands[at].gain, q = bands[at].q }
+			copy[at] =
+				{ frequency = bands[at].frequency, gain = bands[at].gain, q = bands[at].q, type = bands[at].type }
 		end
+		copy.preamp = bands.preamp
 		self.equalizerBands = copy
 	end
 	local player = self.player
@@ -511,9 +513,34 @@ function Player:duration()
 	return self.player:duration()
 end
 
+--- Whether the user wants playback: the device is playing, or the audio thread is still loading
+--- or buffering the track it was asked for. It is what the play/pause control asks, so a click
+--- during a slow load pauses instead of starting the track a second time.
 ---@return boolean
 function Player:isPlaying()
-	return self.player ~= nil and self.player:isPlaying()
+	local backend = self.player
+	if backend == nil then return false end
+	if backend:isPlaying() == true then return true end
+	return backend.isLoading ~= nil and backend:isLoading() == true
+end
+
+--- Whether audio is actually being heard right now. A loading or buffering track is not: what
+--- counts as listened, scrobbled or moving the meter asks this rather than `isPlaying`.
+---@return boolean
+function Player:isAudible()
+	local backend = self.player
+	if backend == nil then return false end
+	if backend.isAudible ~= nil then return backend:isAudible() == true end
+	return backend:isPlaying() == true
+end
+
+--- Whether any of the current track has been heard. Before it has, the bar has no place to show.
+---@return boolean
+function Player:hasHeard()
+	local backend = self.player
+	if backend == nil then return false end
+	if backend.hasHeard ~= nil then return backend:hasHeard() == true end
+	return backend:position() > 0
 end
 
 --- Whether the track the user asked for has yet to produce heard audio. The player is loading
@@ -639,7 +666,7 @@ function Player:update(now)
 	end
 
 	local player = self.player
-	if player == nil or not player:isPlaying() then return false, false end
+	if player == nil or not self:isAudible() then return false, false end
 
 	local position = player:position()
 	if position == self.lastPosition then return false, false end

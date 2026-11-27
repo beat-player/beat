@@ -3,20 +3,32 @@
 -- a part of playback because shaping the sound is a deliberate act -- the transport never asks --
 -- and because what it remembers is settings that outlive every track. The band and preset numbers
 -- are in `bands.lua` beside this file: the service owns the rules, the panel only draws them.
+local fs = require("fs")
+local path = require("path")
 local bands = require("beat.app.services.equalizer.bands")
+local autoeq = require("beat.app.services.equalizer.autoeq")
+local Picker = require("beat.app.services.scan.picker")
 
 ---@class beat.EqualizerService: beat.Service
 ---@field frequencies number[]
 ---@field labels string[]
 ---@field minimum number
 ---@field maximum number
+---@field preampMinimum number
+---@field preampMaximum number
+---@field curveMinimum number # The lowest frequency the response is sampled at
+---@field curveMaximum number # And the highest
 ---@field settings beat.SettingsService
 ---@field playback beat.PlaybackService
 ---@field toasts beat.ToastsService
 ---@field emit fun(message: table)
+---@field window fun(): winit.Window?
+---@field pick beat.FolderPick? # The profile file dialog, while it is open
+---@field bandTable treble.Equalizer.Band[]? # What the player was last given, preamp included
+---@field curveValues number[]? # The response the panel draws, made with the bands
 local Equalizer = {}
 Equalizer.__index = Equalizer
-Equalizer.needs = { "settings", "playback", "toasts", "emit" }
+Equalizer.needs = { "settings", "playback", "toasts", "emit", "window" }
 
 -- How many presets the panel's add button will make. A file that already holds more is left alone
 -- on load, because refusing them would throw away shapes someone saved deliberately.
@@ -30,6 +42,7 @@ local LOAD_LIMIT = 32
 --- playback: beat.PlaybackService,
 --- toasts: beat.ToastsService,
 --- emit: fun(message: table),
+--- window: fun(): winit.Window?,
 --- }
 ---@return beat.EqualizerService
 function Equalizer.new(deps)
@@ -40,10 +53,18 @@ function Equalizer.new(deps)
 		labels = bands.labels,
 		minimum = bands.minimum,
 		maximum = bands.maximum,
+		preampMinimum = bands.preampMinimum,
+		preampMaximum = bands.preampMaximum,
+		curveMinimum = bands.curveMinimum,
+		curveMaximum = bands.curveMaximum,
 		settings = deps.settings,
 		playback = deps.playback,
 		toasts = deps.toasts,
-		emit = deps.emit
+		emit = deps.emit,
+		window = deps.window,
+		pick = nil,
+		bandTable = nil,
+		curveValues = nil
 	}, Equalizer)
 
 	self:load()
@@ -89,12 +110,22 @@ function Equalizer:load()
 	values.equalizerPreset = preset
 	values.equalizerGains = gains
 	values.equalizerCustomPresets = customs
+	-- The fader's preamp and the imported profile follow the same rule: read once, held to what the
+	-- player can take, and written back so the next save is already clean.
+	values.equalizerPreamp = bands.clampPreamp(values.equalizerPreamp)
+	values.equalizerProfile = autoeq.sanitize(values.equalizerProfile)
 end
 
---- The bands the audio player is given. Called at start and after every change, so what sounds is
---- always the selection the panel shows.
+--- The bank the audio player is given. Called at start and after every change, so what sounds is
+--- always the selection the panel shows: the five faders, the imported profile's filters under
+--- them and the preamp the two add up to. The curve is made here as well, once per change, because
+--- it is the same bank the player is hearing -- a frame only plots it.
 function Equalizer:apply()
-	self.playback.player:setEqualizer(bands.bands(self.settings.values.equalizerGains))
+	local values = self.settings.values
+	local bank = bands.combine(values.equalizerGains, values.equalizerPreamp, values.equalizerProfile)
+	self.bandTable = bank
+	self.curveValues = bands.response(bank)
+	self.playback.player:setEqualizer(bank)
 end
 
 -- ────────────────────────────────────────────────────────────────
@@ -133,6 +164,136 @@ end
 ---@return number[]
 function Equalizer:gains()
 	return self.settings.values.equalizerGains or {}
+end
+
+--- The preamp fader's own value, before the profile's correction is added.
+---@return number
+function Equalizer:preamp()
+	return self.settings.values.equalizerPreamp or 0
+end
+
+---@return beat.EqualizerProfile?
+function Equalizer:profile()
+	return self.settings.values.equalizerProfile
+end
+
+--- The response the panel draws, sampled when the bank last changed.
+---@return number[]
+function Equalizer:curve()
+	return self.curveValues or {}
+end
+
+--- The bank itself: the fader bands, the profile's filters and the preamp. The panel does not
+--- draw it, but a caller asking what the player was told reads it here.
+---@return treble.Equalizer.Band[]
+function Equalizer:bank()
+	return self.bandTable or {}
+end
+
+-- ────────────────────────────────────────────────────────────────
+-- the preamp and the imported profile
+-- ────────────────────────────────────────────────────────────────
+
+--- The fader's preamp. It does not change which preset is selected: the profile and the correction
+--- are about the level, not the shape, and a preset's gains are still the bands a person chose.
+---@param value number?
+function Equalizer:setPreamp(value)
+	local values = self.settings.values
+	values.equalizerPreamp = bands.clampPreamp(value)
+	self:apply()
+	self.settings:changed()
+end
+
+--- Stores a parsed profile under the faders and makes it heard. The profile is cleaned once more
+--- here rather than trusted: a caller with a table it built itself goes through the same rules a
+--- picked file does.
+---@param profile beat.EqualizerProfile?
+function Equalizer:store(profile)
+	local clean = autoeq.sanitize(profile)
+	if clean == nil then
+		self.toasts:show("That profile has no bands to import", "error")
+		return
+	end
+	self.settings.values.equalizerProfile = clean
+	self:apply()
+	self.settings:changed()
+end
+
+---@param file string
+function Equalizer:importFile(file)
+	local text = fs.read(file)
+	if text == nil then
+		self.toasts:show("Could not read that profile", "error")
+		return
+	end
+	local profile = autoeq.parse(text)
+	if profile == nil then
+		self.toasts:show("That file is not an EqualizerAPO profile", "error")
+		return
+	end
+
+	-- The file name without its extension is the name the chip shows: it is what a person chose in
+	-- the dialog and what AutoEq named the model.
+	local name = path.basename(file)
+	local extension = path.extension(file)
+	if extension ~= "" then name = name:sub(1, #name - #extension - 1) end
+	name = name:match("^%s*(.-)%s*$")
+	profile.name = name ~= "" and name or "Imported profile"
+	self:store(profile)
+end
+
+---@param text string?
+function Equalizer:importText(text)
+	if type(text) ~= "string" or text:find("%S") == nil then
+		self.toasts:show("The clipboard has no profile text", "error")
+		return
+	end
+	local profile = autoeq.parse(text)
+	if profile == nil then
+		self.toasts:show("That does not look like an EqualizerAPO profile", "error")
+		return
+	end
+	profile.name = "Pasted profile"
+	self:store(profile)
+end
+
+--- Opens the system file dialog. The answer is read in `step`, like the folder picker's: the call
+--- is modal, so there is no frame between the dialog opening and its answer.
+function Equalizer:pickProfile()
+	if self.pick ~= nil then return end
+	self.pick = Picker.startFile(self.window(), {
+		title = "Choose equalizer profile",
+		filters = { { name = "EqualizerAPO profile", extensions = { "txt" } } }
+	})
+end
+
+--- Drops the imported profile, leaving the five faders and the fader's preamp as they were.
+function Equalizer:clearProfile()
+	if self.settings.values.equalizerProfile == nil then return end
+	self.settings.values.equalizerProfile = nil
+	self:apply()
+	self.settings:changed()
+end
+
+--- Reads the file dialog's answer once it is written. A dialog left open or one this platform does
+--- not have reports through the status `poll` gives, the same way a folder pick does.
+---@param _now number
+---@return boolean? changed
+function Equalizer:step(_now)
+	if self.pick == nil then return nil end
+	local chosen, status = Picker.poll(self.pick)
+	if chosen ~= nil then
+		self.pick = nil
+		self:importFile(chosen)
+		return true
+	elseif status ~= nil then
+		self.pick = nil
+		if status == "no-picker" then
+			self.toasts:show("No system file dialog is available on this machine", "error")
+		end
+		return true
+	end
+	return nil
 end
 
 -- ────────────────────────────────────────────────────────────────
@@ -311,6 +472,24 @@ Equalizer.on = {
 	---@param self beat.EqualizerService
 	---@param message beat.EqualizerGainMessage
 	equalizerGain = function(self, message) self:setGain(message.band, message.value) end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.EqualizerPreampMessage
+	equalizerPreamp = function(self, message) self:setPreamp(message.value) end,
+
+	--- The two ways a profile arrives. A picked file is opened by the system and read on the next
+	--- tick; pasted text is already here, so it is parsed at once.
+	---@param self beat.EqualizerService
+	---@param message beat.ImportEqualizerProfileMessage
+	equalizerImportFile = function(self, message) self:pickProfile() end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.PasteEqualizerProfileMessage
+	equalizerImportText = function(self, message) self:importText(message.text) end,
+
+	---@param self beat.EqualizerService
+	---@param message beat.ClearEqualizerProfileMessage
+	equalizerClearProfile = function(self, message) self:clearProfile() end,
 
 	--- A refused name leaves the dialog open, so the one that went through closes it from here.
 	---@param self beat.EqualizerService

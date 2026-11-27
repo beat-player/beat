@@ -519,26 +519,31 @@ function Playback:step(now)
 	local repaint = false
 
 	local moved, structural = self.player:update(now)
-	if moved then repaint = true end
 	if structural then changed = true end
 
-	-- The spinner is a canvas: while a track is still being opened, every frame draws it a little
-	-- further round, so the app must keep asking for frames even when nothing else moves.
+	-- The spinner is a canvas: while a track is still being opened or buffered, every frame draws
+	-- it a little further round, so the app must keep asking for frames even when nothing else
+	-- moves. A place that moved while nothing is heard is no reason to draw the playhead.
 	local loading = self.player:isLoading()
+	if moved and not loading then repaint = true end
 	if loading then repaint = true end
+	local wasLoading = self.shownLoading == true
 	if self.shownLoading == nil then
 		self.shownLoading = loading
 	elseif self.shownLoading ~= loading then
 		self.shownLoading = loading
 		changed = true
 	end
+	-- A track being opened has no meter: the bars fall to rest rather than reading the ring the
+	-- previous track left while nothing of the new one has been heard.
+	if loading and not wasLoading then self.spectrum:clear() end
 
 	local current = self.player:current()
 	local playing = self.player:isPlaying()
 	-- A listen is counted once per track, when playback has actually started it: that is what the
 	-- playlist it came from, its album and its tags remember. Whether the same track is scrobbled
 	-- is the Last.fm service's question; it reads the player for itself.
-	if playing and current ~= nil and self.library.current ~= nil and current.id ~= self.lastListenedTrackId then
+	if self.player:isAudible() and current ~= nil and self.library.current ~= nil and current.id ~= self.lastListenedTrackId then
 		self.lastListenedTrackId = current.id
 		local playlistId = nil
 		local source = self.player.queue?.source
@@ -566,12 +571,18 @@ function Playback:step(now)
 	end
 
 	-- This brings the spectrum's frame count up to what the last snapshot reported. Before a
-	-- player exists there is nothing to ask, and the meter holds at rest.
-	local written, floor = self.player:pcmState()
-	if written ~= nil then self.spectrum:sync(written, floor) end
+	-- player exists there is nothing to ask, and the meter holds at rest. A track still loading or
+	-- buffering has nothing heard to analyse, and the ring still holds the previous track's audio:
+	-- the bars stay at rest until frames of the new one are on the device.
+	local meterEasing = false
+	if not loading then
+		local written, floor = self.player:pcmState()
+		if written ~= nil then self.spectrum:sync(written, floor) end
 
-	local meterChanged, meterEasing = self.spectrum:step(now, self.player:heardFrame())
-	if meterChanged then repaint = true end
+		local meterChanged
+		meterChanged, meterEasing = self.spectrum:step(now, self.player:heardFrame())
+		if meterChanged then repaint = true end
+	end
 
 	local err = self.player:takeError()
 	if err ~= nil then

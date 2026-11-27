@@ -5,6 +5,8 @@ local fs = require("fs")
 local path = require("path")
 local json = require("json")
 local paths = require("beat.paths")
+local autoeq = require("beat.app.services.equalizer.autoeq")
+local bands = require("beat.app.services.equalizer.bands")
 
 local settings = {}
 
@@ -30,6 +32,8 @@ local settings = {}
 ---@field equalizerPreset string? # As the file holds it: the equalizer service validates it at start
 ---@field equalizerGains number[]?
 ---@field equalizerCustomPresets beat.EqualizerCustomPreset[]?
+---@field equalizerPreamp number # The fader's own correction, in dB
+---@field equalizerProfile beat.EqualizerProfile? # An imported AutoEq profile under the faders
 ---@field disabledPlugins string[] # Plugin files switched off by name; applied at the next start
 ---@field pluginDefaultsVersion number # The optional plugin list this file has been brought up to
 ---@field plugins table<string, table<string, any>> # A plugin's own values, by plugin name
@@ -67,6 +71,8 @@ local DEFAULTS = {
 	equalizerPreset = "flat",
 	equalizerGains = { 0, 0, 0, 0, 0 },
 	equalizerCustomPresets = {},
+	equalizerPreamp = 0,
+	equalizerProfile = nil,
 	-- A fresh install starts with the stars and the performance overlay off: both are extras some
 	-- people want, not part of the player. A settings file that already names its switches keeps
 	-- whatever it says, so someone who turned one on is not turned off by an update.
@@ -241,6 +247,11 @@ function settings.load(dir)
 		equalizerPreset = data.equalizerPreset,
 		equalizerGains = data.equalizerGains,
 		equalizerCustomPresets = data.equalizerCustomPresets,
+		-- Unlike the preset keys, these two are held to their ranges here: a preamp above the fader
+		-- and a profile whose filters or name are not playable are the same reading every time, and
+		-- the settings file a person edits by hand is exactly where they go wrong.
+		equalizerPreamp = bands.clampPreamp(number(data.equalizerPreamp, 0)),
+		equalizerProfile = autoeq.sanitize(data.equalizerProfile),
 		-- A file that names its switches keeps them exactly; only one written before this key
 		-- existed gets the fresh-install list, so turning ratings on is a switch that stays on.
 		disabledPlugins = data.disabledPlugins == nil and defaultPluginNames() or pluginNames(data.disabledPlugins),
