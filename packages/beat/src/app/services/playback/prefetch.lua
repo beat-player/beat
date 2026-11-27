@@ -246,6 +246,7 @@ end
 ---@field closed boolean
 ---@field prefetched boolean
 ---@field startFrame number
+---@field heldFrame number? # A held seek's frame, until treble adopts the track it is for
 local Source = {}
 Source.__index = Source
 
@@ -272,7 +273,8 @@ function Prefetch.new(track)
 		error = nil,
 		closed = false,
 		prefetched = false,
-		startFrame = 0
+		startFrame = 0,
+		heldFrame = nil
 	}, Source)
 end
 
@@ -467,6 +469,15 @@ end
 ---@return boolean
 function Source:seek(frame)
 	if self.closed then return false end
+	local held = self.heldFrame
+	if held ~= nil and held > 0 and frame == 0 then
+		-- treble rewinds a non-owned source when it adopts it, before it applies the seek held
+		-- for this track. The ring already starts at the held frame -- the gate waited for it --
+		-- and rewinding would empty it, so the read after adoption would tell treble the track
+		-- ended. A seek to nought the user asked for is not skipped: the audio thread records that
+		-- seek's own frame here just before asking for it.
+		return true
+	end
 	if self.ring ~= nil and frame == self.readPos then
 		-- Already at that frame, with the ring holding what follows it: nothing before it is lost.
 		-- treble seeks a source to the top when it adopts it, and a prefetched ring that has not

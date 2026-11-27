@@ -538,6 +538,235 @@ test.it("plays a prefetched source through treble without an empty read", functi
 	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
 end)
 
+--- A fake device that keeps every frame it is written, so a test can say which part of the track
+--- was heard; and a source whose every frame is its own index, so a written value names a frame.
+---@param rate number
+---@return number[] samples
+---@return treble.OutputStream stream
+local function recordingDevice(rate)
+	---@type number[]
+	local samples = {}
+	---@type treble.OutputStream
+	local stream = {
+		sampleRate = rate,
+		channels = 1,
+		isPaused = false,
+		closed = false
+	}
+	function stream:write(data, frames)
+		for at = 0, frames - 1 do samples[#samples + 1] = data[at] end
+		return frames
+	end
+	function stream:avail() return 4096 end
+	function stream:delay() return 0 end
+	function stream:setPaused(paused) self.isPaused = paused end
+	function stream:drain() end
+	function stream:flush() end
+	function stream:close() self.closed = true end
+	return samples, stream
+end
+
+---@param rate number
+---@param frames number
+---@return beat.PrefetchSource source
+local function rampSource(rate, frames)
+	---@type table
+	local source = {
+		path = "/ramp",
+		sampleRate = rate,
+		channels = 1,
+		frameCount = frames,
+		capacity = rate,
+		prefetched = true,
+		closed = false,
+		readPos = 0
+	}
+	function source:prefetch() return true end
+	function source:ready() return true end
+	function source:available() return self.frameCount - self.readPos end
+	function source:finished() return false end
+	function source:seek(frame)
+		self.readPos = frame
+		return true
+	end
+	function source:read(out, count)
+		local got = math.min(count, self.frameCount - self.readPos)
+		for at = 0, got - 1 do out[at] = (self.readPos + at) % 32768 end
+		self.readPos = self.readPos + got
+		return got
+	end
+	function source:close() self.closed = true end
+	return source --[[@as beat.PrefetchSource]]
+end
+
+--- Runs the gate and treble until `done` answers true.
+---@param state beat.AudioThread.State
+---@param player treble.Player
+---@param done fun(): boolean
+---@param steps number?
+---@return boolean reached
+local function drive(state, player, done, steps)
+	for _ = 1, steps or 2000 do
+		if AudioThread.gate(state, player) then player:update() end
+		if done() then return true end
+		threading.sleep(2)
+	end
+	return done()
+end
+
+--- A playing, adopted track on a fake device, as the audio thread leaves it after a load.
+---@param rate number?
+---@return treble.Player player
+---@return beat.PrefetchSource source
+---@return number[] samples
+---@return beat.AudioThread.State state
+local function playingTrack(rate)
+	rate = rate or 8000
+	local treble = require("treble")
+	local samples, stream = recordingDevice(rate)
+	local player = treble.Player.new({ stagingSeconds = 0.2, stream = function() return stream end })
+	local source = rampSource(rate, rate * 2)
+	player:enqueue(source --[[@as treble.Source]])
+	---@type beat.AudioThread.State
+	local state = {
+		index = 1,
+		sources = { source },
+		tracks = { { path = "/ramp" } },
+		wantsPlay = true,
+		buffering = true,
+		starting = false,
+		sampleRate = rate
+	}
+	return player, source, samples, state
+end
+
+-- The user's report: pause, drag the bar to a new place, press play. The source was seeked while
+-- paused, so play must resume the reader there instead of running it back to the track's top.
+test.it("plays from a seek made while paused, not from the track's top", function()
+	local player, _, samples, state = playingTrack()
+	test.truthy(drive(state, player, function() return #samples > 0 end, 500), "audio started")
+	local heard = #samples
+
+	AudioThread.apply(state, player, { kind = "pause" }, function() end)
+	AudioThread.apply(state, player, { kind = "seek", seconds = 1 }, function() end)
+	test.equal(state.startPosition, 1, "the seek's place is what the snapshots report")
+	AudioThread.apply(state, player, { kind = "play" }, function() end)
+
+	local first = heard + 1
+	test.truthy(drive(state, player, function() return #samples >= first + 8 end, 500), "playback resumed")
+	test.equal(samples[first], 8000, "the first frame heard is the seek target's")
+	test.truthy(player:position() >= 1, "the position agrees with the audio")
+	player:close()
+end)
+
+-- The same after five paused seconds: the device was released, and play opens it again. The seek
+-- lands on a player with no device timeline, so the source head is the only place that matters.
+test.it("plays from a seek made while paused after the device was suspended", function()
+	local player, _, samples, state = playingTrack()
+	test.truthy(drive(state, player, function() return #samples > 0 end, 500), "audio started")
+	local heard = #samples
+
+	AudioThread.apply(state, player, { kind = "pause" }, function() end)
+	player:suspend()
+	test.truthy(player.isSuspended, "the idle device was released as the thread does after five seconds")
+	AudioThread.apply(state, player, { kind = "seek", seconds = 1 }, function() end)
+	AudioThread.apply(state, player, { kind = "play" }, function() end)
+
+	local first = heard + 1
+	test.truthy(drive(state, player, function() return #samples >= first + 8 end, 500), "playback resumed")
+	test.equal(samples[first], 8000, "the reopened device hears the seek target's frame")
+	test.truthy(player:position() >= 1, "and the position agrees")
+	player:close()
+end)
+
+-- A seek can arrive before treble has adopted the track. The source head is what the reader fills
+-- from then, and it takes frames: a source told the app's seconds would decode from the top.
+test.it("moves a buffering source to the seek's frame, not to the raw seconds", function()
+	local player = gatePlayer()
+	function player:seek(seconds)
+		self.sought = seconds
+		return true
+	end
+	local seeks = {}
+	---@type table
+	local source = {
+		sampleRate = 8000,
+		channels = 1,
+		frameCount = 16000,
+		capacity = 16000,
+		prefetched = true
+	}
+	function source:available() return 0 end
+	function source:ready() return true end
+	function source:finished() return false end
+	function source:prefetch() end
+	function source:seek(frame)
+		seeks[#seeks + 1] = frame
+		return true
+	end
+	---@type beat.AudioThread.State
+	local state = { index = 1, sources = { source }, wantsPlay = false, buffering = false, starting = false, sampleRate = 8000 }
+
+	AudioThread.apply(state, player, { kind = "seek", seconds = 1 }, function() end)
+	test.equal(state.startPosition, 1)
+	test.equal(seeks[1], 8000, "the source head moves to a frame, not to one second")
+
+	AudioThread.apply(state, player, { kind = "play" }, function() end)
+	test.equal(seeks[#seeks], 8000, "play keeps the reader on the seek target")
+	test.equal(#seeks, 2, "and never rewinds it")
+end)
+
+-- Seek while the load is still buffering, through a real treble player and a real prefetch reader:
+-- adoption must not rewind the source to nought, or the first read finds an empty ring and treble
+-- takes the nought for the end of the track.
+test.it("hears a seek made while the track is still buffering from its target", function()
+	local treble = require("treble")
+	local Prefetch = require("beat.app.services.playback.prefetch")
+	local samples, stream = recordingDevice(44100)
+	local player = treble.Player.new({ stagingSeconds = 0.2, stream = function() return stream end })
+	local source = Prefetch.new({ path = "tests/fixtures/tone.wav", sampleRate = 44100, channels = 1 })
+	local rewinds = {}
+	local seek = source.seek
+	source.seek = function(self, frame)
+		local before = self.readPos
+		local ok = seek(self, frame)
+		if self.readPos < before then rewinds[#rewinds + 1] = frame end
+		return ok
+	end
+	source:prefetch()
+	player:enqueue(source --[[@as treble.Source]])
+
+	---@type beat.AudioMessage[]
+	local events = {}
+	---@type beat.AudioThread.State
+	local state = {
+		index = 1,
+		sources = { source },
+		tracks = { { path = "tests/fixtures/tone.wav" } },
+		wantsPlay = true,
+		buffering = true,
+		starting = false,
+		sampleRate = 44100
+	}
+
+	AudioThread.apply(state, player, { kind = "seek", seconds = 0.1 }, function(event) events[#events + 1] = event end)
+	test.equal(source.readPos, 4410, "the reader was started at the seek target")
+
+	local started = drive(state, player, function() return #samples > 0 end, 1000)
+	test.truthy(started, "the track is heard")
+	local ended = false
+	for _, event in ipairs(events) do
+		if event.kind == "ended" then ended = true end
+	end
+	test.falsy(ended, "adoption did not run the track out")
+	test.equal(#rewinds, 0, "adoption did not rewind the prefetched source to nought")
+	test.truthy(player:position() >= 0.1, "and the position is the seek's")
+
+	player:close()
+	source:close()
+	test.truthy(Prefetch.waitStopped(2000), "the reader stopped")
+end)
+
 test.it("starts the real audio thread, loads paused and answers snapshots", function()
 	local commands = threading.channel()
 	local events = threading.channel()

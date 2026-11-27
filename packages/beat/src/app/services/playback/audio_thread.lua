@@ -181,6 +181,18 @@ local function makeSources(state, tracks, first)
 	return sources
 end
 
+--- The frame a place in seconds names in a source, or nil before its reader has reported a rate.
+--- `Player:seek` takes seconds, but `Source:seek` takes frames: a source told the raw seconds would
+--- start decoding that many frames in -- effectively from the top of the track.
+---@param source beat.PrefetchSource
+---@param seconds number
+---@return number? frame
+local function frameAt(source, seconds)
+	local rate = source.sampleRate
+	if rate == nil or rate <= 0 then return nil end
+	return math.floor(seconds * rate)
+end
+
 --- A treble player with the callbacks this thread needs, opening the device `state.device` names.
 --- The spectrum's tap is attached only when there is a ring to fill.
 ---@param state beat.AudioThread.State
@@ -300,7 +312,13 @@ function AudioThread.apply(state, player, command, send, producer)
 			-- The reader starts where the queue starts, not at the top: treble seeks the source to
 			-- the start place when it adopts it, and with the ring already there that seek leaves
 			-- the prefetched audio alone.
-			if command.startAt ~= nil and command.startAt > 0 then sources[1]:seek(command.startAt) end
+			if command.startAt ~= nil and command.startAt > 0 then
+				local frame = frameAt(sources[1], command.startAt)
+				if frame ~= nil then
+					sources[1].heldFrame = frame
+					sources[1]:seek(frame)
+				end
+			end
 			prefetchAt(state, 1)
 			prefetchAt(state, 2)
 			-- Not played here: the gate starts the device once the reader has reported the format
@@ -346,7 +364,15 @@ function AudioThread.apply(state, player, command, send, producer)
 			-- A load or seek held before treble adopted the track: start the reader at that place
 			-- so the adoption's own seek lands on the head and keeps the prefetched ring.
 			local startAt = state.startPosition
-			if startAt ~= nil and startAt > 0 then source:seek(startAt) end
+			if startAt ~= nil and startAt > 0 then
+				local frame = frameAt(source, startAt)
+				if frame ~= nil then
+					-- treble has not adopted the track yet, so its adoption will rewind this source
+					-- before applying the held seek: keep the prefetched ring where it already is.
+					if player --[[@as { playing: table? }]].playing == nil then source.heldFrame = frame end
+					source:seek(frame)
+				end
+			end
 			prefetchAround(state)
 			state.wantsPlay = true
 			state.buffering = true
@@ -402,7 +428,13 @@ function AudioThread.apply(state, player, command, send, producer)
 			-- reader fills from the new place and the adoption's seek finds it already there.
 			local sources = state.sources
 			local source = sources ~= nil and sources[state.index] or nil
-			if source ~= nil then source:seek(seconds) end
+			if source ~= nil then
+				local frame = frameAt(source, seconds)
+				if frame ~= nil then
+					source.heldFrame = frame
+					source:seek(frame)
+				end
+			end
 		end
 		state.bufferHeard = nil
 		state.bufferPosition = nil
@@ -445,7 +477,9 @@ function AudioThread.apply(state, player, command, send, producer)
 			if position > 0 then
 				local lead = sources ~= nil and sources[first] or nil
 				if lead ~= nil and lead.sampleRate > 0 then
-					lead:seek(math.floor(position * lead.sampleRate))
+					local frame = math.floor(position * lead.sampleRate)
+					lead.heldFrame = frame
+					lead:seek(frame)
 				end
 				player:seek(position)
 			end
@@ -864,6 +898,16 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		if feed then
 			local ok, err = pcall(player.update, player)
 			if not ok then send({ kind = "error", message = tostring(err) }) end
+		end
+
+		-- treble's adoption of a source -- and the rewind the held-frame guard skips -- happened in
+		-- that step if it happened at all. From here the source answers seeks plainly again.
+		local adopted = player --[[@as { playing: table? }]].playing
+		if adopted ~= nil and state.sources ~= nil then
+			for at = 1, #state.sources do
+				local source = state.sources[at]
+				if source ~= nil then source.heldFrame = nil end
+			end
 		end
 
 		-- Readers that finished are joined here; a command may be the last thing a source ever did,
