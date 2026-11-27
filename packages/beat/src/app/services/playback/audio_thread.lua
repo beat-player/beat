@@ -397,6 +397,45 @@ local function remember(state, snapshot)
 	state.sentCommandId = snapshot.commandId
 end
 
+--- What the loop knows about whether the device is advancing: the heard frame at the last step
+--- that saw it move, when that was, and whether the output is stalled now. Made once per thread.
+---@class beat.AudioThread.Stall
+---@field frames number
+---@field at number
+---@field stalled boolean
+
+--- A device that says it is playing but reports the same heard frame for a fifth of a second is
+--- not playing: its sink went away, or it was suspended underneath us. A frame that went back is
+--- movement too: treble counts from zero again for a new track and from the new place after a
+--- seek, and waiting for it to pass the old track's count made every track after the first a
+--- stalled one. A device still opening has written nothing yet; only a frozen frame counts once
+--- playback has got somewhere.
+---@param stall beat.AudioThread.Stall
+---@param playing boolean # What the player says
+---@param heard number # The frame the device is heard at
+---@param now number
+---@return boolean changed # Whether the output just stalled or just recovered
+function AudioThread.watchStall(stall, playing, heard, now)
+	if not playing then
+		stall.stalled = false
+		stall.frames = -1
+		stall.at = now
+		return false
+	end
+	if heard ~= stall.frames then
+		stall.frames = heard
+		stall.at = now
+		if stall.stalled then
+			stall.stalled = false
+			return true
+		end
+	elseif heard > 0 and now - stall.at >= STALL_SECONDS and not stall.stalled then
+		stall.stalled = true
+		return true
+	end
+	return false
+end
+
 --- Runs until a quit command. `commandAddress`, `eventAddress` and `pcmAddress` are the eight-byte
 --- addresses the app thread made; the ring is the one the app's spectrum reads.
 ---@param commandAddress string
@@ -446,9 +485,8 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 	local pausedAt = now
 	local suspended = false
 	-- The heard frame last step and when it last moved, for telling a live device from a dead one.
-	local stallFrames = -1
-	local stallAt = now
-	local stalled = false
+	---@type beat.AudioThread.Stall
+	local stall = { frames = -1, at = now, stalled = false }
 
 	while true do
 		local quit = false
@@ -488,31 +526,13 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		local rawPlaying = player:isPlaying()
 		local heard = player:playedFrames()
 
-		-- A device that says it is playing but reports the same heard frame for a fifth of a second
-		-- is not playing: its sink went away, or it was suspended underneath us. Say so once, then
-		-- keep stepping slowly so the recovery is noticed.
-		if rawPlaying then
-			if heard > stallFrames then
-				stallFrames = heard
-				stallAt = now
-				if stalled then
-					stalled = false
-					forced = true
-				end
-			elseif heard > 0 and now - stallAt >= STALL_SECONDS then
-				-- A device still opening has written nothing yet; only a frozen frame counts once
-				-- playback has got somewhere.
-				if not stalled then
-					stalled = true
-					forced = true
-					Log.write("warn", "the audio output stopped advancing; reporting the player as paused")
-				end
+		if AudioThread.watchStall(stall, rawPlaying, heard, now) then
+			forced = true
+			if stall.stalled then
+				Log.write("warn", "the audio output stopped advancing; reporting the player as paused")
 			end
-		else
-			stalled = false
-			stallFrames = -1
-			stallAt = now
 		end
+		local stalled = stall.stalled
 
 		local playing = rawPlaying and not stalled
 

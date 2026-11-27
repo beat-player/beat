@@ -134,6 +134,30 @@ test.it("reports position, heard frames and the ring's frame counts together", f
 	test.equal(snapshot.commandId, 9)
 end)
 
+test.it("does not take a new track's heard frame, counted from zero again, for a stall", function()
+	-- The first track was heard to frame 85,000; the second starts counting at zero. A frame below
+	-- the last one is the device moving on, so the second track plays rather than reading as stalled.
+	---@type beat.AudioThread.Stall
+	local stall = { frames = -1, at = 0, stalled = false }
+	AudioThread.watchStall(stall, true, 85000, 2.0)
+	AudioThread.watchStall(stall, true, 1000, 2.02)
+	AudioThread.watchStall(stall, true, 4000, 2.1)
+	AudioThread.watchStall(stall, true, 9000, 2.3)
+	test.equal(stall.stalled, false)
+end)
+
+test.it("reports a device whose heard frame stops moving as stalled, and its recovery", function()
+	---@type beat.AudioThread.Stall
+	local stall = { frames = -1, at = 0, stalled = false }
+	AudioThread.watchStall(stall, true, 5000, 1.0)
+	test.equal(AudioThread.watchStall(stall, true, 5000, 1.1), false, "a tenth of a second is not a stall yet")
+	test.equal(AudioThread.watchStall(stall, true, 5000, 1.3), true, "the stall is news once")
+	test.equal(stall.stalled, true)
+	test.equal(AudioThread.watchStall(stall, true, 5000, 1.5), false, "and not again while it lasts")
+	test.equal(AudioThread.watchStall(stall, true, 6000, 1.6), true, "a moving frame ends it")
+	test.equal(stall.stalled, false)
+end)
+
 test.it("starts the real audio thread, loads paused and answers snapshots", function()
 	local commands = threading.channel()
 	local events = threading.channel()
