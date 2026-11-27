@@ -20,6 +20,7 @@
 -- tables are read for every name, which covers a source run that also has a few preloaded modules
 -- and a compiled binary whose module happened to be loaded already.
 local fs = require("fs")
+local json = require("json")
 local path = require("path")
 local paths = require("beat.paths")
 
@@ -94,6 +95,130 @@ local function hostProvides(name)
 	return answered
 end
 
+-- Whether the host provides a module does not change between launches of the same program, but
+-- finding out costs a `io.open` per package template: a bundle carries hundreds of modules, and a
+-- launch asked the filesystem about every one of them before the first frame. The answers are
+-- kept in the config directory, keyed by a signature of the host's modules and package paths, so
+-- a different build probes again rather than trusting what another one found. A bundle's file
+-- stamp groups the answers this launch asked while running it; the answer itself is the host's,
+-- not the bundle's, so a changed bundle only means its names are asked once more.
+local CACHE_VERSION = 1
+
+---@param text string
+---@return number
+local function hashOf(text)
+	local value = 5381
+	for at = 1, #text do value = (value * 33 + text:byte(at)) % 16777213 end
+	return value
+end
+
+--- What the host looked like when the answers were found: its preloaded and loaded modules (by
+--- count and an order-free sum of their names) and the paths a source run searches.
+---@return string
+local function hostSignature()
+	local preloadCount, preloadSum = 0, 0
+	for name in pairs(HOST_PRELOAD) do
+		preloadCount += 1
+		preloadSum = (preloadSum + hashOf(name)) % 16777213
+	end
+	local loadedCount, loadedSum = 0, 0
+	for name in pairs(HOST_LOADED) do
+		loadedCount += 1
+		loadedSum = (loadedSum + hashOf(name)) % 16777213
+	end
+	return table.concat({
+		hashOf(package.path or ""),
+		hashOf(package.cpath or ""),
+		preloadCount,
+		preloadSum,
+		loadedCount,
+		loadedSum
+	}, ":")
+end
+
+local function cacheFile()
+	return paths.file("plugin_files.json")
+end
+
+---@class beat.PluginHostCache
+---@field host string
+---@field bundles table<string, table<string, boolean>>
+
+local cacheLoaded = false
+local cacheBytes = nil
+---@type beat.PluginHostCache?
+local cache = nil
+
+---@return beat.PluginHostCache
+local function loadCache()
+	if cacheLoaded then return assert(cache) end
+	cacheLoaded = true
+	local host = hostSignature()
+	local bytes = fs.read(cacheFile())
+	cacheBytes = bytes
+	if bytes ~= nil then
+		local ok, decoded = pcall(function() return json.decode(bytes):unpack() end)
+		if
+			ok
+			and type(decoded) == "table"
+			and decoded.version == CACHE_VERSION
+			and decoded.host == host
+			and type(decoded.bundles) == "table"
+		then
+			cache = { host = host, bundles = decoded.bundles }
+			return cache
+		end
+	end
+	cache = { host = host, bundles = {} }
+	return cache
+end
+
+--- What a bundle file is now, as a key the answers can be kept under: its name, size and
+--- modification time.
+---@param file string
+---@return string?
+local function bundleKey(file)
+	local stat = fs.stat(file)
+	if stat == nil then return nil end
+	return path.basename(file) .. ":" .. tostring(stat.modifyTime) .. ":" .. tostring(stat.size)
+end
+
+--- Fills in what earlier launches found for this bundle before it runs, so its modules are not
+--- looked for on disk again.
+---@param key string
+local function preseed(key)
+	local kept = loadCache().bundles[key]
+	if kept == nil then return end
+	for name, provided in pairs(kept) do
+		if type(name) == "string" and type(provided) == "boolean" and hostProvided[name] == nil then
+			hostProvided[name] = provided
+		end
+	end
+end
+
+--- Keeps what this launch asked while running one bundle.
+---@param key string
+---@param asked table<string, boolean>
+local function remember(key, asked)
+	loadCache().bundles[key] = asked
+end
+
+--- Writes the answers down, dropping the ones for bundle files that are no longer here.
+---@param seen table<string, boolean>
+local function saveCache(seen)
+	if not cacheLoaded or cache == nil then return end
+	local bundles = {}
+	for key, answers in pairs(cache.bundles) do
+		if seen[key] then bundles[key] = answers end
+	end
+	cache.bundles = bundles
+
+	local ok, encoded = pcall(json.encode, { version = CACHE_VERSION, host = cache.host, bundles = bundles })
+	if not ok or encoded == cacheBytes then return end
+	cacheBytes = encoded
+	fs.write(cacheFile(), encoded)
+end
+
 --- Drops the preload entries a file added, for a file that did not become a plugin. A module the
 --- plugin already required stays loaded -- Lua has no way back from that -- but nothing new can
 --- require the rest of it.
@@ -117,11 +242,12 @@ end
 --- Runs one bundle with the stand-in package in place.
 ---@param chunk function
 ---@param file string
+---@param asked table<string, boolean>? # Where each module's answer is kept for the next launch
 ---@return any module
 ---@return string? error
 ---@return string[] clashes # Modules another plugin already provided; the first plugin keeps them
 ---@return fun()? release # Undoes the preload entries this file added
-local function runIsolated(chunk, file)
+local function runIsolated(chunk, file, asked)
 	local real = package
 	local before = {}
 	for name in pairs(real.preload) do before[name] = true end
@@ -135,7 +261,9 @@ local function runIsolated(chunk, file)
 			-- A bundle's copy of something the app already has is dropped, not reported: every
 			-- bundle carries one, and an app built from source and a compiled one disagree about
 			-- where the copy came from.
-			if hostProvides(name) then return end
+			local provided = hostProvides(name)
+			if asked ~= nil then asked[name] = provided end
+			if provided then return end
 			if before[name] or real.loaded[name] ~= nil then
 				-- Another plugin put its module here first. First one wins, and the person is
 				-- told rather than one plugin quietly changing the module another one uses.
@@ -168,11 +296,14 @@ end
 
 --- Loads and runs one plugin file.
 ---@param file string
+---@param key string? # The file's stamp, under which what it asked is kept
 ---@return beat.PluginFile
-local function runFile(file)
+local function runFile(file, key)
 	local name = path.basename(file)
+	local asked = key ~= nil and {} or nil
 	local chunk, loadError = loadfile(file)
 	if chunk == nil then
+		if key ~= nil then remember(key, asked) end
 		local reason = tostring(loadError)
 		if isBytecode(file) or reason:find("bytecode", 1, true) ~= nil then
 			reason = reason .. " (the file is LuaJIT bytecode; build the bundle again under the same LuaJIT, or without --bytecode)"
@@ -180,7 +311,8 @@ local function runFile(file)
 		return { name = name, file = file, error = reason }
 	end
 
-	local module, runError, clashes, undo = runIsolated(chunk, file)
+	local module, runError, clashes, undo = runIsolated(chunk, file, asked)
+	if key ~= nil then remember(key, asked) end
 	return { name = name, file = file, module = module, error = runError, clashes = clashes, release = undo }
 end
 
@@ -211,14 +343,21 @@ function PluginFiles.found(dir, disabled)
 	end
 	table.sort(names)
 
+	local seen = {}
 	for _, name in ipairs(names) do
 		local file = path.join(folder, name)
 		if off[name] then
 			found[#found + 1] = { name = name, file = file, disabled = true }
 		else
-			found[#found + 1] = runFile(file)
+			local key = bundleKey(file)
+			if key ~= nil then
+				seen[key] = true
+				preseed(key)
+			end
+			found[#found + 1] = runFile(file, key)
 		end
 	end
+	saveCache(seen)
 	return found
 end
 

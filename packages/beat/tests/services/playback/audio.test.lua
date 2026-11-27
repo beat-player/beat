@@ -115,6 +115,38 @@ test.it("applies pause, stop, seek, volume and equalizer without reloading", fun
 	test.equal(player:position(), 0, "stop rewinds")
 end)
 
+test.it("reports a seek's place while the ring refills there", function()
+	local player, calls = fakePlayer()
+	-- treble has adopted the track, so the seek lands on the playing source at once.
+	player.playing = {}
+	local state = {
+		index = 1,
+		tracks = { { path = "/one.wav" } },
+		sources = nil,
+		repeatOne = false,
+		commandId = 0,
+		sampleRate = 44100,
+		device = nil,
+		wantsPlay = true,
+		buffering = false,
+		starting = false
+	}
+
+	AudioThread.apply(state, player, { kind = "seek", seconds = 45 }, function() end)
+	test.equal(calls[1], "seek:45")
+	test.equal(state.startPosition, 45, "the seek's place is kept for the snapshots")
+	test.truthy(state.starting, "and the device waits for the start buffer there")
+
+	-- The gate has paused the device to refill the ring: the snapshot still names the target, not
+	-- whatever the flushed device or an older start place would say.
+	state.starting = false
+	state.buffering = true
+	player.position = function() return 0 end
+	local snapshot = AudioThread.snapshot(state, player, nil)
+	test.truthy(snapshot.buffering)
+	test.equal(snapshot.position, 45)
+end)
+
 test.it("reports position, heard frames and the ring's frame counts together", function()
 	local player = fakePlayer()
 	player.stream = { sampleRate = 48000 }
@@ -822,36 +854,128 @@ test.it("is loading until the requested track is heard", function()
 	client:update(1.1)
 	test.falsy(client:isLoading(), "heard frames end the wait")
 
-	-- A seek asks for a new place, and waits again until frames there are heard.
-	client:seek(20)
-	local seek = commands:pop() --[[@as beat.AudioMessage]]
-	test.truthy(client:isLoading())
-	events:push({
-		kind = "snapshot", commandId = seek.id, playing = true, heard = 0, position = 20,
-		duration = 100, sampleRate = 44100
-	})
-	client:update(2)
-	test.truthy(client:isLoading(), "a seek's place is not a heard frame")
-	events:push({
-		kind = "snapshot", commandId = seek.id, playing = true, heard = 441, position = 20.01,
-		duration = 100, sampleRate = 44100
-	})
-	client:update(2.1)
-	test.falsy(client:isLoading())
-
 	-- Pausing a track that is still being opened stops the wait, and so does an error.
-	client:seek(30)
+	client:load({ "/b.wav" }, 0, true, false)
+	commands:pop() --[[@as beat.AudioMessage]]
 	test.truthy(client:isLoading())
 	client:pause()
 	test.falsy(client:isLoading(), "a pause ends the wait")
-	client:seek(40)
-	test.falsy(client:isLoading(), "a seek while paused asks for no audio yet")
-
 	client:play()
 	test.truthy(client:isLoading())
 	events:push({ kind = "error", message = "the file went away" })
 	client:update(3)
 	test.falsy(client:isLoading(), "an error ends the wait")
+
+	client:shutdown()
+end)
+
+test.it("a seek keeps the clocks real and shows its target at once", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+
+	client:load({ "/a.wav" }, 0, true, false)
+	local load = commands:pop() --[[@as beat.AudioMessage]]
+	events:push({
+		kind = "snapshot", commandId = load.id, playing = true, heard = 60 * 44100,
+		position = 60, duration = 100, sampleRate = 44100
+	})
+	client:update(1)
+	test.equal(client:position(), 60)
+
+	client:seek(65)
+	local seek = commands:pop() --[[@as beat.AudioMessage]]
+	test.equal(seek.seconds, 65)
+	test.falsy(client:isLoading(), "a seek is not a fresh track")
+	test.equal(client:position(), 65, "the bar shows the target at once")
+	test.equal(client:duration(), 100, "and keeps the length")
+
+	-- A snapshot from before the seek describes the old place: it must not pull the bar back.
+	events:push({
+		kind = "snapshot", commandId = load.id, playing = true, heard = 60 * 44100,
+		position = 60, duration = 100, sampleRate = 44100
+	})
+	client:update(1.1)
+	test.equal(client:position(), 65, "a stale snapshot leaves the target on the bar")
+	test.equal(client:duration(), 100)
+
+	-- The thread pauses the device to refill the ring at the new place. The track has been heard,
+	-- so neither clock is a placeholder, and the bar holds the target rather than the old place.
+	events:push({
+		kind = "snapshot", commandId = seek.id, playing = false, buffering = true, buffered = 0.2,
+		position = 65, duration = 100, heard = 0, sampleRate = 44100
+	})
+	client:update(1.2)
+	test.truthy(client:hasHeard(), "the track was heard before the seek")
+	test.falsy(client:isLoading(), "a seek's re-buffer is not a new track")
+	test.truthy(client:isPlaying(), "the user still wants playback through the seek")
+	test.falsy(client:isAudible())
+	test.equal(client:position(), 65, "the bar holds the target while the ring refills")
+	test.equal(client:duration(), 100)
+
+	-- The device reads again from the target, and the place moves on from there.
+	events:push({
+		kind = "snapshot", commandId = seek.id, playing = true, buffering = false, buffered = 1.5,
+		position = 65.02, duration = 100, heard = 882, sampleRate = 44100
+	})
+	client:update(1.3)
+	test.falsy(client:isLoading())
+	test.equal(client:position(), 65.02)
+	client:update(1.9)
+	test.truthy(client:position() > 65.4, "the place advances from the seek target")
+
+	client:shutdown()
+end)
+
+test.it("adds quick repeated seeks up from the last target", function()
+	local commands = threading.channel()
+	local events = threading.channel()
+	local client = AudioClient.attach(commands, events, nil)
+
+	client:load({ "/a.wav" }, 0, true, false)
+	local load = commands:pop() --[[@as beat.AudioMessage]]
+	events:push({
+		kind = "snapshot", commandId = load.id, playing = true, heard = 60 * 44100,
+		position = 60, duration = 100, sampleRate = 44100
+	})
+	client:update(1)
+	test.equal(client:position(), 60)
+
+	-- Three arrow-key seek messages in a row, as holding the key sends them.
+	client:seek(client:position() + 5)
+	local first = commands:pop() --[[@as beat.AudioMessage]]
+	client:seek(client:position() + 5)
+	local second = commands:pop() --[[@as beat.AudioMessage]]
+	client:seek(client:position() + 5)
+	local third = commands:pop() --[[@as beat.AudioMessage]]
+	test.equal(first.seconds, 65)
+	test.equal(second.seconds, 70)
+	test.equal(third.seconds, 75)
+	test.equal(client:position(), 75, "each step starts from the last target")
+
+	-- An answer to the first seek arriving late cannot pull the bar back.
+	events:push({
+		kind = "snapshot", commandId = first.id, playing = false, buffering = true,
+		position = 65, duration = 100, heard = 0, sampleRate = 44100
+	})
+	client:update(1.1)
+	test.equal(client:position(), 75)
+
+	-- The last seek's re-buffer, with no length to give, still keeps the real one.
+	events:push({
+		kind = "snapshot", commandId = third.id, playing = false, buffering = true,
+		position = 75, duration = 0, heard = 0, sampleRate = 44100
+	})
+	client:update(1.2)
+	test.equal(client:position(), 75)
+	test.equal(client:duration(), 100, "the length is not lost to a buffering snapshot")
+
+	events:push({
+		kind = "snapshot", commandId = third.id, playing = true, buffering = false,
+		position = 75.01, duration = 100, heard = 441, sampleRate = 44100
+	})
+	client:update(1.3)
+	test.equal(client:position(), 75.01)
 
 	client:shutdown()
 end)
@@ -1104,4 +1228,26 @@ test.it("keeps the play button after a stale snapshot says the last track is sti
 	test.falsy(player:isPlaying())
 
 	player:destroy()
+end)
+
+test.it("backs off a buffering wait after a second without new audio", function()
+	local source = gateSource(0)
+	---@type beat.AudioThread.State
+	local state = { index = 1, sources = { source }, wantsPlay = true, buffering = true }
+
+	test.falsy(AudioThread.bufferProgress(state, 100), "the first look starts the clock")
+	test.falsy(AudioThread.bufferProgress(state, 100.9), "just under a second is still the fast poll")
+	test.truthy(AudioThread.bufferProgress(state, 101), "a second with no frames backs off")
+
+	source.frames = 4410
+	test.falsy(AudioThread.bufferProgress(state, 101.5), "data arriving puts the fast poll back")
+	test.falsy(AudioThread.bufferProgress(state, 102.4))
+	test.truthy(AudioThread.bufferProgress(state, 102.5))
+
+	source.frames = 0
+	test.falsy(AudioThread.bufferProgress(state, 103), "a different source is a new wait")
+
+	state.buffering = false
+	test.falsy(AudioThread.bufferProgress(state, 104), "not buffering has nothing to back off")
+	test.equal(state.bufferWaitAt, nil)
 end)

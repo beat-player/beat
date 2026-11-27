@@ -64,6 +64,8 @@ function progress.view(app, props)
 	-- A track still being opened has no place and no length to show: the last snapshot's numbers
 	-- describe where it will start, and the one before it describes another track. Both clocks stay
 	-- at the placeholder until the first frames of this track are heard, and the slider holds at 0.
+	-- A seek is not that: it keeps the heard flag and the length, so the bar jumps to the target
+	-- and stays real even while the thread refills the ring there.
 	local unknown = player:isLoading() and not player:hasHeard()
 	local duration, position
 	if unknown then

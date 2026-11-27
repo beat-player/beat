@@ -11,7 +11,9 @@
 //
 // Ionicons outlines use both filled paths and strokes. Inkscape converts the strokes to filled
 // paths first, so the generated face has every icon as a single outline; the app then draws the
-// glyph with its text renderer and colours it from the theme.
+// glyph with its text renderer and colours it from the theme. Only the SVGs that actually paint a
+// stroke go through Inkscape: a filled icon (the Ionicons default, and all the metadata marks)
+// contains no stroke and is used as-is, so a fill-only set needs no Inkscape at all.
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -53,17 +55,42 @@ const icons = [
 	["star", 0xE01B, "star"],
 	["starOutline", 0xE01C, "star-outline"],
 	["queue", 0xE01D, "list"],
+	["person", 0xE01E, "person"],
+	["people", 0xE01F, "people"],
+	["disc", 0xE020, "disc"],
+	["calendar", 0xE021, "calendar"],
+	["musicalNote", 0xE022, "musical-note"],
+	["listNumber", 0xE023, "list"],
 ];
 
 const converted = fs.mkdtempSync(path.join(os.tmpdir(), "beat-icons-"));
 
+// An SVG paints a stroke when it has a stroke attribute other than "none"; only those need
+// Inkscape's object-stroke-to-path. Filled icons are copied straight through.
+const paintsStroke = (svg) => /stroke\s*=\s*"(?!none")/.test(svg);
+
 for (const [, , file] of icons) {
-	execFileSync("inkscape", [
-		path.join(source, `${file}.svg`),
-		"--export-type=svg",
-		`--export-filename=${path.join(converted, `${file}.svg`)}`,
-		"--actions=select-all;object-stroke-to-path",
-	], { stdio: "ignore" });
+	const sourcePath = path.join(source, `${file}.svg`);
+	const convertedPath = path.join(converted, `${file}.svg`);
+	if (fs.existsSync(convertedPath)) continue;
+	const svg = fs.readFileSync(sourcePath, "utf8");
+	if (!paintsStroke(svg)) {
+		fs.copyFileSync(sourcePath, convertedPath);
+		continue;
+	}
+	try {
+		execFileSync("inkscape", [
+			sourcePath,
+			"--export-type=svg",
+			`--export-filename=${convertedPath}`,
+			"--actions=select-all;object-stroke-to-path",
+		], { stdio: "ignore" });
+	} catch (error) {
+		if (error.code === "ENOENT") {
+			throw new Error(`${file}.svg paints a stroke, so it needs Inkscape on the PATH: ${error.message}`);
+		}
+		throw error;
+	}
 }
 
 const font = new SVGIcons2SVGFontStream({

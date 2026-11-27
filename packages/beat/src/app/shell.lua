@@ -54,19 +54,72 @@ local function addElement(elements, element)
 	if element ~= nil then elements[#elements + 1] = element end
 end
 
---- The open overlays from `from` up, bottom first. An anchored overlay is drawn by the screen
---- that opened it, at the button that opened it, and a full-screen one is the screen itself.
+-- Where the layer of an open overlay is painted. Above every box the shell draws under it -- the
+-- debug numbers, the toasts, the popup panels of a screen -- and far enough over anything a page
+-- may name that the paint order inside the layer is what decides, not a page's own z.
+local OVERLAY_LAYER_Z = 400
+
+-- Where the layer under an anchored popup is painted: under its panel, which every panel popped
+-- out of a control paints at 130 (see `beat.components.popup`), and over everything the screen it
+-- pops out of draws -- no screen names a box of its own over 110.
+local ANCHORED_LAYER_Z = 120
+
+--- The layer under an open overlay: it takes the whole window, and it is what the pointer reaches.
+--- Everything painted below it -- the page, the bars, the toasts -- is covered, so a hover under it
+--- does not light a row up and a wheel over it does not scroll a list it hides. A press anywhere but
+--- on the overlay's own panel is `dismiss`, which closes the top overlay; the overlay's view still
+--- draws the dim, since a context menu does not dim the page and a dialog does.
+---@param ctx beat.ui.Context
+---@return wonderland.StyleBuilder
+local function overlayLayerStyle(ctx)
+	return sty():fill():offset(0, 0):z(OVERLAY_LAYER_Z)
+end
+
+---@param ctx beat.ui.Context
+---@param content wonderland.Element
+---@return wonderland.Element
+local function overlayLayer(ctx, content)
+	local style = cache.of(ctx, overlayLayerStyle, "shellOverlayLayer") --[[@as wonderland.StyleBuilder]]
+	return div():style(style):blockPointer():onClick({ type = "dismiss" }):children({ content })
+end
+
+---@param ctx beat.ui.Context
+---@return wonderland.StyleBuilder
+local function anchoredLayerStyle(ctx)
+	return sty():fill():offset(0, 0):z(ANCHORED_LAYER_Z)
+end
+
+--- The cover under an anchored popup. The screen that opened the popup draws the panel itself --
+--- above its own boxes and below the shell's layers -- so what is left for the shell is the layer
+--- under it: the whole window, the pointer's, and a press anywhere but on the panel that closes
+--- the overlay rather than reaching the page through it.
+---@param ctx beat.ui.Context
+---@return wonderland.Element
+local function anchoredLayer(ctx)
+	local style = cache.of(ctx, anchoredLayerStyle, "shellAnchoredLayer") --[[@as wonderland.StyleBuilder]]
+	return div():style(style):blockPointer():onClick({ type = "dismiss" })
+end
+
+--- The open overlays from `from` up, bottom first. A full-screen one is the screen itself. An
+--- anchored one is drawn by the screen that opened it, at the button that opened it, so only the
+--- layer under it is the shell's; the rest are wrapped in the layer that covers what they are over.
 ---@param app beat.App
 ---@param window wonderland.RenderWindow
 ---@param from number
-local function overlays(app, window, from)
+---@param ctx beat.ui.Context
+local function overlays(app, window, from, ctx)
 	---@type wonderland.Element[]
 	local elements = {}
 	for at = from, #app.overlays do
 		local overlay = app.overlays[at]
 		local surface = app.registry:overlay(overlay.name)
-		if not surface.anchored and not surface.fullscreen and surface.view ~= nil then
-			addElement(elements, surface.view(app, overlay, window))
+		if not surface.fullscreen and surface.view ~= nil then
+			if surface.anchored then
+				addElement(elements, anchoredLayer(ctx))
+			else
+				local view = surface.view(app, overlay, window)
+				if view ~= nil then addElement(elements, overlayLayer(ctx, view)) end
+			end
 		end
 	end
 	return elements
@@ -173,6 +226,8 @@ end
 -- and the screen is built on every frame it scrolls.
 ---@type table<string, any>
 local chromeProps = {}
+---@type table<string, any>
+local toastProps = {}
 
 -- Where the shadow of a bottom bar falls: the scan cards and the tooltip are placed above the
 -- chrome rather than inside the page's scroll.
@@ -228,6 +283,9 @@ function shell.view(app, window)
 
 	local width = window.width
 	local height = window.height
+	-- Every path below that draws a toast layer reads this, so the window the screen was built
+	-- for is set here rather than only on the onboarding path.
+	toastProps.window = window
 	local mobile = metrics.mobile(app, width)
 	local uiCtx = app:ui(window)
 	local bar = (app.services.playback:current()) ~= nil ? (theme:px(mobile ? 64 : 88)) : 0
@@ -245,7 +303,7 @@ function shell.view(app, window)
 			-- bare wrapper keeps their fill and offsets measured from the window.
 			local fill = cache.of(uiCtx, fillStyle, "shellFill") --[[@as wonderland.StyleBuilder]]
 			local frame = div():style(fill):children({ surface.view(app, overlay, window) })
-			for _, element in ipairs(overlays(app, window, at + 1)) do frame:children({ element }) end
+			for _, element in ipairs(overlays(app, window, at + 1, uiCtx)) do frame:children({ element }) end
 			app.services.covers:sweep()
 			return frame
 		end
@@ -260,7 +318,7 @@ function shell.view(app, window)
 			page = app.page
 		end
 		local card = onboarding.view(app, page, window, app.registry:page("folders").view)
-		local toastLayer = toasts.view(app, { window = window })
+		local toastLayer = toasts.view(app, toastProps --[[@as { window: wonderland.RenderWindow }]])
 		if toastLayer == nil then return card end
 		return div():style(fillStyle(uiCtx)):children({ card, toastLayer })
 	end
@@ -309,7 +367,10 @@ function shell.view(app, window)
 	local clip = cache.of(uiCtx, clipStyle, "shellPageClip", bodyHeight) --[[@as wonderland.StyleBuilder]]
 	local pageClip = div():style(clip):scroll(0):onScroll(send.scroll):children({ moving })
 
-	local rightWidth = width - metrics.sidebarWidth(app, width)
+	-- The rail is the one part of the content box that moves: its width eases while it opens or
+	-- closes, and the page takes what is left, so both follow the same number every frame.
+	local side = mobile and 0 or sidebar.width(app, width)
+	local rightWidth = width - side
 	local topInset = mobile and metrics.topbarInset(app, width) or 0
 	local mainBox = cache.of(uiCtx, mainStyle, "shellMain", pageHeight, rightWidth, topInset) --[[@as wonderland.StyleBuilder]]
 	local main = div():style(mainBox)
@@ -321,13 +382,19 @@ function shell.view(app, window)
 	if mobile then
 		main:children({ body })
 	else
-		main:children({ topbar.view(app, { width = width, ui = uiCtx }), body })
+		chromeProps.width, chromeProps.ui = width, uiCtx
+		main:children({ topbar.view(app, chromeProps --[[@as beat.components.chrome.TopbarProps]]), body })
 	end
 
-	local shellChildren = { main }
+	local shellChildren = {}
+	local childCount = 0
 	if not mobile then
-		table.insert(shellChildren, 1, sidebar.view(app, { width = width, height = pageHeight, ui = uiCtx }))
+		chromeProps.width, chromeProps.height, chromeProps.ui, chromeProps.side = width, pageHeight, uiCtx, side
+		childCount = 1
+		shellChildren[childCount] = sidebar.view(app, chromeProps --[[@as beat.components.chrome.SidebarProps]])
 	end
+	childCount = childCount + 1
+	shellChildren[childCount] = main
 	local frameBox = cache.of(uiCtx, frameStyle, "shellFrame", pageHeight) --[[@as wonderland.StyleBuilder]]
 	local frame = div():style(frameBox):children(shellChildren)
 
@@ -341,10 +408,10 @@ function shell.view(app, window)
 		if surface.view ~= nil then root:children({ surface.view(app, DEBUG_OVERLAY, window) }) end
 	end
 
-	local toastLayer = toasts.view(app, { window = window })
+	local toastLayer = toasts.view(app, toastProps --[[@as { window: wonderland.RenderWindow }]])
 	if toastLayer ~= nil then root:children(toastLayer) end
 
-	for _, overlay in ipairs(overlays(app, window, 1)) do root:children({ overlay }) end
+	for _, overlay in ipairs(overlays(app, window, 1, uiCtx)) do root:children({ overlay }) end
 
 	-- Everything this view asked for is kept; covers a changing page no longer asks for are
 	-- given back before the next frame, so a scan cannot accumulate one texture per album.

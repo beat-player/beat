@@ -32,6 +32,7 @@ local function queueChangedForSession(self, queue)
 		or queue.position ~= self.sessionPosition
 		or queue.repeatMode ~= self.sessionRepeatMode
 		or queue.shuffle ~= self.sessionShuffle
+		or queue.shuffleMode ~= self.sessionShuffleMode
 		or queue.source ~= self.sessionSource
 end
 
@@ -50,6 +51,7 @@ local function rememberSession(self)
 		self.sessionPosition = queue.position
 		self.sessionRepeatMode = queue.repeatMode
 		self.sessionShuffle = queue.shuffle
+		self.sessionShuffleMode = queue.shuffleMode
 		self.sessionSource = queue.source
 	else
 		self.sessionQueue = nil
@@ -60,6 +62,7 @@ local function rememberSession(self)
 		self.sessionPosition = 0
 		self.sessionRepeatMode = nil
 		self.sessionShuffle = nil
+		self.sessionShuffleMode = nil
 		self.sessionSource = nil
 		self.sessionQueueJson = nil
 	end
@@ -87,6 +90,7 @@ end
 ---@field sessionPosition number
 ---@field sessionRepeatMode string?
 ---@field sessionShuffle boolean?
+---@field sessionShuffleMode beat.ShuffleMode?
 ---@field sessionSource string?
 ---@field sessionBucket number? # The SESSION_STRIDE-sized step of the play head last written
 ---@field sessionQueueJson string? # The queue's encoded part, reused until the queue itself changes
@@ -96,7 +100,7 @@ end
 ---@field shownLoading boolean? # Whether the loading indicator was up in the frame last drawn
 local Playback = {}
 Playback.__index = Playback
-Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
+Playback.needs = { "settings", "library", "collections", "toasts", "emit", "options" }
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -104,6 +108,7 @@ Playback.needs = { "settings", "library", "collections", "toasts", "emit" }
 --- collections: beat.CollectionsService,
 --- toasts: beat.ToastsService,
 --- emit: fun(message: table),
+--- options: { session: { queue: beat.Queue, seconds: number }? }?,
 --- }
 ---@return beat.PlaybackService
 function Playback.new(deps)
@@ -128,6 +133,7 @@ function Playback.new(deps)
 		sessionPosition = 0,
 		sessionRepeatMode = nil,
 		sessionShuffle = nil,
+		sessionShuffleMode = nil,
 		sessionSource = nil,
 		sessionBucket = nil,
 		sessionQueueJson = nil
@@ -140,8 +146,28 @@ function Playback.new(deps)
 	self.player:setVolume(values.volume)
 	self.player.isMuted = values.isMuted
 
-	self:restoreSession()
-	rememberSession(self)
+	-- A restart hands the queue its last player had, so the switch that rebuilt the app does not
+	-- go back to the session file to learn what was playing. Otherwise the session names its
+	-- tracks by path, so it can only be matched against a library that has them: a launch reads
+	-- the cache after the first frame, and a restore that ran here would find nothing and the
+	-- queue would be lost. It waits for the library and restores once, before the first scan, so
+	-- the queue a scan replaces is the last session's rather than one restored late.
+	local session = deps.options ~= nil and deps.options.session or nil
+	if session ~= nil then
+		self.player:restore(session.queue, session.seconds)
+		self.lastListenedTrackId = session.queue:current()?.id
+		rememberSession(self)
+	elseif self.library:isLoading() then
+		self.library.loaded:connect(function()
+			if self.player.queue == nil then
+				self:restoreSession()
+				rememberSession(self)
+			end
+		end)
+	else
+		self:restoreSession()
+		rememberSession(self)
+	end
 
 	-- The player knows when a track actually starts or stops; everything listening to playback
 	-- -- the tag store, Last.fm, a plugin -- hears it as a message rather than watching the queue.
@@ -191,6 +217,7 @@ function Playback:sessionKeyOf()
 		queue.position,
 		queue.repeatMode,
 		tostring(queue.shuffle),
+		tostring(queue.shuffleMode),
 		queue.source,
 		math.floor(self.player:position() / stride)
 	}, "|")
@@ -247,6 +274,14 @@ function Playback:isLoading()
 	return self.player:isLoading()
 end
 
+--- The window is showing again: the app has already told the player it is no longer in the
+--- background before the services step, and the meter picks up from the frame that starts the
+--- feed again rather than analysing the ring's stretch of missing audio. See `Spectrum:resume`.
+---@param now number
+function Playback:resume(now)
+	self.spectrum:resume(now)
+end
+
 --- A new library invalidates what is playing: its ids and paths are gone, so the queue, the
 --- device and the spectrum go with it.
 function Playback:reset()
@@ -294,19 +329,23 @@ end
 
 --- An album's play or shuffle. Playing the album already in the queue is the pause button, unless
 --- the message asks for a restart: a menu's "Play album" means from the top, whatever is playing.
+--- The mode is the kind of shuffle the button's menu chose, and is what says to shuffle when it
+--- is given at all.
 ---@param albumId number
----@param shuffle boolean
----@param restart boolean
-function Playback:playAlbum(albumId, shuffle, restart)
+---@param shuffle boolean?
+---@param restart boolean?
+---@param mode beat.ShuffleMode?
+function Playback:playAlbum(albumId, shuffle, restart, mode)
 	local library = self.library.current
 	local album = library ~= nil ? (library:album(albumId)) : nil
 	if album == nil then return end
 
 	local current = self.player:current()
-	if not shuffle and not restart and current ~= nil and current.albumId == album.id then
+	local shuffled = shuffle == true or (mode ~= nil and mode ~= "off")
+	if not shuffled and not restart and current ~= nil and current.albumId == album.id then
 		self.player:toggle()
-	elseif shuffle then
-		self.player:playTracks(album.tracks, nil, { shuffle = true, source = "album" })
+	elseif shuffled then
+		self.player:playTracks(album.tracks, nil, { shuffle = true, shuffleMode = mode, source = "album" })
 	else
 		self.player:playAlbum(album)
 	end
@@ -367,11 +406,12 @@ function Playback:playTrack(message)
 end
 
 --- Starts a playlist from its page, shuffled or in order. It has to hold tracks the library
---- showing still has, or there is nothing to play.
+--- showing still has, or there is nothing to play. The mode is the shuffle the page's menu chose.
 ---@param playlistId number
----@param shuffle boolean
+---@param shuffle boolean?
+---@param mode beat.ShuffleMode?
 ---@return boolean
-function Playback:playPlaylist(playlistId, shuffle)
+function Playback:playPlaylist(playlistId, shuffle, mode)
 	local playlist = self.collections.taxonomy:playlist(playlistId)
 	if playlist == nil or self.library.current == nil then return false end
 	local tracks = self.collections:playlistTracks(playlist)
@@ -379,7 +419,12 @@ function Playback:playPlaylist(playlistId, shuffle)
 		self.toasts:show("That playlist has no tracks yet", "error")
 		return false
 	end
-	self.player:playTracks(tracks, nil, { source = "playlist:" .. tostring(playlist.id), shuffle = shuffle })
+	local shuffled = shuffle == true or (mode ~= nil and mode ~= "off")
+	self.player:playTracks(
+		tracks,
+		nil,
+		{ source = "playlist:" .. tostring(playlist.id), shuffle = shuffled, shuffleMode = mode }
+	)
 	self.toasts:show("Playing " .. playlist.name)
 	return true
 end
@@ -457,13 +502,25 @@ Playback.on = {
 	---@param message beat.ShuffleMessage
 	shuffle = function(self, message)
 		local queue = self.player.queue
-		if queue ~= nil then self.player:setShuffle(not queue.shuffle) end
+		if queue ~= nil then self.player:setShuffleMode(queue.shuffleMode == "off" and "tracks" or "off") end
 	end,
+	---@param self beat.PlaybackService
+	---@param message beat.ShuffleModeMessage
+	shuffleMode = function(self, message) self.player:setShuffleMode(message.mode) end,
+	---@param self beat.PlaybackService
+	---@param message beat.SkipGroupMessage
+	skipGroup = function(self, message) self.player:skipGroup(message.by) end,
+	---@param self beat.PlaybackService
+	---@param message beat.QueueRemoveMessage
+	queueRemove = function(self, message) self.player:removeQueued(message.index) end,
+	---@param self beat.PlaybackService
+	---@param message beat.QueueMoveMessage
+	queueMove = function(self, message) self.player:moveQueued(message.from, message.to) end,
 	["repeat"] = cycleRepeat,
 	---@param self beat.PlaybackService
 	---@param message beat.PlayAlbumMessage
 	playAlbum = function(self, message)
-		self:playAlbum(message.id, message.shuffle == true, message.restart == true)
+		self:playAlbum(message.id, message.shuffle == true, message.restart == true, message.shuffleMode)
 	end,
 	---@param self beat.PlaybackService
 	---@param message beat.QueueAlbumMessage
@@ -480,7 +537,9 @@ Playback.on = {
 	end,
 	---@param self beat.PlaybackService
 	---@param message beat.PlayPlaylistMessage
-	playPlaylist = function(self, message) self:playPlaylist(message.id, message.shuffle == true) end,
+	playPlaylist = function(self, message)
+		self:playPlaylist(message.id, message.shuffle == true, message.shuffleMode)
+	end,
 	---@param self beat.PlaybackService
 	---@param message beat.PlayPlaylistTrackMessage
 	playPlaylistTrack = function(self, message)

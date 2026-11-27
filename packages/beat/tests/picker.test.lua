@@ -56,3 +56,66 @@ test.it("a file pick refuses a folder answer", function()
 	test.falsy(path)
 	test.equal(status, "cancelled")
 end)
+
+test.it("reads an answer a worker wrote and joins it", function()
+	local directory = os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"
+	local file = os.tmpname() .. "-beat-picker-worker"
+	local threading = require("threading")
+	local thread = threading.spawn(function()
+		local workerFs = require("fs")
+		workerFs.write(file .. ".part", directory .. "\n")
+		workerFs.move(file .. ".part", file)
+	end)
+	local handle = { file = file, platform = "test", thread = thread }
+
+	local path, status
+	local time = require("wonderland.time")
+	local deadline = time.now() + 5
+	while time.now() < deadline do
+		path, status = picker.poll(handle)
+		if path ~= nil or status ~= nil then break end
+		threading.sleep(1)
+	end
+
+	test.equal(path, directory)
+	test.falsy(status)
+	test.falsy(handle.thread, "the poll joined the worker")
+	test.falsy(fs.isfile(file))
+end)
+
+test.it("answers no-picker when a worker ends without writing", function()
+	local file = os.tmpname() .. "-beat-picker-empty-worker"
+	fs.delete(file)
+	local handle = {
+		file = file,
+		platform = "test",
+		thread = {
+			done = function() return true end,
+			join = function() end
+		}
+	}
+
+	local path, status = picker.poll(handle)
+	test.falsy(path)
+	test.equal(status, "no-picker")
+	test.falsy(handle.thread, "the poll joined the worker")
+end)
+
+test.it("asks for a folder answer four times a second while the dialog is open", function()
+	local Scan = require("beat.app.services.scan")
+	local scan = Scan.new({
+		settings = { values = {} },
+		library = {},
+		covers = {},
+		playback = {},
+		toasts = { show = function() end },
+		emit = function() end,
+		window = function() return nil end,
+		options = {}
+	})
+	scan.pick = { file = os.tmpname() .. "-beat-picker-pending", platform = "test" }
+
+	local changed, busy = scan:step(0)
+	test.falsy(changed)
+	test.equal(busy, 0.25, "the open dialog is polled, not drawn for")
+end)

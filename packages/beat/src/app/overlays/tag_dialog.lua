@@ -1,4 +1,6 @@
--- A new tag's name, typed once and created on Enter or on the button.
+-- A new tag's name, typed once and created on Enter or on the button. Opened from the tag picker,
+-- it also carries the track or album the picker was for, so the tag it makes lands on that item
+-- straight away rather than leaving the listener to press it again.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
 
@@ -6,11 +8,13 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 ---@class beat.TagDialogState
 ---@field draft string
+---@field kind "album"|"track"? # The item the tag is made for, when a picker opened the dialog
+---@field id number?
 
 ---@class beat.TagDialogOverlay: beat.OverlaySurface
 local tagDialog = {}
 
----@param params table
+---@param params { kind: "album"|"track"?, id: number? }
 ---@param app beat.App
 function tagDialog.new(app, params)
 	-- One dialog is the one in front: creating a tag from the picker replaces it, as it did when
@@ -20,8 +24,13 @@ function tagDialog.new(app, params)
 	app:close("playlist_picker")
 	-- The caret goes in as soon as the dialog opens, so typing is the next thing that happens.
 	app:focusField("newTag")
+	local kind, id
+	if params.id ~= nil then
+		kind = params.kind == "album" and "album" or "track"
+		id = params.id
+	end
 	---@type beat.TagDialogState
-	return { draft = "" }
+	return { draft = "", kind = kind, id = id }
 end
 
 ---@param app beat.App
@@ -40,13 +49,16 @@ function tagDialog.update(app, overlay, message)
 		app:refresh()
 		return true
 	elseif message.type == "createTag" then
-		local tag = app.services.collections.taxonomy:addTag(state.draft)
+		local tag, applied = app.services.collections:createTag(state.draft, state.kind, state.id)
 		if tag == nil then
 			app.services.toasts:show("Choose a tag name that is not already used", "error")
 		else
-			app.services.collections:save()
 			app:close(overlay)
-			app.services.toasts:show("Tag created · " .. tag.name)
+			if applied then
+				app.services.toasts:show("Tagged · " .. tag.name)
+			else
+				app.services.toasts:show("Tag created · " .. tag.name)
+			end
 		end
 		app:refresh()
 		return true
@@ -66,54 +78,14 @@ function tagDialog.view(app, overlay, window)
 	local gap = theme:px(14)
 	local named = state.draft:match("%S") ~= nil
 	local panelHeight = pad * 2 + theme:px(26) + theme:px(34) + theme:px(18) + theme:px(38) + gap * 3
-	local panel = div()
-		:style(
-			sty()
-				:w(panelWidth):h(panelHeight):column():pad(pad):gap(gap):radius(theme:radius("lg"))
-				:bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
-				:shadow(0, theme:px(16), theme:px(42), "#00000080")
-		):onClick({ type = "keep" })
-		:children(
-			{
-				text("New tag"):style(theme:s():h(theme:px(26)):text(theme:type("lg")):weight("bold"):fg(theme:color("text"))),
-				ui.field(
-					ctx,
-					{
-						name = "newTag",
-						value = state.draft,
-						placeholder = "Tag name",
-						oninput = |value| -> { type = "tagDraft", value = value },
-						onsubmit = || -> { type = "createTag" }
-					}
-				),
-				text("Each tag is also a smart playlist.")
-					:style(theme:s():wrel(1.0):h(theme:px(18)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()),
-				div()
-					:style(sty():row():wrel(1.0):h(theme:px(38)):gap(theme:px(8)):align("center"):justify("end"))
-					:children(
-						{
-							ui.button(
-								ctx,
-								{ label = "Cancel", onClick = { type = "dismiss" }, variant = "quiet", height = theme:px(36), width = theme:px(84) }
-							),
-							-- Create is quiet until there is a name to create the tag with.
-							ui.button(
-								ctx,
-								{
-									label = "Create",
-									onClick = named and { type = "createTag" } or { type = "keep" },
-									variant = named and "primary" or "secondary",
-									height = theme:px(36),
-									width = theme:px(96)
-								}
-							)
-						}
-					)
-			}
-		)
+	local panel = div():style(sty():w(panelWidth):h(panelHeight):column():pad(pad):gap(gap):radius(theme:radius("lg")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border")):shadow(0, theme:px(16), theme:px(42), "#00000080")):onClick({ type = "keep" }):children({ text("New tag"):style(theme:s():h(theme:px(26)):text(theme:type("lg")):weight("bold"):fg(theme:color("text"))), ui.field(ctx, { name = "newTag", value = state.draft, placeholder = "Tag name", oninput = |value| -> { type = "tagDraft", value = value }, onsubmit = || -> { type = "createTag" } }), text("Each tag is also a smart playlist."):style(theme:s():wrel(1.0):h(theme:px(18)):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()), div():style(sty():row():wrel(1.0):h(theme:px(38)):gap(theme:px(8)):align("center"):justify("end")):children({
+		ui.button(ctx, { label = "Cancel", onClick = { type = "dismiss" }, variant = "quiet", height = theme:px(36), width = theme:px(84) }),
+		-- Create is quiet until there is a name to create the tag with.
+		ui.button(ctx, { label = "Create", onClick = named and { type = "createTag" } or { type = "keep" }, variant = named and "primary" or "secondary", height = theme:px(36), width = theme:px(96) })
+	}) })
 
 	return div()
-		:style(sty():fill():offset(0, 0):z(120):column():align("center"):justify("center"):bg(theme:color("overlay")))
+		:style(sty():fill():offset(0, 0):z(122):column():align("center"):justify("center"):bg(theme:color("overlay")))
 		:onClick({ type = "dismiss" }):children({ panel })
 end
 

@@ -18,11 +18,23 @@ local STATE = {
 	cancelled = "Cancelled"
 }
 
+---@class beat.TasksPanelState
+---@field scrollMax number
+---@field scrollHandler fun(by: number, to: number): table
+
 ---@type beat.OverlaySurface
 local tasksPanel = { light = true }
 
 function tasksPanel.new()
-	return {}
+	---@type beat.TasksPanelState
+	local state = { scrollMax = 0 }
+	-- The list's scroll is answered by one handler for as long as the panel is open: a handler
+	-- remade on every frame is a closure a frame, and the range it reports is read from the state
+	-- the frame that drew the list left.
+	state.scrollHandler = function(by, to)
+		return { type = "scroll", key = "tasks", max = state.scrollMax, by = by, to = to }
+	end
+	return state
 end
 
 --- The panel's own controls and the scroll it does itself. A light overlay closes on a message it
@@ -109,10 +121,10 @@ local function taskRow(app, ctx, task, width, height)
 end
 
 ---@param app beat.App
----@param _overlay beat.OverlayInstance
+---@param overlay beat.OverlayInstance<beat.TasksPanelState>
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
-function tasksPanel.view(app, _overlay, window)
+function tasksPanel.view(app, overlay, window)
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
 	local tasks = app.services.tasks:tasks()
@@ -132,6 +144,7 @@ function tasksPanel.view(app, _overlay, window)
 	local full = #tasks * rowStep
 	local listHeight = math.max(rowHeight, math.min(full, room))
 	local scrollMax = math.max(0, full - listHeight)
+	overlay.state.scrollMax = scrollMax
 	local offset = math.min(app.services.scroll:offset("tasks"), scrollMax)
 	local height = padding * 2 + headerHeight + gap + listHeight
 	local barWidth = theme:px(6)
@@ -168,7 +181,7 @@ function tasksPanel.view(app, _overlay, window)
 		header,
 		div()
 			:style(sty():column():w(inner):h(listHeight):bar(barWidth, theme:px(32), theme:color("faint"))):scroll(offset)
-			:onScroll(|by, to| -> { type = "scroll", key = "tasks", max = scrollMax, by = by, to = to }):children(list)
+			:onScroll(overlay.state.scrollHandler):children(list)
 	}
 
 	local panel = div()
@@ -183,7 +196,7 @@ function tasksPanel.view(app, _overlay, window)
 			sty()
 				:fill():offset(0, 0):z(70):row():align("start"):justify("end")
 				:pad(top, right, 0, 0)
-		):onClick({ type = "dismiss" }):children({ panel })
+		):children({ panel })
 end
 
 return tasksPanel

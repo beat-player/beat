@@ -41,6 +41,30 @@ end
 ---@field sheen wonderland.StyleBuilder
 ---@field sheenHover wonderland.StyleBuilder
 ---@field images table<wonderland.Asset, wonderland.StyleBuilder> # weak keys: released covers fall out
+---@field halos table<beat.Album, beat.components.CoverHalo> # weak keys, one hero per page
+
+---@class beat.components.CoverHalo
+---@field asset wonderland.Asset
+---@field style wonderland.StyleBuilder
+
+--- The colour a cover's halo is drawn in: its dominant colour pulled a third of the way to the
+--- page, so a pale or vivid average reads as a tint rather than a lamp, and at an alpha lower on
+--- a light page, where a dark halo would sit against white.
+---@param theme beat.Theme
+---@param colour { r: number, g: number, b: number }
+---@return string
+local function haloColour(theme, colour)
+	local bg = theme:color("bg")
+	local br = tonumber(bg:sub(2, 3), 16) or 0
+	local bgG = tonumber(bg:sub(4, 5), 16) or 0
+	local bb = tonumber(bg:sub(6, 7), 16) or 0
+	local towards = 0.3
+	local r = colour.r * 255 * (1 - towards) + br * towards
+	local g = colour.g * 255 * (1 - towards) + bgG * towards
+	local b = colour.b * 255 * (1 - towards) + bb * towards
+	local alpha = theme.isDark and 0x33 or 0x24
+	return string.format("#%02x%02x%02x%02x", math.floor(r + 0.5), math.floor(g + 0.5), math.floor(b + 0.5), alpha)
+end
 
 --- The styles one box of a given size and corner radius draws with, made once per theme and mix
 --- step. A cover is drawn for every album a page lists, every frame, so building them again per
@@ -73,7 +97,8 @@ local function stylesFor(theme, size, radius)
 		initial = theme:s():text(math.max(12, math.floor(size * 0.28))):weight("bold"):fg(theme:color("muted", 0.8)),
 		sheen = sty():size(size, size):radius(radius):offset(0, 0),
 		sheenHover = sty():size(size, size):radius(radius):offset(0, 0):bg(theme:color("sheen", 0.14)),
-		images = setmetatable({}, { __mode = "k" })
+		images = setmetatable({}, { __mode = "k" }),
+		halos = setmetatable({}, { __mode = "k" })
 	}
 	byRadius[radius] = styles
 
@@ -120,25 +145,28 @@ function cover.view(app, props)
 		local colour = app.services.covers:colourOf(album)
 		if colour ~= nil and asset ~= nil then
 			-- A halo is the one thing a cover's style cannot be shared with: it names this
-			-- album's colour, and a hero is the only place a cover wears one anyway.
-			local alpha = 0x66
-			local style = sty():size(size, size):radius(radius):image(asset.texture, asset.uv)
-			style:shadow(
-				0,
-				0,
-				math.max(12, math.floor(size * 0.24)),
-				string.format(
-					"#%02x%02x%02x%02x",
-					math.floor(colour.r * 255 + 0.5),
-					math.floor(colour.g * 255 + 0.5),
-					math.floor(colour.b * 255 + 0.5),
-					alpha
+			-- album's colour, and a hero is the only place a cover wears one anyway. It is kept
+			-- per album rather than made again on each frame, and remade when the picture is.
+			local halo = styles.halos[album]
+			if halo ~= nil and halo.asset ~= asset then halo = nil end
+			if halo == nil then
+				local style = sty():size(size, size):radius(radius):image(asset.texture, asset.uv)
+				-- A soft shadow with a downward bias, not an even ring around the art: the blur
+				-- is about half the cover's corner radius again, and the colour is close to the
+				-- page, so the halo sits under the picture rather than lighting the wall.
+				style:shadow(
+					0,
+					math.max(2, math.floor(size * 0.02)),
+					math.max(9, math.floor(size * 0.17)),
+					haloColour(theme, colour)
 				)
-			)
+				halo = { asset = asset, style = style }
+				styles.halos[album] = halo
+			end
 
-			local halo = div():style(style)
-			if sheen ~= nil then halo:children(sheen) end
-			return halo
+			local element = div():style(halo.style)
+			if sheen ~= nil then element:children(sheen) end
+			return element
 		end
 	end
 

@@ -57,6 +57,8 @@ local CHECK_DELAY = 8
 ---@field offer beat.UpdateOffer?
 ---@field error string?
 ---@field progress number?
+---@field progressReceived number? # Bytes downloaded so far, when the transfer said
+---@field progressTotal number? # Bytes the whole file is; nil when the server gave no length
 ---@field request beat.HttpHandle?
 ---@field dirty boolean # A status or progress change the next tick owes the screen
 ---@field offered boolean # An automatic check has already opened the dialog this launch
@@ -269,6 +271,8 @@ function Update.new(deps)
 			offer = nil,
 			error = nil,
 			progress = nil,
+			progressReceived = nil,
+			progressTotal = nil,
 			request = nil,
 			dirty = false,
 			offered = false,
@@ -461,6 +465,8 @@ function Update:apply()
 
 	self.status = "downloading"
 	self.progress = nil
+	self.progressReceived = nil
+	self.progressTotal = nil
 	self.error = nil
 	self.dirty = true
 
@@ -469,17 +475,23 @@ function Update:apply()
 		self.app,
 		{ url = offer.url, name = offer.assetName },
 		{
-			onProgress = function(fraction)
+			onProgress = function(fraction, received, total)
 				self.progress = fraction
+				if type(received) == "number" then self.progressReceived = received end
+				if type(total) == "number" and total > 0 then self.progressTotal = total end
 				self.dirty = true
 			end,
 			onDone = function(success, message)
 				if success then
 					self.status = "ready"
 					self.progress = nil
+					self.progressReceived = nil
+					self.progressTotal = nil
 				else
 					self.status = "failed"
 					self.progress = nil
+					self.progressReceived = nil
+					self.progressTotal = nil
 					self.error = message or "the download failed"
 					self.toasts:show("Could not install the update: " .. (message or "the download failed"), "error")
 				end
@@ -490,6 +502,8 @@ function Update:apply()
 	if not started then
 		self.status = "failed"
 		self.progress = nil
+		self.progressReceived = nil
+		self.progressTotal = nil
 		self.error = tostring(failure)
 		self.toasts:show("Could not install the update: " .. tostring(failure), "error")
 		self.dirty = true
@@ -561,7 +575,20 @@ function Update:step(now)
 		end
 	end
 
-	local busy = (self.status == "checking" or self.status == "downloading") and 0.25 or false
+	-- A determinate bar only moves when bytes arrive, so a download ticking at four a second is
+	-- enough; the indeterminate one slides every frame and needs the frame rate. The dialog is what
+	-- shows the bar, and with no total there is nothing but the slide to say work is happening.
+	local busy
+	if self.status == "downloading" then
+		local open = self.app ~= nil
+			and type(self.app.overlay) == "function"
+			and self.app:overlay("update") ~= nil
+		busy = (open and self.progressTotal == nil) and 1 / 30 or 0.25
+	elseif self.status == "checking" then
+		busy = 0.25
+	else
+		busy = false
+	end
 	return changed, busy
 end
 

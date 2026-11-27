@@ -36,8 +36,13 @@ local STAGING_SECONDS = 0.2
 local START_SECONDS = 1.0
 local RESUME_SECONDS = 1.0
 -- While buffering, the reader fills the ring on its own thread: look again soon enough that the
--- first second of audio is not waiting on the loop's sleep.
+-- first second of audio is not waiting on the loop's sleep. A reader with nothing to read -- a
+-- hung network mount -- would otherwise make that a fifty-wakeup-a-second wait forever: after a
+-- second with no new frames the loop backs off to the slow pace, and the first frames that arrive
+-- put it back.
 local WAIT_BUFFERING = 20
+local WAIT_BUFFERING_SLOW = 100
+local BUFFER_BACKOFF_SECONDS = 1
 
 -- The buffer treble opens on the device, in milliseconds: `DEVICE_LATENCY_US` in its ALSA backend
 -- (src/raw/alsa.lua) and `DEVICE_LATENCY_SECONDS` in its AAudio one (src/raw/aaudio.lua). How long
@@ -121,6 +126,9 @@ local HIDDEN_SNAPSHOT_MS = 250
 ---@field bufferHeard number? # The heard frame when the device was paused to buffer
 ---@field bufferPosition number? # The track position when the device was paused to buffer
 ---@field startPosition number? # A load or seek's place, before treble has adopted the track
+---@field bufferWaitAt number? # When continuous buffering last saw new decoded frames
+---@field bufferAvailable number? # The ring's frame count at that moment
+---@field bufferIndex number? # The source it was counted on
 ---@field snapshot beat.AudioMessage? # Written into and pushed, so a report allocates nothing
 ---@field sentPosition number? # What the last pushed snapshot said, field by field
 ---@field sentDuration number?
@@ -382,12 +390,13 @@ function AudioThread.apply(state, player, command, send, producer)
 		end
 	elseif kind == "seek" then
 		local seconds = command.seconds or 0
-		player:seek(seconds)
-		-- The source head moved and its ring starts again there: wait for the start buffer before
-		-- the device reads it, as for a fresh track. Until treble adopts a track, the seek is only
-		-- held for it, so the place has to be remembered here.
+		local accepted = player:seek(seconds)
+		-- The new place is what the snapshots report while the device refills, before treble has
+		-- adopted the track and after: a buffering snapshot that kept the old start place -- or
+		-- nought -- would make the bar jump back before it moves on. A seek treble refused has no
+		-- place of its own to report.
+		state.startPosition = accepted ~= false and seconds or nil
 		local tap = player --[[@as { playing: table? }]]
-		state.startPosition = tap.playing == nil and seconds or nil
 		if tap.playing == nil then
 			-- treble holds the seek until it adopts the track; move the source head too, so its
 			-- reader fills from the new place and the adoption's seek finds it already there.
@@ -593,6 +602,32 @@ local function currentSource(state)
 	local sources = state.sources
 	if sources == nil then return nil end
 	return sources[state.index]
+end
+
+--- Whether the ring has been stuck for a while. While the device is held for data, the reader is
+--- the only thing that can move: a ring whose frame count has not changed for a second is a read
+--- that is not coming back soon (a mounted share that has gone away, a drive that stopped), and
+--- the loop can wait longer for it. The source changing or any new frame resets the clock.
+---@param state beat.AudioThread.State
+---@param now number
+---@return boolean stalled
+function AudioThread.bufferProgress(state, now)
+	if not state.buffering then
+		state.bufferWaitAt = nil
+		state.bufferAvailable = nil
+		state.bufferIndex = nil
+		return false
+	end
+
+	local source = currentSource(state)
+	local available = source ~= nil and source:available() or 0
+	local waited = state.bufferWaitAt
+	local before = state.bufferAvailable
+	if waited == nil or state.bufferIndex ~= state.index or before == nil or available ~= before then
+		waited = now
+	end
+	state.bufferWaitAt, state.bufferAvailable, state.bufferIndex = waited, available, state.index
+	return now - waited >= BUFFER_BACKOFF_SECONDS
 end
 
 --- Seconds of decoded audio the current source has ready ahead, nought when unknown.
@@ -842,6 +877,7 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 		now = time.now()
 		local rawPlaying = player:isPlaying()
 		local heard = player:playedFrames()
+		local bufferStalled = AudioThread.bufferProgress(state, now)
 
 		-- A track held for data is not stalled: the device is paused while the reader fills the
 		-- ring, so the watch starts over as if nothing were playing.
@@ -888,8 +924,9 @@ function AudioThread.run(commandAddress, eventAddress, pcmAddress)
 			waitMs = WAIT_STALLED
 		elseif state.buffering or state.wantsPlay then
 			-- Wanted audio that is not playing yet: data is arriving on another thread, so look
-			-- again soon. The device is deliberately not released while the user asked to play.
-			waitMs = WAIT_BUFFERING
+			-- again soon. A ring that has not moved for a second is not arriving, and a reader
+			-- stuck on a dead mount should not cost fifty wakeups a second.
+			waitMs = bufferStalled and WAIT_BUFFERING_SLOW or WAIT_BUFFERING
 		elseif suspended then
 			waitMs = math.huge
 		else

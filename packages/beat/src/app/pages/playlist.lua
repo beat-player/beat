@@ -11,6 +11,26 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@type beat.PageSurface
 local playlistPage = {}
 
+-- What the page's shuffle button sends, one record per playlist: the page is built again every
+-- frame it is scrolled, and neither the plain shuffle nor its mode menu changes with the page.
+---@type table<beat.Playlist, { action: table, menu: table }>
+local shuffleMessages = setmetatable({}, { __mode = "k" })
+
+---@param playlist beat.Playlist
+---@return { action: table, menu: table }
+local function shuffleFor(playlist)
+	local kept = shuffleMessages[playlist]
+	if kept == nil then
+		local id = playlist.id
+		kept = {
+			action = { type = "playPlaylist", id = id, shuffle = true },
+			menu = { type = "open", overlay = "menu", menu = "shuffle", source = "playlist", id = id }
+		}
+		shuffleMessages[playlist] = kept
+	end
+	return kept
+end
+
 ---@param page beat.PageInstance
 ---@return string
 function playlistPage.key(page)
@@ -63,7 +83,7 @@ function playlistPage.view(app, page, window)
 	local emptyTitle = builtin and "Nothing in this list yet" or "This playlist is empty"
 	local emptyCopy = builtin
 		and "Play some music, or add files to your library, and this list fills itself."
-		or "Use + to add albums, or right-click a track and add it here."
+		or "Use + to add albums or tracks, or right-click a track and add it here."
 	local empty = div()
 		:style(sty():column():wrel(1.0):h(120):align("center"):justify("center"):gap(10))
 		:children(
@@ -92,6 +112,7 @@ function playlistPage.view(app, page, window)
 	local meta = format.count(#tracks, "track") .. (duration > 0 and (" · " .. format.duration(duration)) or "")
 	if not builtin then meta = meta .. " · " .. PlaylistArt.editedLabel(playlist.updatedAt) end
 
+	local shuffle = shuffleFor(playlist)
 	return collection.view(
 		app,
 		{
@@ -114,7 +135,8 @@ function playlistPage.view(app, page, window)
 			playAction = thisPlaylist ? { type = "togglePlay" } : { type = "playPlaylist", id = playlist.id },
 			playIcon = playing and thisPlaylist ? "pause" : "play",
 			loading = thisPlaylist and app.services.playback.player:isLoading(),
-			shuffleAction = { type = "playPlaylist", id = playlist.id, shuffle = true },
+			shuffleAction = shuffle.action,
+			shuffleMenu = shuffle.menu,
 			addAction = builtin ? nil : { type = "open", overlay = "playlist_adder", playlistId = playlist.id },
 			tracks = tracks,
 			trackAction = |track| -> { type = "playPlaylistTrack", playlistId = playlist.id, trackId = track.id },

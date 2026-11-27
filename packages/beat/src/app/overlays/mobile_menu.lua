@@ -155,7 +155,7 @@ function mobileMenu.view(app, _overlay, window)
 	local arrow = div():style(sty():w(width):h(point)):canvas(drawArrow)
 
 	return div()
-		:style(sty():fill():offset(0, 0):z(130)):onClick({ type = "dismiss" })
+		:style(sty():fill():offset(0, 0):z(130))
 		:children(
 			{
 				popup.view(

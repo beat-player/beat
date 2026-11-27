@@ -3,6 +3,7 @@
 -- person is without a second component.
 local wonderland = require("wonderland")
 local cache = require("beat-ui.cache")
+local ripple = require("beat-ui.ripple")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -18,6 +19,7 @@ local listRow = {}
 ---@field justify "start"|"center"|"space-between"? # Default "start"
 ---@field active boolean? # Draws the current-destination fill
 ---@field radius string? # A radius name; default "sm"
+---@field key string? # Keeps the press mark on this row across frames; default its place in the frame
 
 ---@class beat.ui.ListRowStyles
 ---@field base wonderland.StyleBuilder
@@ -78,7 +80,12 @@ function listRow.view(ctx, props)
 	) --[[@as beat.ui.ListRowStyles]]
 
 	local row = div():style(styles.base):hover(styles.hover)
-	if props.onClick ~= nil then row:onClick(props.onClick) end
+	if props.onClick ~= nil then
+		row:onClick(props.onClick)
+		-- A row that answers a press is a row that shows one: the mark of its own ink, inside the
+		-- rounded box it is drawn in.
+		ripple.attach(row, props.key, ctx:color("text"))
+	end
 	return row:children(props.children or {})
 end
 

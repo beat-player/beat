@@ -17,6 +17,27 @@ local names = require("beat.music.names")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
+-- The shuffle button's mode menu and the skip button's group menu, and the mark that says an
+-- album or artist shuffle is on.
+local SHUFFLE_MENU = { type = "open", overlay = "menu", menu = "shuffle" }
+local SKIP_MENU = { type = "open", overlay = "menu", menu = "skip" }
+local SHUFFLE = { type = "shuffle" }
+
+-- The screen's own controls: fixed messages, made once rather than once per frame the screen is
+-- built again while the playhead moves.
+local EXPAND = { type = "expandNowPlaying", open = false }
+local TOGGLE_QUEUE = { type = "toggleQueue" }
+local TOGGLE_MORE = { type = "toggleMore" }
+local TOGGLE_EQUALIZER = { type = "toggleEqualizer" }
+local TOGGLE_PLAY = { type = "togglePlay" }
+local REPEAT = { type = "repeat" }
+local NEXT = { type = "next" }
+local PREVIOUS = { type = "previous" }
+
+-- The glyph on the shuffle button's corner badge: the kind of shuffle that is on. A plain track
+-- shuffle has no badge, so the button looks as it always has.
+local SHUFFLE_BADGES = { albums = "disc", artists = "person" }
+
 --- The three dots at one size and colour. It is made where the button's record is made rather
 --- than in the view, so the frame that draws the tool row makes no closure.
 ---@param size number
@@ -96,6 +117,56 @@ local function moreButton(app, ctx, size, hit, onClick, active)
 		size = hit,
 		onClick = onClick,
 		content = div():style(sty():size(size, size)):canvas(draw)
+	})
+end
+
+--- The shuffle control. A plain on/off shuffle is the tap button every other tool is; a grouped
+--- shuffle adds the mode's small glyph on a filled circle at the button's corner, so the icon says
+--- which kind of shuffle is running.
+---@param app beat.App
+---@param ctx beat.ui.Context
+---@param size number
+---@param hit number
+---@param mode beat.ShuffleMode
+---@return wonderland.Element
+local function shuffleButton(app, ctx, size, hit, mode)
+	local badge = SHUFFLE_BADGES[mode]
+	if badge == nil then
+		return tapButton.view(ctx, { name = "shuffle", size = size, hit = hit, onClick = SHUFFLE, active = mode ~= "off" })
+	end
+
+	local theme = app.services.appearance.theme
+	local glyphSize = math.max(18, math.floor(size * 0.8 + 0.5))
+	local badgeSize = math.max(theme:px(13), math.floor(size * 0.5 + 0.5))
+	local byKey = styles.of(theme, "nowPlayingShuffleMark", hit) --[[@as table<string, any>]]
+	local key = glyphSize .. ":" .. badgeSize
+	local set = byKey[key]
+	if set == nil then
+		set = {
+			content = sty():size(hit, hit),
+			glyph = sty():size(glyphSize, glyphSize):offset((hit - glyphSize) / 2, (hit - glyphSize) / 2),
+			badge = sty()
+				:size(badgeSize, badgeSize):radius(theme:radius("full")):bg(theme:color("bg")):align("center")
+				:justify("center"):offset(hit - badgeSize, hit - badgeSize),
+			badgeGlyph = math.max(8, math.floor(badgeSize * 0.72 + 0.5))
+		}
+		byKey[key] = set
+	end
+	return ui.iconButton(ctx, {
+		size = hit,
+		onClick = SHUFFLE,
+		content = div():style(set.content):children({
+			div():style(set.glyph):children(ui.icon(ctx, {
+				name = "shuffle",
+				size = glyphSize,
+				colour = theme:color("text")
+			})),
+			div():style(set.badge):children(ui.icon(ctx, {
+				name = badge,
+				size = set.badgeGlyph,
+				colour = theme:color("accent")
+			}))
+		})
 	})
 end
 
@@ -185,6 +256,10 @@ end
 
 ---@class beat.NowPlayingState: beat.OverlayState
 ---@field anchor table?
+---@field room table? # Where the tool row is and how much room is around it, written each frame
+---@field volumeAnchor table? # The panel anchors kept for each popup, written rather than replaced
+---@field queueAnchor table?
+---@field menuAnchor table?
 
 ---@class beat.NowPlayingOverlay: beat.OverlaySurface
 ---@field toolPanel fun(app: beat.App, panel: wonderland.Element, x: number, width: number, height: number, room: beat.ToolRoom, key: string): wonderland.Element
@@ -238,6 +313,192 @@ local function screenStyles(theme, mobile)
 	return styles
 end
 
+-- Where the album and artist lines lead. The message for an album or an artist is the same for the
+-- life of the thing it names, and the screen is built again whenever the playhead moves.
+---@type table<beat.Album, table>
+local albumNavigations = setmetatable({}, { __mode = "k" })
+---@type table<number, table>
+local artistNavigations = {}
+
+---@param album beat.Album
+---@return table
+local function navigateAlbum(album)
+	local message = albumNavigations[album]
+	if message == nil then
+		message = { type = "navigate", page = { kind = "album", id = album.id } }
+		albumNavigations[album] = message
+	end
+	return message
+end
+
+---@param artistId number
+---@return table
+local function navigateArtist(artistId)
+	local message = artistNavigations[artistId]
+	if message == nil then
+		message = { type = "navigate", page = { kind = "artist", id = artistId } }
+		artistNavigations[artistId] = message
+	end
+	return message
+end
+
+--- The title block's styles for one width and phone/desktop type. The album and artist boxes are
+--- cut to their measured text, so those measurements are part of the record: a new track or album
+--- rebuilds it once, and the frames of one track reuse it.
+---@class beat.NowPlayingSection
+---@field width number
+---@field mobile boolean
+---@field albumItem beat.Album?
+---@field artistName string?
+---@field subtitleType number
+---@field lineHeight number
+---@field sepWidth number
+---@field subtitle wonderland.StyleBuilder
+---@field title wonderland.StyleBuilder
+---@field album wonderland.StyleBuilder
+---@field albumHover wonderland.StyleBuilder
+---@field sep wonderland.StyleBuilder
+---@field artist wonderland.StyleBuilder
+---@field artistHover wonderland.StyleBuilder
+---@field line wonderland.StyleBuilder
+
+---@param theme beat.Theme
+---@param app beat.App
+---@param mobile boolean
+---@param width number
+---@param album beat.Album
+---@param artist string
+---@param subtitleType number
+---@return beat.NowPlayingSection
+local function sectionStyles(theme, app, mobile, width, album, artist, subtitleType)
+	local byMobile = styles.of(theme, "nowPlayingSection", width)
+	local key = mobile and 1 or 0
+	local record = byMobile[key] --[[@as beat.NowPlayingSection?]]
+	if
+		record ~= nil
+		and record.albumItem == album
+		and record.artistName == artist
+		and record.subtitleType == subtitleType
+	then
+		return record
+	end
+
+	local subtitle = record ~= nil and record.subtitleType == subtitleType and record.subtitle
+		or theme:s():text(subtitleType):weight("medium")
+	local lineHeight = math.floor(subtitleType * 1.3)
+	local sepWidth = math.ceil(measure.width(app, "  ·  ", subtitle) or theme:px(24))
+	local albumWidth = math.ceil(measure.width(app, album.title, subtitle) or width) + 1
+	local artistWidth = math.ceil(measure.width(app, artist, subtitle) or width) + 1
+	local room = width - sepWidth
+	if albumWidth + artistWidth > room then
+		artistWidth = math.min(artistWidth, math.floor(room * 0.4))
+		albumWidth = math.max(math.floor(room * 0.6), room - artistWidth)
+		artistWidth = room - albumWidth
+	end
+
+	record = {
+		width = width,
+		mobile = mobile,
+		albumItem = album,
+		artistName = artist,
+		subtitleType = subtitleType,
+		lineHeight = lineHeight,
+		sepWidth = sepWidth,
+		subtitle = subtitle,
+		title = theme:s():w(width):text(theme:type(mobile and "xxl" or "hero")):weight("bold"):fg(theme:color("text")):ellipsis(),
+		album = theme:s():w(albumWidth):text(subtitleType):weight("medium"):fg(theme:color("muted")):ellipsis(),
+		albumHover = theme:s():w(albumWidth):text(subtitleType):weight("medium"):fg(theme:color("text")):ellipsis(),
+		sep = theme:s():w(sepWidth):text(subtitleType):weight("medium"):fg(theme:color("muted")),
+		artist = theme:s():w(artistWidth):text(subtitleType):weight("medium"):fg(theme:color("muted")):ellipsis(),
+		artistHover = theme:s():w(artistWidth):text(subtitleType):weight("medium"):fg(theme:color("text")):ellipsis(),
+		line = sty():row():w(width):h(lineHeight):align("center")
+	}
+	byMobile[key] = record
+	return record
+end
+
+--- The stage's boxes for one width and phone/desktop layout. The record keeps the numbers its
+--- builders were made from, so a resize or a different track rebuilds it once and every frame in
+--- between hands the same builders over again.
+---@class beat.NowPlayingStage
+---@field width number
+---@field stacked boolean
+---@field availableHeight number
+---@field mainPad number
+---@field gap number
+---@field stageGap number
+---@field coverSize number
+---@field textHeight number
+---@field stageHeight number
+---@field controlHeight number
+---@field playSize number
+---@field skipHit number
+---@field controlGap number
+---@field margin number
+---@field topInset number
+---@field cover wonderland.StyleBuilder
+---@field spacer wonderland.StyleBuilder
+---@field playGroup wonderland.StyleBuilder
+---@field playCircle wonderland.StyleBuilder
+---@field controls wonderland.StyleBuilder
+---@field main wonderland.StyleBuilder
+---@field textColumn wonderland.StyleBuilder
+
+---@param theme beat.Theme
+---@param mobile boolean
+---@param width number
+---@return beat.NowPlayingStage
+local function stageRecord(theme, mobile, width)
+	local byMobile = styles.of(theme, "nowPlayingStage", width)
+	local key = mobile and 1 or 0
+	local record = byMobile[key] --[[@as beat.NowPlayingStage?]]
+	if record == nil then
+		record = { width = width, stacked = false }
+		byMobile[key] = record
+	end
+	return record
+end
+
+---@param theme beat.Theme
+---@param stage beat.NowPlayingStage
+---@param stacked boolean
+local function buildStage(theme, stage, stacked)
+	local radius = theme:radius("full")
+	stage.cover = sty():size(stage.coverSize, stage.coverSize):shadow(0, 8, 14, "#00000038")
+	stage.spacer = sty():w("auto"):h(stage.controlHeight)
+	stage.playGroup = sty()
+		:row():w(stage.skipHit * 2 + stage.playSize + stage.controlGap * 2):h(stage.controlHeight)
+		:gap(stage.controlGap):align("center"):justify("center")
+	stage.playCircle = sty():size(stage.playSize, stage.playSize):radius(radius):bg(theme:color("accent")):align("center")
+		:justify("center")
+	stage.controls = sty():row():wrel(1.0):h(stage.controlHeight):align("center")
+	stage.main = stacked
+			and sty()
+				:h(stage.availableHeight):column():align("center"):justify("center"):gap(stage.stageGap)
+				:pad(stage.mainPad, 0, stage.mainPad, 0)
+		or sty()
+			:h(stage.availableHeight):row():align("center"):justify("center"):gap(stage.gap)
+			:pad(stage.mainPad, 0, stage.mainPad, 0)
+	stage.textColumn = stacked
+			and sty():column():h(stage.textHeight):gap(stage.stageGap):w(stage.width)
+		or sty():column():h(stage.stageHeight):justify("center"):gap(stage.stageGap):w(stage.width)
+end
+
+--- The padded content around the stage, for the margin and the status bar it has to clear.
+---@param theme beat.Theme
+---@param top number
+---@param side number
+---@return wonderland.StyleBuilder
+local function contentStyle(theme, top, side)
+	local bySide = styles.of(theme, "nowPlayingContent", top)
+	local style = bySide[side]
+	if style == nil then
+		style = sty():fill():column():pad(top, side, side, side):gap(theme:space(16))
+		bySide[side] = style
+	end
+	return style
+end
+
 ---@type beat.NowPlayingOverlay
 local nowPlaying = { fullscreen = true }
 
@@ -281,9 +542,10 @@ end
 ---@param _overlay beat.OverlayInstance<beat.NowPlayingState>
 ---@param window wonderland.RenderWindow
 ---@return wonderland.Element
-function nowPlaying.view(app, _overlay, window)
+function nowPlaying.view(app, overlay, window)
 	local theme = app.services.appearance.theme
 	local ctx = app:ui(window)
+	local state = overlay.state
 	local mobile = metrics.mobile(app, window.width)
 	local stacked = mobile and window.height >= theme:px(560)
 	local track = app.services.playback:current()
@@ -306,13 +568,13 @@ function nowPlaying.view(app, _overlay, window)
 	local compact = availableHeight < theme:px(430)
 	local stageGap = compact ? (theme:px(6)) : (theme:px(10))
 
-	local styles = screenStyles(theme, mobile)
-	local header = div():style(styles.header):children({
+	local screen = screenStyles(theme, mobile)
+	local header = div():style(screen.header):children({
 		tapButton.view(ctx, {
 			name = "chevronDown",
 			size = theme:px(34),
 			hit = mobile and theme:px(48) or theme:px(34),
-			onClick = { type = "expandNowPlaying", open = false }
+			onClick = EXPAND
 		})
 	})
 	local contentChildren = {}
@@ -335,69 +597,91 @@ function nowPlaying.view(app, _overlay, window)
 			end
 			progressWidth = math.max(theme:px(160), math.min(desiredProgress, maxText))
 		end
-		local stageHeight = math.min(theme:px(340), math.max(theme:px(220), availableHeight - styles.toolRowHeight - mainPad * 2))
+		local stageHeight = math.min(theme:px(340), math.max(theme:px(220), availableHeight - screen.toolRowHeight - mainPad * 2))
 
-		local coverFrame = div():style(sty():size(coverSize, coverSize):shadow(0, 12, 20, "#00000060")):onClick({
-			type = "navigate",
-			page = { kind = "album", id = album.id }
-		}):onContextMenu(albumCard.actions(album).menu):children(
-			cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true })
-		)
 		local transport = math.max(0.7, math.min(1, progressWidth / theme:px(240)))
 		local controlGap = theme:px(10 * transport)
 		-- The album and artist are secondary: body type on a phone, where the larger desktop line
 		-- would compete with the title, and the size it always was on a desktop.
 		local subtitleType = theme:type(mobile ? "md" : "lg")
-		-- The album and artist sit at their own widths, so the dot stays between them; only when
-		-- the two do not fit together are they cut, the artist keeping its whole name where that is
-		-- short and the album never giving up more than two fifths of the line.
-		local lineHeight = math.floor(subtitleType * 1.3)
-		local subtitleStyle = theme:s():text(subtitleType):weight("medium")
-		local sepWidth = math.ceil(measure.width(app, "  ·  ", subtitleStyle) or theme:px(24))
-		local albumWidth = math.ceil(measure.width(app, album.title, subtitleStyle) or progressWidth) + 1
-		local artistWidth = math.ceil(measure.width(app, track.artist, subtitleStyle) or progressWidth) + 1
-		local room = progressWidth - sepWidth
-		if albumWidth + artistWidth > room then
-			artistWidth = math.min(artistWidth, math.floor(room * 0.4))
-			albumWidth = math.max(math.floor(room * 0.6), room - artistWidth)
-			artistWidth = room - albumWidth
-		end
+		local section = sectionStyles(theme, app, mobile, progressWidth, album, track.artist, subtitleType)
+
+		local controlHeight = theme:px(54 * transport)
+		local skipSize = theme:px(30 * transport)
+		local skipHit = mobile and theme:px(56) or skipSize
+		local sideHit = mobile and theme:px(48) or theme:px(28 * transport)
+		local playSize = theme:px(54 * transport)
+		if mobile then controlHeight = math.max(controlHeight, skipHit) end
+		local titleSize = (theme:type(mobile ? "xxl" : "hero"))
+		local progressHeight = progress.height(theme, mobile)
+		local textHeight = titleSize + subtitleType + screen.toolRowHeight + progressHeight + controlHeight + stageGap * 4
+
+		local stage = stageRecord(theme, mobile, progressWidth)
+		local rebuild = stage.stacked ~= stacked
+			or stage.availableHeight ~= availableHeight
+			or stage.mainPad ~= mainPad
+			or stage.gap ~= gap
+			or stage.stageGap ~= stageGap
+			or stage.coverSize ~= coverSize
+			or stage.textHeight ~= textHeight
+			or stage.stageHeight ~= stageHeight
+			or stage.controlHeight ~= controlHeight
+			or stage.playSize ~= playSize
+			or stage.skipHit ~= skipHit
+			or stage.controlGap ~= controlGap
+			or stage.margin ~= margin
+			or stage.topInset ~= topInset
+		stage.stacked = stacked
+		stage.availableHeight = availableHeight
+		stage.mainPad = mainPad
+		stage.gap = gap
+		stage.stageGap = stageGap
+		stage.coverSize = coverSize
+		stage.textHeight = textHeight
+		stage.stageHeight = stageHeight
+		stage.controlHeight = controlHeight
+		stage.playSize = playSize
+		stage.skipHit = skipHit
+		stage.controlGap = controlGap
+		stage.margin = margin
+		stage.topInset = topInset
+		if rebuild then buildStage(theme, stage, stacked) end
+
+		local coverFrame = div():style(stage.cover):onClick(navigateAlbum(album)):onContextMenu(albumCard.actions(album).menu):children(
+			cover.view(app, { album = album, size = coverSize, radius = theme:radius("lg"), glow = true })
+		)
 		local textRows = {
-			text(track.title)
-				:style(
-					theme:s()
-						:w(progressWidth):text(((theme:type(mobile ? "xxl" : "hero")))):weight("bold"):fg(theme:color("text")):ellipsis()
-				),
-			div():style(sty():row():w(progressWidth):h(lineHeight):align("center")):children({
+			text(track.title):style(section.title),
+			div():style(section.line):children({
 				text(album.title)
-					:style(theme:s():w(albumWidth):text(subtitleType):weight("medium"):fg(theme:color("muted")):ellipsis())
-					:hover(theme:s():w(albumWidth):text(subtitleType):weight("medium"):fg(theme:color("text")):ellipsis())
-					:onClick({ type = "navigate", page = { kind = "album", id = album.id } }),
+					:style(section.album)
+					:hover(section.albumHover)
+					:onClick(navigateAlbum(album)),
 				text("  ·  ")
-					:style(theme:s():w(sepWidth):text(subtitleType):weight("medium"):fg(theme:color("muted"))),
+					:style(section.sep),
 				text(track.artist)
-					:style(theme:s():w(artistWidth):text(subtitleType):weight("medium"):fg(theme:color("muted")):ellipsis())
-					:hover(theme:s():w(artistWidth):text(subtitleType):weight("medium"):fg(theme:color("text")):ellipsis())
-					:onClick({ type = "navigate", page = { kind = "artist", id = track.artistId } })
+					:style(section.artist)
+					:hover(section.artistHover)
+					:onClick(navigateArtist(track.artistId))
 			})
 		}
 		local queue = app.services.playback.player.queue
 		local repeatIcon = queue?.repeatMode == "one" ? "repeatOne" : "repeat"
 		local repeatActive = queue ~= nil and queue.repeatMode ~= "off"
-		local toolSize = styles.toolSize
-		local toolHit = styles.toolHit
-		local toolGap = styles.toolGap
-		local toolGroupWidth = styles.toolGroupWidth
+		local toolSize = screen.toolSize
+		local toolHit = screen.toolHit
+		local toolGap = screen.toolGap
+		local toolGroupWidth = screen.toolGroupWidth
 		local toolChildren = {
-			div():style(styles.toolGroup):children({
+			div():style(screen.toolGroup):children({
 				tapButton.view(ctx, {
 					name = "queue",
 					size = toolSize,
 					hit = toolHit,
-					onClick = { type = "toggleQueue" },
+					onClick = TOGGLE_QUEUE,
 					active = app:overlay("queue") ~= nil
 				}),
-				moreButton(app, ctx, toolSize, toolHit, { type = "toggleMore" }, app:overlay("more") ~= nil)
+				moreButton(app, ctx, toolSize, toolHit, TOGGLE_MORE, app:overlay("more") ~= nil)
 			})
 		}
 		-- The rating sits between the two groups where the row has room for it; a narrow stage
@@ -412,127 +696,117 @@ function nowPlaying.view(app, _overlay, window)
 				gap = starGap
 			})
 		end
-		toolChildren[#toolChildren + 1] = div():style(styles.toolGroup):children({
-			tapButton.view(ctx, {
-				name = "shuffle",
-				size = toolSize,
-				hit = toolHit,
-				onClick = { type = "shuffle" },
-				active = queue?.shuffle ?? false
-			}),
+		local shuffleMode = queue ~= nil and queue.shuffleMode or "off"
+		local shuffle = shuffleButton(app, ctx, toolSize, toolHit, shuffleMode)
+		shuffle:onContextMenu(SHUFFLE_MENU)
+		toolChildren[#toolChildren + 1] = div():style(screen.toolGroup):children({
+			shuffle,
 			tapButton.view(ctx, {
 				name = repeatIcon,
 				size = toolSize,
 				hit = toolHit,
-				onClick = { type = "repeat" },
+				onClick = REPEAT,
 				active = repeatActive
 			})
 		})
-		textRows[#textRows + 1] = div():style(styles.toolRow):children(toolChildren)
+		textRows[#textRows + 1] = div():style(screen.toolRow):children(toolChildren)
 		textRows[#textRows + 1] = progress.view(app, {
 			track = track,
 			player = app.services.playback.player,
 			width = progressWidth,
 			mobile = mobile
 		})
-		local controlHeight = theme:px(54 * transport)
+
 		-- The transport is centred by a spacer either side rather than by spreading the row: the
 		-- panels below are boxes offset from the row, and a spread row still counts them among the
 		-- boxes it spreads, which moved the transport towards them. The spacers share what the
 		-- other boxes leave, so the transport says how wide it is.
-		local skipSize = theme:px(30 * transport)
-		local skipHit = mobile and theme:px(56) or skipSize
-		local sideHit = mobile and theme:px(48) or theme:px(28 * transport)
-		local playSize = theme:px(54 * transport)
-		if mobile then controlHeight = math.max(controlHeight, skipHit) end
 		local playing = app.services.playback.player:isPlaying()
 		local playMark = app.services.playback.player:isLoading()
 				and spinner.view(app, theme:px(24 * transport), theme.accentInk)
 			or ui.icon(ctx, { name = playing ? "pause" : "play", size = theme:px(24 * transport), colour = theme.accentInk })
+		local nextButton = tapButton.view(ctx, { name = "next", size = skipSize, hit = skipHit, onClick = NEXT })
+		nextButton:onContextMenu(SKIP_MENU)
 		local controlChildren = {
 			volumeButton(app, ctx, theme:px(28 * transport), sideHit),
-			div():style(sty():w("auto"):h(controlHeight)),
-			div():style(sty():row():w(skipHit * 2 + playSize + controlGap * 2):h(controlHeight):gap(controlGap):align("center"):justify("center")):children({
-				tapButton.view(ctx, { name = "previous", size = skipSize, hit = skipHit, onClick = { type = "previous" } }),
-				div():style(sty():size(playSize, playSize):radius(theme:radius("full")):bg(theme:color("accent")):align("center"):justify("center")):onClick({
-					type = "togglePlay"
-				}):children(playMark),
-				tapButton.view(ctx, { name = "next", size = skipSize, hit = skipHit, onClick = { type = "next" } })
+			div():style(stage.spacer),
+			div():style(stage.playGroup):children({
+				tapButton.view(ctx, { name = "previous", size = skipSize, hit = skipHit, onClick = PREVIOUS }),
+				div():style(stage.playCircle):onClick(TOGGLE_PLAY):children(playMark),
+				nextButton
 			}),
-			div():style(sty():w("auto"):h(controlHeight)),
-			equalizerButton(app, ctx, theme:px(28 * transport), sideHit, { type = "toggleEqualizer" }, app:overlay("equalizer") ~= nil)
+			div():style(stage.spacer),
+			equalizerButton(app, ctx, theme:px(28 * transport), sideHit, TOGGLE_EQUALIZER, app:overlay("equalizer") ~= nil)
 		}
-		local panelHeight = theme:px(44)
-		local volumePanel = anchored(app, "volume", {
-			width = theme:px(190),
-			height = panelHeight,
-			x = 0,
-			y = compact and (-panelHeight - theme:px(8)) or (controlHeight + theme:px(8))
-		}, window)
-		if volumePanel ~= nil then controlChildren[#controlChildren + 1] = volumePanel end
-		local titleSize = (theme:type(mobile ? "xxl" : "hero"))
-		local progressHeight = progress.height(theme, mobile)
-		local textHeight = titleSize + subtitleType + styles.toolRowHeight + progressHeight + controlHeight + stageGap * 4
 
-		-- The queue and the menu open from the tool row, towards whichever side of it has the room.
-		-- Where the row is comes from the sizes the stage is centred with -- a line of text is as
-		-- tall as its type -- so the panels can be sized before the layout has run.
+		-- The panels opened from the tool row are placed from the row's place and the room around
+		-- it. Their anchor records live on this screen's state rather than being made per frame;
+		-- each popup keeps the one named for it, and its numbers are written in place.
+		local panelHeight = theme:px(44)
+		local volumeAnchor = state.volumeAnchor
+		if volumeAnchor == nil then
+			volumeAnchor = { x = 0 }
+			state.volumeAnchor = volumeAnchor
+		end
+		volumeAnchor.width = theme:px(190)
+		volumeAnchor.height = panelHeight
+		volumeAnchor.y = compact and (-panelHeight - theme:px(8)) or (controlHeight + theme:px(8))
+		local volumePanel = anchored(app, "volume", volumeAnchor, window)
+		if volumePanel ~= nil then
+			controlChildren[#controlChildren + 1] = volumePanel
+		end
+
 		local lead = stacked and (coverSize + stackGap) or 0
 		local rowTop = margin + mainPad + (availableHeight - mainPad * 2 - lead - textHeight) / 2 + lead + titleSize + subtitleType + stageGap * 2
 		local edge = theme:px(12)
-		-- They are offset from the controls, the last row of the stage, rather than from the tool
-		-- row: what is painted later than a panel and under its shadow is not painted at all, and
-		-- nothing in the stage is painted later than its last row. The tool row is a fixed distance
-		-- above it.
-		local room = {
-			below = window.height - edge - rowTop - styles.toolRowHeight,
-			above = rowTop - edge,
-			top = -(styles.toolRowHeight + progressHeight + stageGap * 2),
-			rowHeight = styles.toolRowHeight
-		}
-		local queuePanel = anchored(app, "queue", { toolWidth = progressWidth, room = room }, window)
-		if queuePanel ~= nil then controlChildren[#controlChildren + 1] = queuePanel end
-		local menu = anchored(app, "more", { rowWidth = progressWidth, room = room, x = toolHit + toolGap }, window)
-		if menu ~= nil then controlChildren[#controlChildren + 1] = menu end
-		textRows[#textRows + 1] = div()
-			:style(sty():row():wrel(1.0):h(controlHeight):align("center")):children(controlChildren)
-
-		local main
-		if stacked then
-			main = div()
-				:style(
-					sty()
-						:h(availableHeight):column():align("center"):justify("center"):gap(stackGap):pad(mainPad, 0, mainPad, 0)
-				)
-			main:children({
-				coverFrame,
-				div():style(sty():column():h(textHeight):gap(stageGap):w(progressWidth)):children(textRows)
-			})
-		else
-			main = div()
-				:style(sty():h(availableHeight):row():align("center"):justify("center"):gap(gap):pad(mainPad, 0, mainPad, 0))
-			main:children({
-				coverFrame,
-				div():style(sty():column():h(stageHeight):justify("center"):gap(stageGap):w(progressWidth)):children(textRows)
-			})
+		local room = state.room
+		if room == nil then
+			room = {}
+			state.room = room
 		end
-		contentChildren[#contentChildren + 1] = main
+		room.below = window.height - edge - rowTop - screen.toolRowHeight
+		room.above = rowTop - edge
+		room.top = -(screen.toolRowHeight + progressHeight + stageGap * 2)
+		room.rowHeight = screen.toolRowHeight
+		local queueAnchor = state.queueAnchor
+		if queueAnchor == nil then
+			queueAnchor = { room = room }
+			state.queueAnchor = queueAnchor
+		end
+		queueAnchor.toolWidth = progressWidth
+		queueAnchor.room = room
+		local queuePanel = anchored(app, "queue", queueAnchor, window)
+		if queuePanel ~= nil then
+			controlChildren[#controlChildren + 1] = queuePanel
+		end
+		local menuAnchor = state.menuAnchor
+		if menuAnchor == nil then
+			menuAnchor = { room = room }
+			state.menuAnchor = menuAnchor
+		end
+		menuAnchor.rowWidth = progressWidth
+		menuAnchor.room = room
+		menuAnchor.x = toolHit + toolGap
+		local menu = anchored(app, "more", menuAnchor, window)
+		if menu ~= nil then
+			controlChildren[#controlChildren + 1] = menu
+		end
+		textRows[#textRows + 1] = div():style(stage.controls):children(controlChildren)
+
+		contentChildren[#contentChildren + 1] = div():style(stage.main):children({
+			coverFrame,
+			div():style(stage.textColumn):children(textRows)
+		})
 	end
 	contentChildren[#contentChildren + 1] = header
 
 	-- The FFT belongs to the window, not to the padded content: the content's gutter only
 	-- positions the controls, while the background bars run to every edge.
-	local content = div()
-		:style(sty():fill():column():pad(margin + topInset, margin, margin, margin):gap(theme:space(16))):children(contentChildren)
+	local content = div():style(contentStyle(theme, margin + topInset, margin)):children(contentChildren)
 
 	local children = { spectrumBackground.view(app, { intensity = 0.7, reach = 0.8, bold = true }), content }
-	-- The panels sit inside the stage, so what closes them on a click elsewhere is here: under
-	-- them, over everything else on the screen.
-	if app:overlay("queue") ~= nil or app:overlay("more") ~= nil then
-		children[#children + 1] = div():style(sty():fill():offset(0, 0):z(128)):onClick({ type = "dismiss" })
-	end
 
-	return div():style(styles.screen):children(children)
+	return div():style(screen.screen):children(children)
 end
 
 return nowPlaying

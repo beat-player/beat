@@ -63,13 +63,28 @@ the interpreter.
 A pointer crosses to another thread as its eight raw bytes in a string, never as a Lua number:
 Android tags heap pointers above 2^53 and a double rounds them.
 
+## Starting up
+
+The library cache is read after the first frame: a worker parses the file and pushes its records
+in batches, and the app takes a few milliseconds a tick into the library. View rebuilds while it
+loads are held to eight a second, and the sort that closes the load runs a slice of a frame a
+tick, so the rebuild that shows the final order comes once. A scan's folder walk is a thread of
+its own sending entries back a batch at a time, and the cache a finished scan writes is encoded
+and written a slice a tick. Tags are written on a thread, so the check a toggle draws does not
+wait for the disk. On Linux the folder dialog is shown on a worker too: the portal call blocks
+until the person answers, which is not something a frame may do. Hover marks are built from the
+boxes the previous solve produced, so a frame where the pointer has not moved is solved once.
+Clocks are formatted once per whole second, not once per playhead position.
+
 ## In the background
 
 A hidden window draws nothing, so nothing may run at the display's rate while it is hidden:
 `App:tick` sleeps a second instead of a frame. A service that has something to do sooner returns how
-many seconds away it wants the next tick -- a thirtieth of a second while a track plays, a quarter
-of a second for a toast the pointer may land on -- and a tick that no service asks for is a second
-away as well. A shown window playing a track ticks thirty times a second: the playhead asks for a
+many seconds away it wants the next tick -- a thirtieth of a second while a track plays, a fifth
+of a second between the slide and the fade of a toast -- and a tick that no service asks for is a
+second away as well. A toast the pointer rests on needs no tick of its own: its own mouse-move
+message pushes its expiry forward, so the ticker wakes only for the animations and the expiry. A
+shown window playing a track ticks thirty times a second: the playhead asks for a
 frame only when it moves a pixel, and the meter is fed thirty times a second. A hidden window tells
 the audio thread, which then wakes every 75 ms instead of every 20 and stops feeding the spectrum. A
 paused player releases the device after five seconds, after which the audio thread blocks untimed on
@@ -77,6 +92,12 @@ its command channel until the app asks for something; a prefetch reader whose ri
 until the audio side consumes it. Per-sample work on the audio thread (equalizer, volume, the
 spectrum tap) runs for every second of music whether or not the app is shown; keep it in flat
 numeric loops over ffi arrays.
+
+Coming back is an edge rather than the next hidden tick: wonderland makes the app's tickers due as
+soon as it sees the window shown, so the tick that tells the audio thread it is in the foreground,
+resyncs the meter and asks for a frame runs before the loop waits again. Covers survive a short
+hide -- a minimize or an app switch -- and only give their textures back after half a minute away,
+so the screen that comes back is not a page of placeholders while the decodes run.
 
 To measure a phone playing in the background, read each thread's CPU ticks and context switches
 from `/proc/<pid>/task/*/stat` and `status` over `adb shell` twice, 30 seconds apart. Compare runs

@@ -25,6 +25,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 
@@ -37,10 +39,13 @@ import java.util.function.IntSupplier;
  *   accept(Bundle)   whenever what is playing changes (see the keys in `update`);
  *   getAsInt()       to take the next command a control sent, -1 when there is none. A seek is
  *                    one value too, -2 - the position in milliseconds, so it is never read half.
- *                    Audio focus changes and a media stream falling silent arrive the same way.
+ *                    Audio focus changes and a media stream falling silent arrive the same way;
+ *   run()            to drop the notification, the foreground service and the session for good,
+ *                    before the process leaves, and wait until it is done.
  * Every Android call happens on the main thread; the queue is the only state the Lua thread reads.
  */
-public final class MediaBridge extends MediaSession.Callback implements Consumer<Object>, IntSupplier {
+public final class MediaBridge extends MediaSession.Callback
+	implements Consumer<Object>, IntSupplier, Runnable {
 	public static final int PLAY = 1;
 	public static final int PAUSE = 2;
 	public static final int NEXT = 3;
@@ -54,10 +59,14 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 	public static final int FOCUS_LOSS = 8;
 	/** The media volume reached zero while playing: pause and stay paused. */
 	public static final int VOLUME_ZERO = 9;
+	/** The player's X: stop, drop the notification and the session, and leave the app. */
+	public static final int CLOSE = 10;
 
 	private static final String CHANNEL = "playback";
 	private static final int NOTIFICATION = 1;
 	private static final String ACTION = "beat.MEDIA_CONTROL";
+	/** The PlaybackState custom action whose button is the player's X, on Android 13 and later. */
+	private static final String ACTION_CLOSE = "beat.MEDIA_CLOSE";
 	private static final long ACTIONS = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE
 		| PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT
 		| PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_SEEK_TO | PlaybackState.ACTION_STOP;
@@ -295,12 +304,19 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 			.setVisibility(Notification.VISIBILITY_PUBLIC)
 			.setShowWhen(false)
 			.setOnlyAlertOnce(true)
-			.setDeleteIntent(control(STOP))
+			// Swiping a paused player away is the same thing the X says: nothing is listening any
+			// more, so beat goes. A playing one is not dismissible on Android 13 and later, and the
+			// pause it sent before that only stops the sound.
+			.setDeleteIntent(plays ? control(STOP) : control(CLOSE))
 			.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_previous, "Previous", control(PREVIOUS)).build())
 			.addAction(plays
 				? new Notification.Action.Builder(android.R.drawable.ic_media_pause, "Pause", control(PAUSE)).build()
 				: new Notification.Action.Builder(android.R.drawable.ic_media_play, "Play", control(PLAY)).build())
 			.addAction(new Notification.Action.Builder(android.R.drawable.ic_media_next, "Next", control(NEXT)).build())
+			// The fourth button older Android draws in the expanded notification. Android 13 and
+			// later ignore it and draw the X from the session's state instead. The compact view is
+			// still the three transport controls.
+			.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Close", control(CLOSE)).build())
 			.setStyle(new Notification.MediaStyle()
 				.setMediaSession(session.getSessionToken())
 				.setShowActionsInCompactView(0, 1, 2));
@@ -319,11 +335,73 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 
 	/** The session's view of playback, at `position` milliseconds. */
 	private PlaybackState playbackState(boolean plays, long position) {
+		// Android 13 and later draw the shade's player from this, not from the notification's
+		// buttons: a custom action is the only way to put an X among its controls. The icon is a
+		// resource id, which the system resolves and tints with the other buttons.
 		return new PlaybackState.Builder()
 			.setActions(ACTIONS)
 			.setState(plays ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
 				position, plays ? 1f : 0f, SystemClock.elapsedRealtime())
+			.addCustomAction(ACTION_CLOSE, "Close", android.R.drawable.ic_menu_close_clear_cancel)
 			.build();
+	}
+
+	@Override
+	public void onCustomAction(String action, Bundle extras) {
+		if (ACTION_CLOSE.equals(action)) commands.add(CLOSE);
+	}
+
+	/**
+	 * Drops the notification, the foreground service and the session for good. Lua asks for this
+	 * before the process leaves: a report posted to the main thread would still be waiting when the
+	 * loop returns and `os.exit` ends the process, and the notification would be left behind.
+	 *
+	 * The teardown happens on the main thread, where the notification and the service belong; the
+	 * caller waits for it, up to a second, so nothing outlives the call.
+	 */
+	@Override
+	public void run() {
+		if (Looper.myLooper() == Looper.getMainLooper()) {
+			shutDown();
+			return;
+		}
+		CountDownLatch done = new CountDownLatch(1);
+		main.post(() -> {
+			try {
+				shutDown();
+			} finally {
+				done.countDown();
+			}
+		});
+		try {
+			done.await(1, TimeUnit.SECONDS);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	/** The end of this bridge's time as the phone's player. Runs on the main thread. */
+	private void shutDown() {
+		if (session == null) return;
+		playing = false;
+		active = false;
+		pausedByFocus = false;
+		stopVolumeWatch();
+		abandonFocus();
+		PlaybackService.stop();
+		notifications.cancel(NOTIFICATION);
+		// Released rather than made inactive: the controls must not come back for a session whose
+		// app is on its way out. The session is forgotten, so a report still posted does nothing.
+		MediaSession closing = session;
+		session = null;
+		closing.setActive(false);
+		closing.release();
+		artPath = null;
+		art = null;
+		reportedTitle = null;
+		reportedArtist = null;
+		reportedAlbum = null;
+		reportedDuration = 0;
 	}
 
 	/**
@@ -400,7 +478,9 @@ public final class MediaBridge extends MediaSession.Callback implements Consumer
 		watchingVolume = true;
 		// Starting at zero is not a fall to zero: only a drop while playing pauses.
 		lastVolume = audio.getStreamVolume(AudioManager.STREAM_MUSIC);
-		IntentFilter filter = new IntentFilter(AudioManager.VOLUME_CHANGED_ACTION);
+		// VOLUME_CHANGED_ACTION is a hidden platform constant, so it is spelled out here rather
+		// than named; android.jar has no symbol for it.
+		IntentFilter filter = new IntentFilter("android.media.VOLUME_CHANGED_ACTION");
 		if (Build.VERSION.SDK_INT >= 33) {
 			// VOLUME_CHANGED_ACTION is a system broadcast, which NOT_EXPORTED would not deliver.
 			context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED);

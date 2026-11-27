@@ -15,7 +15,7 @@ local time = require("wonderland.time")
 
 local Inspect = {}
 
-local COVER_SIZE = 512
+local COVER_SIZE = artwork.CACHE_SIZE
 local PROGRESS_EVERY = 32
 local PROGRESS_SECONDS = 0.25
 

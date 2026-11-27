@@ -248,3 +248,110 @@ test.it("frees a buffer whose upload was dropped after joining", function()
 	test.equal(liveBytes, 0)
 	covers:close()
 end)
+
+test.it("does not upload or start covers while the window is hidden", function()
+	watchFrees()
+	local file = coverFile("hidden")
+	local uploads = 0
+	local covers = Covers.new({ scroll = idleScroll() })
+	covers:use(assetsWith(function() uploads += 1 end) --[[@as wonderland.Assets]])
+	covers:beginFrame()
+	covers:request(album(11, file), 16)
+
+	test.truthy(startAndWaitForDecode(covers), "the worker has a cover ready")
+	covers:hidden(1)
+	local changed, busy = covers:step(2)
+	test.falsy(changed)
+	test.falsy(busy, "a hidden window asks for no tick")
+	test.equal(uploads, 0, "the finished decode waits on its worker")
+	test.equal(freedCount, 0, "and its pixels are still the worker's")
+
+	covers:request(album(12, file), 16)
+	covers:step(2)
+	test.equal(#covers.decoding, 1, "no new decode is started while hidden")
+
+	covers:shown()
+	covers:step(3)
+	test.equal(uploads, 1, "showing the window joins the decode and uploads it")
+	covers:close()
+end)
+
+--- The album of a folder picture: the scan stores the picture beside the tracks, and the cache
+--- file it made is named by `file` whether or not anything is there.
+---@param id number
+---@param file string
+---@param cover string
+---@return beat.Album
+local function folderAlbum(id, file, cover)
+	return { id = id, coverCache = file, coverPath = cover, modified = 0, tracks = {} } --[[@as beat.Album]]
+end
+
+test.it("makes a cached cover again on a worker when its file was deleted", function()
+	local cover = coverFile("regenerated-source")
+	local cache = root .. "/cleaned/cache.jpg"
+	test.falsy(fs.isfile(cache), "the cache directory is gone to begin with")
+
+	local covers = coversService()
+	covers:request(folderAlbum(20, cache, cover), 16)
+	test.truthy(settle(covers), "the worker made the cover again")
+
+	local entry = assert(covers.entries[20] and covers.entries[20][16], "the remade cover was stored")
+	test.falsy(entry.failed)
+	test.truthy(entry.asset, "the remade cover was uploaded")
+	test.truthy(fs.isfile(cache), "the cache file is back where the album names it")
+	covers:close()
+end)
+
+test.it("does not keep asking for an album with no picture at all", function()
+	local cache = root .. "/nothing/missing.jpg"
+
+	local covers = coversService()
+	covers:request(folderAlbum(21, cache, nil), 16)
+	test.equal(covers:request(folderAlbum(21, cache, nil), 16), nil)
+	test.truthy(settle(covers), "the one attempt finished")
+
+	local entry = assert(covers.entries[21] and covers.entries[21][16])
+	test.truthy(entry.failed, "a genuinely coverless album is remembered as such")
+	test.falsy(fs.isfile(cache), "no empty cache file was left behind")
+
+	covers:beginFrame()
+	covers:request(folderAlbum(21, cache, nil), 16)
+	local changed, busy = covers:step(0)
+	test.falsy(changed)
+	test.falsy(busy, "no worker is spent on a remembered failure")
+	test.equal(#covers.jobs, 0, "nothing is queued for it every frame")
+	covers:close()
+end)
+
+test.it("forgets failures a finished scan may have made good on", function()
+	local cache = root .. "/retry/missing.jpg"
+	local covers = coversService()
+	covers:request(folderAlbum(22, cache, nil), 16)
+	test.truthy(settle(covers))
+	test.truthy(covers.entries[22] ~= nil)
+
+	covers:retryFailed()
+	test.equal(covers.entries[22], nil, "the failure is dropped")
+	test.equal(covers.count, 0)
+	covers:close()
+end)
+
+test.it("makes a cached cover again when its file cannot be read", function()
+	local cover = coverFile("corrupt-source")
+	local cache = root .. "/corrupt/cache.jpg"
+	fs.mkdirAll(root .. "/corrupt")
+	test.truthy(fs.write(cache, "not a picture"))
+
+	local covers = coversService()
+	covers:request(folderAlbum(23, cache, cover), 16)
+	test.truthy(settle(covers), "the worker made the cover again")
+
+	local entry = assert(covers.entries[23] and covers.entries[23][16], "the remade cover was stored")
+	test.falsy(entry.failed)
+	test.truthy(entry.asset, "the remade cover was uploaded")
+
+	local remade = assert(image.load(cache, { channels = 4 }), "the cache file is a picture again")
+	test.equal(remade.width, remade.height, "and a square")
+	remade:close()
+	covers:close()
+end)

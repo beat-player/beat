@@ -20,6 +20,8 @@
 --   SHOT_ROOT                  writes this root into the copied settings before the app starts,
 --                              so the shell is the usual one without a scan being started
 --   SHOT_THEME                 dark or light (or a palette name: night, day, amoled)
+--   SHOT_MOUSE                 a pointer position as "x,y" in window pixels; the last frame is
+--                              drawn with the pointer there, so hover states show in the shot
 --   SHOT_FRAMES                frames drawn before saving, so decodes finish (default 30)
 local fs = require("fs")
 local path = require("path")
@@ -51,6 +53,15 @@ local overlayParamsText = os.getenv("SHOT_OVERLAY_PARAMS")
 local configSource = os.getenv("SHOT_CONFIG")
 local root = os.getenv("SHOT_ROOT")
 local themeName = os.getenv("SHOT_THEME")
+local mouseText = os.getenv("SHOT_MOUSE")
+local mouseX, mouseY
+if mouseText ~= nil and mouseText ~= "" then
+	local xText, yText = mouseText:match("^%s*([^,]+),([^,]+)%s*$")
+	mouseX, mouseY = tonumber(xText or ""), tonumber(yText or "")
+	if mouseX == nil or mouseY == nil then
+		error("shot: SHOT_MOUSE is not x,y: " .. mouseText)
+	end
+end
 
 -- The phone's geometry is the bench's: the display density makes a length in the theme's units
 -- that many physical pixels, and the system bars cover a strip of the window top and bottom.
@@ -152,6 +163,12 @@ end
 for _ = 1, frames do
 	screen:draw()
 	settleCovers()
+end
+
+-- A pointer where the caller asked for it: moving with no frame after it would leave the shot
+-- showing what was hovered before the move, so the move is followed by a draw that picks it up.
+if mouseX ~= nil then
+	screen:event({ name = "mouseMove", window = screen.window, x = mouseX, y = mouseY })
 end
 screen:draw()
 

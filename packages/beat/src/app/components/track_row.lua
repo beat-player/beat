@@ -297,7 +297,11 @@ function trackRow.view(app, props)
 		)
 	end
 
-	return div():style(s.row):hover(s.rowHover):onClick(onClick):onContextMenu(moreFor(track)):children(children)
+	return ui.ripple(
+		div():style(s.row):hover(s.rowHover):onClick(onClick):onContextMenu(moreFor(track)):children(children),
+		nil,
+		theme:color("text")
+	)
 end
 
 return trackRow

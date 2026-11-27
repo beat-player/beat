@@ -46,7 +46,14 @@ local GLYPHS = {
 	star = 0xE01B,
 	starOutline = 0xE01C,
 	-- The queue's list: Playlists has its own mark, so the queue keeps the lines it always had.
-	queue = 0xE01D
+	queue = 0xE01D,
+	person = 0xE01E,
+	people = 0xE01F,
+	disc = 0xE020,
+	calendar = 0xE021,
+	musicalNote = 0xE022,
+	-- The same list mark as the queue: a track or disc number is a row in a list.
+	listNumber = 0xE023
 }
 
 local UTF8_GLYPHS = {}

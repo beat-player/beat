@@ -9,6 +9,11 @@ local artworkCache = require("beat.music.artwork_cache")
 
 local artwork = {}
 
+--- The side every cached cover is written at. A screen asks for a little less and is handed this
+--- square as it is, and a cover made again after the cache was cleaned is made at this side too:
+--- the file is then exactly the one every screen was expecting, whatever size asked for it.
+artwork.CACHE_SIZE = 512
+
 local u8 = ffi.typeof("uint8_t*")
 
 ---@param picture treble.Tags.Picture
@@ -193,6 +198,41 @@ function artwork.forTrack(track, maxSide)
 	return fitted, { r = r, g = g, b = b }
 end
 
+--- Writes one fitted cover where the cache keeps it, making the cache directory when a cleaned
+--- cache took it with it. The JPEG is written beside the target and renamed over it, so a reader
+--- never sees a partial picture.
+---@param fitted image.Image
+---@param file string
+---@return string? file
+---@return string? err
+local function writeCache(fitted, file)
+	local folder = path.dirname(file)
+	if not fs.isdir(folder) then
+		fs.mkdirAll(folder)
+		if not fs.isdir(folder) then
+			fitted:close()
+			return nil, "cannot create " .. folder
+		end
+	end
+
+	local encoded, encodeErr = fitted:encode("jpg", { quality = 90 })
+	fitted:close()
+	if encoded == nil then return nil, encodeErr end
+
+	-- Inspectors may race for the same album's cache file when an album spans folders, and a
+	-- cover worker may be making one again while the scan writes it. Write a sibling temporary and
+	-- rename it into place, so a reader never sees a partial JPEG.
+	local temp = file .. "." .. tostring(os.time()) .. "." .. tostring(math.random(1, 1000000)) .. ".tmp"
+	if not fs.write(temp, encoded) then return nil, "cannot write " .. temp end
+	local moved, moveErr = fs.move(temp, file)
+	if not moved then
+		fs.delete(temp)
+		return nil, moveErr or ("cannot move " .. temp)
+	end
+
+	return file, nil
+end
+
 --- Downscale one track's art and write it to the local cache. The scan worker calls this while
 --- reading the remote library; the window then loads only the returned file. The source's
 --- modified time is part of the cache name, so a changed picture is a different cache entry.
@@ -212,35 +252,51 @@ function artwork.cacheCover(track, maxSide, root)
 	local fitted, _, err = artwork.forTrack(track, maxSide)
 	if fitted == nil then return nil, err end
 
-	local folder = path.dirname(file)
-	if not fs.isdir(folder) then
-		fs.mkdirAll(folder)
-		if not fs.isdir(folder) then
-			fitted:close()
-			return nil, "cannot create " .. folder
-		end
+	return writeCache(fitted, file)
+end
+
+--- The picture an album's cached cover was made from, as plain values a worker can be handed a
+--- copy of: the track whose file holds the picture, or the picture the scan found beside the
+--- tracks. Nothing here reads the music folder; it only says where a cover would come from.
+---@param album beat.Album
+---@return { path: string, hasPicture: boolean, coverPath: string?, modified: number? }?
+function artwork.source(album)
+	local track = album.coverTrack
+	if track ~= nil and track.hasPicture and track.path ~= nil then
+		return { path = track.path, hasPicture = true, coverPath = track.coverPath, modified = track.modified }
 	end
 
-	local encoded, encodeErr = fitted:encode("jpg", { quality = 90 })
-	fitted:close()
-	if encoded == nil then return nil, encodeErr end
+	local coverPath = album.coverPath
+	if coverPath == nil then return nil end
 
-	-- Inspectors may race for the same album's cache file when an album spans folders. Write a
-	-- sibling temporary and rename it into place, so a reader never sees a partial JPEG.
-	local temp = file .. "." .. tostring(os.time()) .. "." .. tostring(math.random(1, 1000000)) .. ".tmp"
-	if not fs.write(temp, encoded) then return nil, "cannot write " .. temp end
-	local moved, moveErr = fs.move(temp, file)
-	if not moved then
-		fs.delete(temp)
-		return nil, moveErr or ("cannot move " .. temp)
-	end
+	local first = album.tracks ~= nil and album.tracks[1] or nil
+	return {
+		path = first ~= nil and first.path or coverPath,
+		hasPicture = false,
+		coverPath = coverPath,
+		modified = album.modified or (first ~= nil and first.modified) or 0
+	}
+end
 
-	return file, nil
+--- Writes a cached cover again from the picture it was made from. The scan worker's cache file
+--- can be gone -- someone cleaned the cache directory, or an older launch's file was pruned --
+--- while the album still names it; the picture itself is in the music folder, so the cover is
+--- made again exactly where the album expects it. Runs on a cover worker, off the frame's thread.
+---@param source { path: string, hasPicture: boolean, coverPath: string?, modified: number? }
+---@param file string
+---@param maxSide number
+---@return string? file
+---@return string? err
+function artwork.rewriteCache(source, file, maxSide)
+	local fitted, _, err = artwork.forTrack(source, maxSide)
+	if fitted == nil then return nil, err end
+	return writeCache(fitted, file)
 end
 
 --- The cached cover for an album, fitted for this screen. The window never reads the music folder
---- here: the scan worker has already produced the local file, and a missing one is a placeholder
---- until the next scan rather than a blocking read of a remote file.
+--- here: the scan worker has already produced the local file. A file that is missing or unreadable
+--- answers nil and is made again by the cover worker (`rewriteCache`) from `artwork.source`, not by
+--- this function, so the frame that draws a placeholder never waits on the music folder.
 ---
 --- The scan worker writes one square for every screen, at 512 pixels. A grid card can ask for a
 --- little less than that -- a phone's 477-pixel card is 7% smaller -- and turning 512 into 477 is

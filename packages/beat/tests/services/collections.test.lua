@@ -8,6 +8,7 @@ local json = require("json")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Collections = require("beat.app.services.collections")
+local TagStore = require("beat.app.services.collections.store")
 local Signal = require("beat.app.signal")
 local names = require("beat.music.names")
 local time = require("wonderland.time")
@@ -20,11 +21,15 @@ local realDirectory = paths.directory
 paths.directory = function() return configDirectory end
 
 test.afterAll(function()
+	TagStore.flush()
 	paths.directory = realDirectory
 	fs.rmdir(configDirectory)
 end)
 
 local function clean()
+	-- A threaded write from the previous case may still be landing: wait for it before removing
+	-- the files it writes, or it puts one back after this test has begun.
+	TagStore.flush()
 	fs.delete(paths.file("tags.json"))
 	fs.delete(paths.file("tags.v1.json"))
 end
@@ -101,6 +106,8 @@ test.it("adopts a version-1 file against the library the app loaded", function()
 	test.equal(assert(service.taxonomy:trackMetric(current.tracks[1])).count, 2)
 	test.equal(next(service.taxonomy.legacy.ratings), nil, "nothing is left waiting")
 
+	-- The adoption is written on a thread; wait for the disk before reading what it says.
+	TagStore.flush()
 	local written = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
 	test.equal(written.version, 2, "the adoption was written")
 	test.equal(written.assignments[1].key, key)
@@ -149,6 +156,7 @@ test.it("waits to write play counts and ratings, and writes them on the ticker o
 
 	local due = assert(service.dirtyAt)
 	service:step(due)
+	TagStore.flush()
 	local written = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
 	test.equal(written.metrics.tracks[1].count, 1, "the play count reaches disk once it settles")
 
@@ -160,4 +168,38 @@ test.it("waits to write play counts and ratings, and writes them on the ticker o
 	service:flush()
 	local flushed = json.decode(assert(fs.read(paths.file("tags.json")))):unpack()
 	test.equal(flushed.ratings[1].value, 5, "a flush writes it at once")
+end)
+
+test.it("reads an item's tags and a playlist's keys once per revision", function()
+	clean()
+	local current = library({
+		{ path = "/music/a.flac", fingerprint = "aaaabbbbccccdddd" },
+		{ path = "/music/b.flac", fingerprint = "1111222233334444" }
+	})
+	local libraries = libraryService(current)
+	---@cast libraries beat.LibraryService
+	local service = Collections.new({ library = libraries, toasts = toasts })
+	local taxonomy = service.taxonomy
+	local album = current.albums[1]
+	local first, second = current.tracks[1], current.tracks[2]
+	local tag = assert(taxonomy:addTag("Live"))
+
+	taxonomy:setTag(names.trackKey(first), tag.id, true)
+	local tags = service:itemTagSet("track", first.id)
+	test.truthy(tags[tag.id])
+	test.equal(service:itemTagSet("track", first.id), tags, "the set is kept until the taxonomy changes")
+	test.falsy(service:itemTagSet("album", album.id)[tag.id], "an album carries a tag only when every track does")
+
+	taxonomy:setTag(names.trackKey(second), tag.id, true)
+	test.truthy(service:itemTagSet("album", album.id)[tag.id], "a new revision rebuilds the set")
+	test.truthy(service:itemHasTag("album", album.id, tag.id))
+
+	local playlist = assert(taxonomy:addPlaylist("Mix", false))
+	test.equal(next(service:playlistKeySet(playlist)), nil, "a new playlist holds nothing")
+	taxonomy:setPlaylistTrack(playlist, names.trackKey(first), true)
+	local keys = service:playlistKeySet(playlist)
+	test.truthy(keys[names.trackKey(first)])
+	test.equal(service:playlistKeySet(playlist), keys, "the keys are kept for the revision")
+	taxonomy:setPlaylistTrack(playlist, names.trackKey(first), false)
+	test.equal(service:playlistKeySet(playlist)[names.trackKey(first)], nil, "and rebuilt when it changes")
 end)

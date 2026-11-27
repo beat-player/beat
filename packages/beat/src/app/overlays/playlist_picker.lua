@@ -16,8 +16,9 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@class beat.PlaylistPickerStyles
 ---@field header wonderland.StyleBuilder
 ---@field title wonderland.StyleBuilder
----@field row wonderland.StyleBuilder
----@field rowHover wonderland.StyleBuilder
+---@field rowHeight number
+---@field rowPadding number
+---@field rowGap number
 ---@field name wonderland.StyleBuilder
 ---@field createName wonderland.StyleBuilder
 ---@field count wonderland.StyleBuilder
@@ -27,10 +28,10 @@ local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 ---@field emptyTitle wonderland.StyleBuilder
 ---@field emptyCopy wonderland.StyleBuilder
 
--- Every panel a picker draws shares these: two row states, the badge the create row leads with, and
--- the empty state's mark, title and copy. They are built once per theme and panel width, not once
--- per frame: the labels are boxes of their own so a long name ellipsizes before it reaches the
--- track count, which is why the width is part of the key.
+-- Every panel a picker draws shares these: the row's one height, padding and gap, the badge the
+-- create row leads with, and the empty state's mark, title and copy. They are built once per theme
+-- and panel width, not once per frame: the labels are boxes of their own so a long name ellipsizes
+-- before it reaches the track count, which is why the width is part of the key.
 ---@type table<beat.Theme, table<number, beat.PlaylistPickerStyles>>
 local stylesByTheme = setmetatable({}, { __mode = "k" })
 
@@ -45,26 +46,26 @@ local function pickerStyles(theme, content)
 	end
 	local styles = byContent[content]
 	if styles == nil then
-		local rowPad = theme:px(20)
-		local rowContent = content - rowPad
+		local rowHeight = theme:px(38)
+		local rowPadding = theme:px(10)
 		local rowGap = theme:px(8)
-		local countWidth = theme:px(80)
-		local row = sty()
-			:row():wrel(1.0):h(theme:px(38)):pad(0, theme:px(10), 0, theme:px(10)):gap(rowGap):radius(theme:radius("sm"))
-			:align("center"):justify("space-between")
-		local rowHover = sty()
-			:row():wrel(1.0):h(theme:px(38)):pad(0, theme:px(10), 0, theme:px(10)):gap(rowGap):radius(theme:radius("sm"))
-			:align("center"):justify("space-between"):bg(theme:color("hover"))
+		local inner = content - rowPadding * 2 - rowGap
+		-- The count keeps a readable column even in a window narrow enough that a fixed one would
+		-- leave the name nothing, which is how the two lines ended up drawn over one another.
+		local countWidth = math.min(theme:px(80), math.max(theme:px(44), math.floor(inner * 0.35)))
+		local nameWidth = math.max(theme:px(1), inner - countWidth)
 		local badgeSize = theme:px(24)
 		styles = {
 			header = sty():row():wrel(1.0):h(theme:px(28)):gap(rowGap):align("center"):justify("space-between"),
 			title = theme:s()
 				:w(content - theme:px(28) - rowGap):text(theme:type("lg")):weight("bold"):fg(theme:color("text")):ellipsis(),
-			row = row,
-			rowHover = rowHover,
-			name = theme:s():w(rowContent - countWidth - rowGap):text(theme:type("sm")):fg(theme:color("text")):ellipsis(),
+			rowHeight = rowHeight,
+			rowPadding = rowPadding,
+			rowGap = rowGap,
+			name = theme:s():w(nameWidth):text(theme:type("sm")):fg(theme:color("text")):ellipsis(),
 			createName = theme:s()
-				:w(rowContent - badgeSize - rowGap):text(theme:type("sm")):weight("semibold"):fg(theme:color("text")):ellipsis(),
+				:w(math.max(theme:px(1), inner - badgeSize)):text(theme:type("sm")):weight("semibold"):fg(theme:color("text"))
+				:ellipsis(),
 			count = theme:s():w(countWidth):text(theme:type("xs")):fg(theme:color("muted")):align("end"),
 			badge = sty()
 				:size(badgeSize, badgeSize):radius(theme:radius("full")):bg(theme:color("accent", 0.14)):row():align("center")
@@ -183,6 +184,8 @@ function playlistPicker.update(app, overlay, message)
 end
 
 --- One playlist, or the create row when `playlist` is nil: a mark, a name, and a track count.
+--- The row is the shared list row, so its hover and press fill are the panel's inner width and its
+--- content sits inside that fill, centred on one line; every row in the panel is the same width.
 ---@param app beat.App
 ---@param ctx beat.ui.Context
 ---@param playlist beat.Playlist?
@@ -194,21 +197,31 @@ local function pickerRow(app, ctx, playlist, count, styles)
 	local action = playlist ~= nil and { type = "addToPlaylist", playlistId = playlist.id } or {
 		type = "newPlaylistWithItem"
 	}
+	local children
 	if playlist == nil then
-		return div()
-			:style(styles.row):hover(styles.rowHover):onClick(action)
-			:children(
-				{
-					div()
-						:style(styles.badge)
-						:children({ ui.icon(ctx, { name = "add", size = theme:px(14), colour = theme:color("text") }) }),
-					text("New playlist"):style(styles.createName)
-				}
-			)
+		children = {
+			div()
+				:style(styles.badge)
+				:children({ ui.icon(ctx, { name = "add", size = theme:px(14), colour = theme:color("text") }) }),
+			text("New playlist"):style(styles.createName)
+		}
+	else
+		children = {
+			text(playlist.name):style(styles.name),
+			text(format.count(count, "track")):style(styles.count)
+		}
 	end
-	return div()
-		:style(styles.row):hover(styles.rowHover):onClick(action)
-		:children({ text(playlist.name):style(styles.name), text(format.count(count, "track")):style(styles.count) })
+	return ui.listRow(
+		ctx,
+		{
+			height = styles.rowHeight,
+			padding = styles.rowPadding,
+			gap = styles.rowGap,
+			justify = playlist == nil and "start" or "space-between",
+			onClick = action,
+			children = children
+		}
+	)
 end
 
 --- How tall one line of text stands, close enough that the panel is cut to it before layout runs.

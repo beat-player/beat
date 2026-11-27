@@ -97,15 +97,18 @@ local TRAY_MESSAGES = {
 ---@field haptics beat.HapticsService
 ---@field lastfm beat.LastfmService
 ---@field library beat.LibraryService
+---@field media beat.MediaService? # The phone's session and notification, when its plugin is on
 ---@field metadata beat.MetadataService
 ---@field motion beat.MotionService
 ---@field playback beat.PlaybackService
+---@field ripple beat.RippleService
 ---@field scan beat.ScanService
 ---@field scroll beat.ScrollService
 ---@field search beat.SearchService
 ---@field settings beat.SettingsService
 ---@field sidebar beat.SidebarService
 ---@field system beat.SystemService
+---@field textInput beat.TextInputService
 ---@field tasks beat.TasksService
 ---@field toasts beat.ToastsService
 ---@field update beat.UpdateService
@@ -134,6 +137,7 @@ local TRAY_MESSAGES = {
 ---@field hide (fun(self: wonderland.RenderWindow))? # Off the screen and the taskbar; the loop and its media keys keep working
 ---@field show (fun(self: wonderland.RenderWindow))? # Back on screen, restored and in front
 ---@field setBackHandled (fun(self: wonderland.RenderWindow, handled: boolean))? # Android: the back gesture is the app's, as a keyPress of "back"
+---@field setTextInputHandler (fun(self: wonderland.RenderWindow, handler: fun(enabled: boolean): boolean?))? # Android: a program's own editor takes the on-screen keyboard from the window
 ---@field setTray (fun(self: wonderland.RenderWindow, tray: winit.Tray))? # The notification-area icon and its menu
 ---@field removeTray (fun(self: wonderland.RenderWindow))? # Takes the icon away
 
@@ -404,20 +408,43 @@ function App:takeBack(window)
 	window:setBackHandled(true)
 end
 
---- Ends the app: what its services would have written a moment from now is written first, and the
---- loop stops, which on a phone finishes the activity.
+--- Takes the window off the screen now, before the work a close still has to do. The process ends
+--- a few milliseconds after the loop does, but it writes files and shuts its Lua state down first,
+--- and a window left up for that reads as an app that did not close. Destroying it is the process
+--- ending; a backend that cannot take a window away leaves it to that.
+---@param window (wonderland.RenderWindow & beat.WindowCalls)?
+function App:dismissWindow(window)
+	window = window or self.window
+	if window ~= nil and window.hide ~= nil then window:hide() end
+end
+
+--- Ends the app: the window goes, what its services would have written a moment from now is
+--- written, and the loop stops, which on a phone finishes the activity.
 function App:leave()
+	self:dismissWindow()
 	self:flush()
 	if self.loopHandler ~= nil then self.loopHandler:exit() end
 end
 
 --- Asks every service that owns a thread to stop, without waiting for it or giving back anything it
---- may still be using. What the process calls once its window is gone: the OS reclaims the threads,
---- their rings and their channels, and no Lua finalizer runs on an object a thread still holds.
+--- may still be using. What the process calls once its window is gone and just before its main
+--- returns: the process ending is what reclaims the threads, their rings and their channels. No
+--- thread is joined here -- one of them can be inside a read that takes seconds -- and nothing a
+--- thread can still reach is closed or freed. The one thing waited for is the phone's session and
+--- notification going: that teardown is posted to Android's main thread, which does not get to run
+--- another step before the process ends, so asking for it and waiting is the only way it happens.
 function App:releaseThreads()
 	if self.services == nil then return end
 	local playback = self.services.playback
 	if playback ~= nil and playback.release ~= nil then playback:release() end
+
+	local media = self.services.media
+	if media ~= nil and media.release ~= nil then media:release() end
+
+	-- A tag write is a file being rewritten, and one that is nearly done is worth the moment it
+	-- takes; `release` waits no longer than that and leaves anything else to the process ending.
+	local metadata = self.services.metadata
+	if metadata ~= nil and metadata.release ~= nil then metadata:release() end
 
 	-- The scan's inspectors can be in the middle of a file read; `close` cancels them and joins
 	-- them on the next scan, which never comes because the process is leaving.
@@ -559,17 +586,36 @@ end
 --- Plugins are part of the app from its first frame, so applying a switch means building the app
 --- again in this process: every service is closed and made again, the plugin files are read
 --- again, and the window stays where it is. The ticker belongs to the app that is going away, so
---- it is cancelled before the new one is made.
+--- it is cancelled before the new one is made. What the old services already had and the switch
+--- cannot change -- the library, its tags and the queue -- is handed to the new ones rather than
+--- read back from disk.
 function App:restart()
 	self:flush()
 	if self.ticker ~= nil then self.ticker.cancel() end
 	local window = self.window
-	self:init({})
+	local library = self.services.library
+	local current = library.current
+	local scan = self.services.scan
+	local scanning = scan ~= nil and (scan.job ~= nil or scan.addJob ~= nil)
+	local reused = nil
+	if current ~= nil and not library:isLoading() and not scanning then
+		reused = { current = current, outdated = library.outdated }
+	end
+	local playback = self.services.playback
+	local session = nil
+	if reused ~= nil and playback ~= nil and playback.player.queue ~= nil then
+		session = { queue = playback.player.queue, seconds = playback.player:position() }
+	end
+	self:init({
+		library = reused,
+		taxonomy = self.services.collections.taxonomy,
+		session = session
+	})
 	self.window = window
 	self:refresh()
 end
 
----@param opts { scan: boolean?, plugins: table[]? }?
+---@param opts { scan: boolean?, plugins: table[]?, library: { current: beat.Library, outdated: string[]? }?, taxonomy: beat.Taxonomy?, session: { queue: beat.Queue, seconds: number }? }?
 function App:init(opts)
 	opts = opts or {}
 	for _, service in ipairs(self.serviceOrder or {}) do
@@ -649,14 +695,20 @@ function App:init(opts)
 	self.history = {}
 	self.future = {}
 	self.overlays = {}
+	self.pendingPage = nil
 
-	-- After the library, so a page that reads it on opening sees it, and before the scan, whose
-	-- reset message is delivered through the page that is showing. A launch opens the page it was
-	-- last on, but only once a root is chosen and only when the album, artist or playlist it named
-	-- is still there: a page for something a rescan dropped would only say it is gone.
+	-- The cache from the last scan is read after the first frame, so a saved page naming an album
+	-- or artist cannot be resolved yet: it is chosen once the library is in. Until then the shell
+	-- shows the page a launch without that library would show, and the scan and the session wait
+	-- rather than treating the empty library as a library without songs.
+	local libraryService = self.services.library
+	local loading = libraryService:isLoading()
+	local saved = values.root ~= nil and values.lastPage or nil
+	local waiting = loading and type(saved) == "table" and (saved.kind == "album" or saved.kind == "artist")
+	local restored = saved ~= nil and not waiting and self:savedRoute(saved) or nil
 	local fallback = { kind = values.root == nil ? "folders" : "home" }
-	local restored = values.root ~= nil and self:savedRoute(values.lastPage) or nil
 	self.page = self:pageFor(restored or fallback)
+	if waiting then self.pendingPage = { saved = saved, page = self.page } end
 	-- A restored page is where the launch already was, not a navigation, so nothing is written
 	-- back. Home goes under it: the phone's back gesture leaves the restored page for home rather
 	-- than asking whether to close the app.
@@ -664,7 +716,25 @@ function App:init(opts)
 	if restored ~= nil and restored.kind ~= "home" then
 		self.history[1] = self:pageFor({ kind = "home" })
 	end
-	self.services.scan:resume()
+
+	if loading then
+		libraryService.loaded:connect(function()
+			local pending = self.pendingPage
+			self.pendingPage = nil
+			if pending ~= nil and self.page == pending.page then
+				local route = self:savedRoute(pending.saved)
+				if route ~= nil then
+					self.page = self:pageFor(route)
+					self.history = {}
+					if route.kind ~= "home" then self.history[1] = self:pageFor({ kind = "home" }) end
+					self.persistedPageKey = self:keyOf(self.page)
+				end
+			end
+			self.services.scan:resume()
+		end)
+	else
+		self.services.scan:resume()
+	end
 
 	self.ticker = self:onTick(|now, window| -> self:tick(now, window))
 end
@@ -935,6 +1005,7 @@ end
 ---   focus     { field = name, at? }         give a named field the keyboard
 ---   escape                                  nothing was open and the page did not want it: back
 ---   systemBack                              the phone's back gesture: back, or ask to leave from the first page
+---   leave                                   go, as the player's X and the close button do
 ---   restartApp                              build the app again in this process, applying plugin switches
 ---@param message table
 function App:route(message)
@@ -944,6 +1015,8 @@ function App:route(message)
 		self:restart()
 	elseif message.type == "back" or message.type == "escape" then
 		self:back()
+	elseif message.type == "leave" then
+		self:leave()
 	elseif message.type == "systemBack" then
 		if #self.history > 0 then
 			self:back()
@@ -984,8 +1057,10 @@ function App:event(event, handler)
 	self.loopHandler = handler
 
 	if event.name == "windowClose" then
-		-- The app goes with the window. What its services would have written a moment from now --
-		-- a setting still settling, where listening got to -- is written now.
+		-- The app goes with the window. It leaves the screen now: what its services would have
+		-- written a moment from now -- a setting still settling, where listening got to -- is
+		-- written after that, and the process ends right after.
+		self:dismissWindow(event.window)
 		self:flush()
 		return nil
 	end
@@ -1015,7 +1090,9 @@ function App:event(event, handler)
 				self:showFromTray(window)
 			end
 		elseif event.id == "quit" then
-			-- The same write the close button does, then the loop stops: nothing is left to save.
+			-- The same take-down the close button does, then the loop stops: the window goes
+			-- before the writes that follow it.
+			self:dismissWindow(window)
 			self:flush()
 			handler:exit()
 		else
@@ -1036,9 +1113,19 @@ function App:event(event, handler)
 		return nil
 	end
 
+	if event.name == "focusIn" then
+		-- Back in front of the user: a field that still has the focus is one the keyboard was
+		-- taken from while the app was away.
+		local textInput = self.services ~= nil and self.services.textInput or nil
+		if textInput ~= nil and textInput.tap ~= nil then textInput:tap() end
+		return nil
+	end
+
 	if event.name == "mousePress" then
 		-- A press on the search field changes layout focus without producing a message. The
 		-- focus ring is drawn from that state, so ask for the frame that shows it.
+		local textInput = self.services ~= nil and self.services.textInput or nil
+		if textInput ~= nil and textInput.tap ~= nil then textInput:tap() end
 		self:refresh()
 		return nil
 	end
@@ -1100,13 +1187,27 @@ function App:tick(now, window)
 	local hidden = window.visible == false
 	self.services.playback.player:setBackground(hidden)
 
-	-- The edge between shown and hidden: nothing on a hidden window is seen, and a hidden window
-	-- has no frame worth drawing, so its covers give their textures back and the session is
-	-- written once (the process may be killed while hidden). Coming back asks for a full frame:
-	-- the screen was not built while the covers were gone.
+	-- The edge between shown and hidden. A hidden window draws nothing, so its covers are kept
+	-- for a while rather than given back on the first tick: an unminimize or an app switch is
+	-- usually short, and a cover given back is a decode to wait for when the window shows again.
+	-- Only a window hidden long enough gives its textures back (see `Covers:step`), and the
+	-- session is written once on the way out (the process may be killed while hidden).
 	local becameHidden = hidden and self.wasHidden ~= true
 	local becameVisible = not hidden and self.wasHidden == true
 	self.wasHidden = hidden
+
+	local covers = self.services.covers
+	local coversReleased = false
+	if becameHidden then
+		covers:hidden(now)
+	elseif becameVisible then
+		-- Back on screen: the meter must move from the frame the tap feeds again rather than
+		-- wait for the staging delay, and a hide long enough to give the pictures back leaves a
+		-- screen that has to ask for the ones it shows again.
+		self.services.playback:resume(now)
+		coversReleased = covers:shown()
+		self:wake()
+	end
 
 	local changed, repaint = false, false
 	local want = math.huge
@@ -1133,18 +1234,20 @@ function App:tick(now, window)
 		end
 	end
 
+	if coversReleased then
+		-- The hidden stretch gave the pictures back: the screen asks for the ones it shows
+		-- again now, so the decode starts on this frame rather than at the next change a page
+		-- makes. The frame that comes after this tick draws the screen built here.
+		local layout = self.layoutPlugin
+		if layout ~= nil then layout:refreshView(window) end
+	end
 	if changed or becameVisible then
 		self:present(window)
 	elseif repaint then
 		self:repaint(window)
 	end
 	if becameHidden then
-		self.services.covers:releaseAll()
 		self.services.playback:flush()
-		-- The frame the gpu still has names the pictures just given back, and a window on its way
-		-- back is drawn before this tick runs again: asking for one now leaves the screen owed a
-		-- rebuild, so that draw builds the screen again instead of drawing textures that are gone.
-		self:present(window)
 	end
 
 	-- A hidden window -- an app sent to the background, a phone with its screen off -- shows no

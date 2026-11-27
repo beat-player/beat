@@ -390,3 +390,97 @@ test.it("asks for a frame only when the playhead moves a pixel", function()
 	position = 1.6
 	test.truthy(player:update(10), "with no width a move is drawn as it always was")
 end)
+
+test.it("switches a grouped shuffle without touching the current audio", function()
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
+	local touched = 0
+	local player = Player.new()
+	player.player = fake({ isPlaying = function() return true end, position = function() return 12 end, duration = function() return 100 end, close = function() touched = touched + 1 end, enqueue = function() touched = touched + 1 end, play = function() touched = touched + 1 end, pause = function() touched = touched + 1 end, seek = function() touched = touched + 1 end, stop = function() touched = touched + 1 end, update = function() end, setVolume = function() end })
+	player:playTracks(tracks, 1)
+	touched = 0
+
+	player:setShuffleMode("albums")
+	local queue = assert(player.queue)
+	test.equal(queue.shuffleMode, "albums")
+	test.equal(touched, 0, "the order changes at the boundary, not the running queue")
+	test.truthy(player.orderDirty)
+	test.equal(assert(queue:current()).id, 1)
+
+	player.orderDirty = false
+	player:setShuffleMode("albums")
+	test.falsy(player.orderDirty, "asking for the mode already on changes nothing")
+end)
+
+test.it("removes an upcoming track and leaves the current one playing", function()
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
+	local player = Player.new()
+	standIn(player)
+	player:playTracks(tracks, 1)
+
+	player:removeQueued(1)
+	local queue = assert(player.queue)
+	test.equal(assert(queue:current()).id, 1)
+	test.equal(#queue.order, 2)
+	test.equal(queue:upcoming(1)[1].id, 3, "the second upcoming track follows the current one")
+	test.truthy(player.orderDirty, "the shorter order reaches treble at the boundary")
+	test.truthy(player.fadeActive, "the current track was not reloaded")
+end)
+
+test.it("removes the current track and moves on to the next one", function()
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
+	local player = Player.new()
+	standIn(player)
+	player:playTracks(tracks, 1)
+
+	player:removeQueued(0)
+	local queue = assert(player.queue)
+	test.equal(assert(queue:current()).id, 2, "playback went on to the next track")
+	test.equal(#queue.order, 2)
+	test.falsy(player.orderDirty, "the reload already handed the order over")
+end)
+
+test.it("moves an upcoming track and keeps the current track playing", function()
+	local tracks = { track(1, "/one.flac", 100), track(2, "/two.flac", 100), track(3, "/three.flac", 100) }
+	local player = Player.new()
+	standIn(player)
+	player:playTracks(tracks, 1)
+
+	player:moveQueued(2, 1)
+	local queue = assert(player.queue)
+	test.equal(assert(queue:current()).id, 1)
+	test.equal(queue:upcoming(2)[1].id, 3)
+	test.equal(queue:upcoming(2)[2].id, 2)
+	test.truthy(player.orderDirty)
+	test.truthy(player.fadeActive, "moving rows does not cut the current track")
+end)
+
+test.it("skips a whole album or artist, and stops when no other group follows", function()
+	local one = track(1, "/a1.flac", 100)
+	local two = track(2, "/a2.flac", 100)
+	local three = track(3, "/b1.flac", 100)
+	local four = track(4, "/c1.flac", 100)
+	three.albumId = 2
+	four.albumId = 3
+	four.artistId = 2
+
+	local player = Player.new()
+	local calls = device(player)
+	player:playTracks({ one, two, three, four }, 1)
+
+	-- The artist never changes across the first three tracks, so only an album skip moves there.
+	player:skipGroup("album")
+	local queue = assert(player.queue)
+	test.equal(assert(queue:current()).id, 3, "the next album's first track")
+	test.truthy(player:isPlaying(), "and it goes on playing")
+	test.truthy(#calls.enqueued > 0, "the new order was handed to the device")
+
+	-- From the second album, the artist changes with the fourth track.
+	player:skipGroup("artist")
+	test.equal(assert(queue:current()).id, 4, "the next artist's first track")
+
+	-- Nothing after the fourth track belongs to another album, so this is the queue's end.
+	player:skipGroup("album")
+	test.falsy(player:isPlaying(), "playback stopped at the last group")
+	test.falsy(player.loaded, "with nothing staged")
+	test.equal(assert(queue:current()).id, 4, "and the last track still current")
+end)

@@ -103,6 +103,8 @@ end
 ---@field shown boolean
 ---@field peaks number[] # Uncompressed band peaks, kept for tuning the meter's response
 ---@field top number # The loudest band lately, which is the meter's reference
+---@field resumePending boolean? # Whether the tap has still to feed a whole window since the window was shown again
+---@field resumeFloor number? # The floor when the window was shown again, so a stale timeline is not mistaken for fresh audio
 local Spectrum = {}
 Spectrum.__index = Spectrum
 
@@ -231,6 +233,27 @@ function Spectrum:sync(written, floor)
 	self.written = written
 end
 
+--- The window is back on screen and the tap has started feeding again. What the ring held under
+--- the frame being heard is not new audio: the tap stopped while the window was hidden, so the
+--- first window analysed after it starts again would splice the last thing heard before the window
+--- went away onto what is heard now. The bands already on screen are kept and eased, and the next
+--- analysis waits for `sync` to move the floor to where the feed resumed and for a whole window of
+--- that feed -- 1024 frames, tens of milliseconds -- to be in the ring. That window is then read at
+--- the newest frame written rather than at the frame being heard, which is still staging behind the
+--- feed; the meter moves on the frame the window is shown again, and `step` goes back to the heard
+--- frame once playback has reached the feed.
+---@param now number
+function Spectrum:resume(now)
+	self.resumePending = true
+	self.resumeFloor = self.floor
+	self.analysedAt = nil
+	self.lastAnalysis = nil
+	-- Easing restarts at this frame rather than a second before it, and the held bands are not
+	-- taken for silence while the new window fills.
+	self.steppedAt = now
+	self.heardAt = now
+end
+
 --- Turns the magnitudes into bands. The band edges are logarithmic, which is what makes a bass note
 --- and a cymbal both visible instead of one filling half the strip.
 ---@param self beat.Spectrum
@@ -301,7 +324,32 @@ function Spectrum:step(now, heard)
 	self.steppedAt = now
 
 	local finish = math.min(heard or self.written, self.written)
-	if finish > self.floor and finish ~= self.analysedAt then
+
+	-- A window shown again: the tap stopped while it was hidden, so the stretch between the last
+	-- frame it fed and where the feed resumes is a gap in the ring. Until the frame being heard is
+	-- past that gap and a whole window of the new feed, the newest whole window of the ring is the
+	-- only one that is all fresh audio -- and showing it is what makes the meter move on the frame
+	-- the window is shown again, rather than holding the last bands for the staging delay it takes
+	-- playback to reach the feed. See `Spectrum:resume`.
+	if self.resumePending then
+		local from = self.floor
+		-- The floor moving is the tap's timeline moving: before it does, `written` and `floor` are
+		-- both frozen where the window went away, and a window read out of them is the audio from
+		-- before the hide rather than a fresh one. Waiting for that move is what keeps a stale
+		-- analysis from standing in until the feed resumes.
+		if from ~= self.resumeFloor and self.written - from >= N then
+			if finish >= from + N then
+				self.resumePending = nil
+				self.resumeFloor = nil
+			else
+				finish = self.written
+			end
+		else
+			finish = nil
+		end
+	end
+
+	if finish ~= nil and finish > self.floor and finish ~= self.analysedAt then
 		-- The bands move with the music, but the FFT only runs as often as the eye can read it:
 		-- between analyses the display eases toward the bands the last one left.
 		if self.lastAnalysis == nil or now - self.lastAnalysis >= ANALYSIS then
@@ -375,6 +423,8 @@ function Spectrum:clear()
 	self.heardAt = nil
 	self.lastAnalysis = nil
 	self.steppedAt = nil
+	self.resumePending = nil
+	self.resumeFloor = nil
 end
 
 return Spectrum

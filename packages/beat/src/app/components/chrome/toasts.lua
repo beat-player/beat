@@ -74,12 +74,21 @@ function toasts.view(app, props)
 		local height = math.max(theme:px(48), textHeight + theme:px(12) * 2)
 		local x = math.max(theme:space(8), window.width - width - theme:space(24))
 
-		toast.rect = { x = x, y = y, width = width, height = height }
+		-- A pointer moving over this toast is what keeps it there. The handler and the message it
+		-- answers with are made once per toast: a move costs no allocation, and neither does a
+		-- frame that only redraws the slide.
+		local hold = toast.holdMessage
+		local holdHandler = toast.holdHandler
+		if hold == nil or holdHandler == nil then
+			hold = { type = "toastHold", at = toast.at }
+			holdHandler = function() return hold end
+			toast.holdMessage, toast.holdHandler = hold, holdHandler
+		end
 
 		children[#children + 1] = div():style(sty():w(width):h(height):row():pad(theme:px(12), theme:px(14), theme:px(12), theme:px(14)):gap(theme:px(10)):align("center"):radius(theme:radius("sm")):bg(theme:color("elevated", alpha)):offset(x, y + lift):shadow(0, theme:px(8), theme:px(24), "#00000040")):onClick({
 			type = "dismissToast",
 			at = toast.at
-		}):children({
+		}):onMouseMove(holdHandler):children({
 			ui.icon(ctx, { name = toast.tone == "error" ? "close" : "check", size = (theme:px(18)), colour = tone }),
 			text(message):style(theme:s():w(lineWidth):h(textHeight):text(size):fg(theme:color("text", alpha)))
 		})

@@ -413,6 +413,24 @@ function Player:previous()
 	self:skip("previous")
 end
 
+--- Skips the rest of the album or artist playing: the queue moves to the first track of the next
+--- group in play order. With no next group, playback stops the way it does at the queue's end.
+---@param by "album"|"artist"
+function Player:skipGroup(by)
+	local queue = self.queue
+	if queue == nil then return end
+	self.pendingNextAt = nil
+
+	if queue:skipGroup(by) == nil then
+		if self.player ~= nil then self.player:stop() end
+		endTrack(self, false)
+		self.loaded = false
+		return
+	end
+
+	self:reload(true)
+end
+
 ---@param seconds number
 function Player:seek(seconds)
 	-- With nothing loaded there is nothing to move; the place is kept for when the track starts.
@@ -480,13 +498,53 @@ end
 
 --- A setting change only reorders the app's queue. Treble has already staged a next track and
 --- is left alone; the order is handed over at the track boundary, where a reload is expected.
+---@param mode beat.ShuffleMode
+function Player:setShuffleMode(mode)
+	local queue = self.queue
+	if queue == nil then return end
+	local before = queue.shuffleMode
+	queue:setShuffleMode(mode)
+	if queue.shuffleMode == before then return end
+	queueChanged(self)
+	self.orderDirty = true
+end
+
 ---@param value boolean
 function Player:setShuffle(value)
-	if self.queue == nil then return end
-	if self.queue.shuffle == value then return end
-	self.queue:toggleShuffle()
-	self.orderDirty = true
+	self:setShuffleMode(value and "tracks" or "off")
+end
+
+--- Removes a row of the queue overlay. `index` is its 1-based position among the upcoming tracks;
+--- index 0 is the current track, which only a caller that shows it can ask for. Removing the
+--- current track moves playback on to the next one; removing any other leaves it playing and the
+--- next track boundary applies the shorter order.
+---@param index number
+function Player:removeQueued(index)
+	local queue = self.queue
+	if queue == nil then return end
+	local removed = index == 0 and queue:removeAt(queue.position) or queue:removeUpcoming(index)
+	if removed == nil then return end
+
+	if removed.wasCurrent then
+		self.pendingNextAt = nil
+		queueChanged(self)
+		self:reload(self:isPlaying())
+	else
+		queueChanged(self)
+		self.orderDirty = true
+	end
+end
+
+--- Moves one row of the queue overlay to another, both 1-based among the upcoming tracks. The
+--- current track keeps playing; the new order is what treble is handed at the next boundary.
+---@param from number
+---@param to number
+function Player:moveQueued(from, to)
+	local queue = self.queue
+	if queue == nil then return end
+	if not queue:moveUpcoming(from, to) then return end
 	queueChanged(self)
+	self.orderDirty = true
 end
 
 function Player:cycleRepeat()
@@ -544,8 +602,9 @@ function Player:hasHeard()
 end
 
 --- Whether the track the user asked for has yet to produce heard audio. The player is loading
---- from the moment play, load, skip or seek asks for it until the audio thread reports frames of
---- that track being heard; a pause, a stop or an error ends the wait.
+--- from the moment play, load or skip asks for it until the audio thread reports frames of that
+--- track being heard; a pause, a stop or an error ends the wait. A seek is not a load: the track
+--- is the one already known, so the bar keeps its real clocks while the ring refills at the target.
 ---@return boolean
 function Player:isLoading()
 	local backend = self.player

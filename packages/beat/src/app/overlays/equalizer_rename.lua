@@ -123,7 +123,7 @@ function equalizerRename.view(app, overlay, window)
 			sty()
 				:size(window.width, window.height):offset(0, 0):z(132):column():align("center"):justify("center")
 				:bg(theme:color("overlay"))
-		):onClick({ type = "dismiss" }):children({ panel })
+		):children({ panel })
 end
 
 return equalizerRename

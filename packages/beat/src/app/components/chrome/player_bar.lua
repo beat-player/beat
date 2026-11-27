@@ -41,12 +41,76 @@ local TOGGLE_PLAY = { type = "togglePlay" }
 local PREVIOUS = { type = "previous" }
 local NEXT = { type = "next" }
 local SHUFFLE = { type = "shuffle" }
+local SHUFFLE_MENU = { type = "open", overlay = "menu", menu = "shuffle" }
+local SKIP_MENU = { type = "open", overlay = "menu", menu = "skip" }
 local REPEAT = { type = "repeat" }
 local OPEN_NOW_PLAYING = { type = "open", overlay = "now_playing" }
+
+-- The glyph on the shuffle button's corner badge: the kind of shuffle that is on. A plain track
+-- shuffle has no badge, so the button looks as it always has.
+local SHUFFLE_BADGES = { albums = "disc", artists = "person" }
+
+-- The shuffle button's mark when an album or artist shuffle is on: the usual glyph with the
+-- mode's own glyph at its corner, so the button says which kind of shuffle is running without
+-- opening its menu. A filled circle in the bar's own colour behind the glyph keeps it legible at
+-- badge size. The boxes are the same for every frame at one size and are kept on the theme.
+---@param theme beat.Theme
+---@param size number
+---@param background string # The colour behind the badge, the bar's own
+---@return { size: number, background: string, content: wonderland.StyleBuilder, glyph: wonderland.StyleBuilder, badge: wonderland.StyleBuilder, badgeGlyph: number }
+local function shuffleMarkStyles(theme, size, background)
+	local cache = theme:cache()
+	local kept = cache.playerBarShuffleMark
+	if kept ~= nil and kept.size == size and kept.background == background then return kept end
+
+	local glyphSize = math.max(16, math.floor(size * 0.8 + 0.5))
+	local badgeSize = math.max(theme:px(13), math.floor(size * 0.5 + 0.5))
+	kept = {
+		size = size,
+		background = background,
+		content = sty():size(size, size),
+		glyph = sty():size(glyphSize, glyphSize):offset((size - glyphSize) / 2, (size - glyphSize) / 2),
+		badge = sty()
+			:size(badgeSize, badgeSize):radius(theme:radius("full")):bg(background):align("center"):justify("center")
+			:offset(size - badgeSize, size - badgeSize),
+		badgeGlyph = math.max(8, math.floor(badgeSize * 0.72 + 0.5))
+	}
+	cache.playerBarShuffleMark = kept
+	return kept
+end
 
 ---@class beat.components.chrome.PlayerBarProps
 ---@field width number # The window's width
 ---@field ui beat.ui.Context
+
+-- The album a bar draws when the track's own is not in the library. Its fields are written again
+-- each frame rather than into a table a frame; a cover and a title only read them.
+---@type beat.Album
+local fallbackAlbum = { id = 0, title = "", artist = "", tracks = {}, coverPath = nil, coverTrack = nil }
+
+---@param app beat.App
+---@param track beat.Track
+---@return beat.Album
+local function albumOf(app, track)
+	local library = app.services.library.current
+	local album = library ~= nil and library:album(track.albumId) or nil
+	if album ~= nil then return album end
+
+	fallbackAlbum.title = track.album
+	fallbackAlbum.artist = track.artist
+	fallbackAlbum.coverPath = track.coverPath
+	fallbackAlbum.coverTrack = track
+	return fallbackAlbum
+end
+
+-- The props the bar's cover, clocks and volume are built from, written again each frame: the
+-- views read them and keep nothing, so one record each is enough.
+---@type table<string, any>
+local coverProps = {}
+---@type table<string, any>
+local progressProps = {}
+---@type table<string, any>
+local volumeProps = {}
 
 --- The styles the desktop bar is built from, which depend on the theme and on the window's width
 --- and on nothing else: they are kept on the theme for the width they were built for rather than
@@ -120,18 +184,9 @@ function playerBar.view(app, props)
 	local player = app.services.playback.player
 	if track == nil then return div():style(styles.empty) end
 
-	local album = app.services.library.current and app.services.library.current:album(track.albumId)
-	if album == nil then
-		album = {
-			id = 0,
-			title = track.album,
-			artist = track.artist,
-			tracks = {},
-			coverPath = track.coverPath,
-			coverTrack = track
-		}
-	end
-	local art = cover.view(app, { album = album, size = theme:px(56), radius = theme:radius("sm") })
+	local album = albumOf(app, track)
+	coverProps.album, coverProps.size, coverProps.radius = album, theme:px(56), theme:radius("sm")
+	local art = cover.view(app, coverProps --[[@as beat.components.CoverProps]])
 	if album.id ~= 0 then
 		art:onClick({ type = "navigate", page = { kind = "album", id = album.id } })
 		-- The album's own menu message, kept with the album: a right-click opens it at the pointer,
@@ -144,16 +199,47 @@ function playerBar.view(app, props)
 	local playMark = loading
 			and spinner.view(app, theme:px(20), theme.accentInk)
 		or ui.icon(ctx, { name = isPlaying ? "pause" : "play", size = theme:px(20), colour = theme.accentInk })
-	local controls = div():style(styles.controls):children({
-		ui.iconButton(ctx, {
+	local queue = player.queue
+	local shuffleMode = queue ~= nil and queue.shuffleMode or "off"
+	local shuffleSize = theme:px(28)
+	local shuffleButton
+	local badge = SHUFFLE_BADGES[shuffleMode]
+	if badge ~= nil then
+		local mark = shuffleMarkStyles(theme, shuffleSize, theme:color("surface"))
+		shuffleButton = ui.iconButton(ctx, {
+			size = shuffleSize,
+			content = div():style(mark.content):children({
+				div():style(mark.glyph):children(ui.icon(ctx, {
+					name = "shuffle",
+					size = math.max(16, math.floor(shuffleSize * 0.8 + 0.5)),
+					colour = theme:color("text")
+				})),
+				div():style(mark.badge):children(ui.icon(ctx, {
+					name = badge,
+					size = mark.badgeGlyph,
+					colour = theme:color("accent")
+				}))
+			}),
+			onClick = SHUFFLE
+		})
+	else
+		shuffleButton = ui.iconButton(ctx, {
 			name = "shuffle",
-			size = theme:px(28),
+			size = shuffleSize,
 			onClick = SHUFFLE,
-			active = player.queue?.shuffle ?? false
-		}),
+			active = shuffleMode ~= "off"
+		})
+	end
+	shuffleButton:onContextMenu(SHUFFLE_MENU)
+
+	local nextButton = ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = NEXT })
+	nextButton:onContextMenu(SKIP_MENU)
+
+	local controls = div():style(styles.controls):children({
+		shuffleButton,
 		ui.iconButton(ctx, { name = "previous", size = theme:px(28), onClick = PREVIOUS }),
 		div():style(styles.play):onClick(TOGGLE_PLAY):children(playMark),
-		ui.iconButton(ctx, { name = "next", size = theme:px(28), onClick = NEXT }),
+		nextButton,
 		ui.iconButton(ctx, {
 			name = player.queue?.repeatMode == "one" ? "repeatOne" : "repeat",
 			size = theme:px(28),
@@ -172,10 +258,12 @@ function playerBar.view(app, props)
 			text(track.artist):style(styles.artist)
 		})
 	})
+	progressProps.track, progressProps.player, progressProps.width = track, player, progressWidth
+	volumeProps.width, volumeProps.trackWidth, volumeProps.ui = progressWidth, styles.volumeTrackWidth, ctx
 	local right = div():style(styles.right):children({
 		div():style(styles.clocks):children({
-			progress.view(app, { track = track, player = player, width = progressWidth }),
-			volume.view(app, { width = progressWidth, trackWidth = styles.volumeTrackWidth, ui = ctx })
+			progress.view(app, progressProps --[[@as beat.components.ProgressProps]]),
+			volume.view(app, volumeProps --[[@as beat.components.VolumeProps]])
 		}),
 		ui.iconButton(ctx, { name = "chevronUp", size = theme:px(30), onClick = OPEN_NOW_PLAYING })
 	})
@@ -278,9 +366,7 @@ local function drawProgress(canvas)
 	end
 end
 
--- The props the phone bar's cover and next control are built from, written again each frame.
----@type table<string, any>
-local mobileCoverProps = {}
+-- The props the phone bar's next control is built from, written again each frame.
 ---@type table<string, any>
 local nextProps = {}
 
@@ -313,13 +399,15 @@ local function mobileRow(app, ctx, theme, styles, track, album, playing, loading
 	local playback = app.services.playback
 	progressDraw.playback, progressDraw.track = playback, track
 	progressDraw.lineHeight, progressDraw.line, progressDraw.played = styles.lineHeight, styles.line, styles.played
-	mobileCoverProps.album, mobileCoverProps.size, mobileCoverProps.radius = album, styles.artSize, theme:radius("sm")
+	coverProps.album, coverProps.size, coverProps.radius = album, styles.artSize, theme:radius("sm")
 	nextProps.name, nextProps.size, nextProps.hit, nextProps.onClick = "next", styles.nextSize, styles.nextHit, NEXT
+	local nextButton = tapButton.view(ctx, nextProps --[[@as beat.components.TapButtonProps]])
+	nextButton:onContextMenu(SKIP_MENU)
 	return div():style(styles.row):canvas(drawProgress):children(
-		cover.view(app, mobileCoverProps --[[@as beat.components.CoverProps]]),
+		cover.view(app, coverProps --[[@as beat.components.CoverProps]]),
 		div():style(styles.info):children(text(track.title):style(styles.title), text(track.artist):style(styles.artist)),
 		playControl(app, ctx, theme, playing, loading, styles),
-		tapButton.view(ctx, nextProps --[[@as beat.components.TapButtonProps]])
+		nextButton
 	)
 end
 
@@ -336,17 +424,7 @@ function playerBar.mobile(app, props)
 	local loading = app.services.playback.player:isLoading()
 	if track == nil then return div():style(styles.empty) end
 
-	local album = app.services.library.current and app.services.library.current:album(track.albumId)
-	if album == nil then
-		album = {
-			id = 0,
-			title = track.album,
-			artist = track.artist,
-			tracks = {},
-			coverPath = track.coverPath,
-			coverTrack = track
-		}
-	end
+	local album = albumOf(app, track)
 
 	local row = mobileRow(app, ctx, theme, styles, track, album, playing, loading)
 

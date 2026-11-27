@@ -25,8 +25,9 @@ local ui = {}
 ---@field card fun(ctx: beat.ui.Context, props: beat.ui.CardProps): wonderland.Element
 ---@field listRow fun(ctx: beat.ui.Context, props: beat.ui.ListRowProps): wonderland.Element
 ---@field rating fun(ctx: beat.ui.Context, props: beat.ui.RatingProps): wonderland.Element
+---@field ripple fun(element: wonderland.Element, key: any?, colour: string): wonderland.Element # Shows a press on a control of the plugin's own: see `beat-ui.ripple`
 
-ui.version = "0.1.2"
+ui.version = "0.1.3"
 ui.Context = require("beat-ui.context")
 ui.button = require("beat-ui.button").view
 ui.icon = require("beat-ui.icon").view
@@ -39,5 +40,6 @@ ui.progressBar = require("beat-ui.progress_bar").view
 ui.card = require("beat-ui.card").view
 ui.listRow = require("beat-ui.list_row").view
 ui.rating = require("beat-ui.rating").view
+ui.ripple = require("beat-ui.ripple").attach
 
 return ui

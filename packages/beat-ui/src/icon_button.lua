@@ -4,6 +4,7 @@
 local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
 local cache = require("beat-ui.cache")
+local ripple = require("beat-ui.ripple")
 
 local div, sty = wonderland.div, wonderland.sty
 
@@ -15,6 +16,7 @@ local iconButton = {}
 ---@field size number # The hit area, and the box the glyph sits in
 ---@field onClick any # The message a click sends
 ---@field active boolean? # Draws the glyph in the text colour rather than muted
+---@field key string? # Keeps the press mark on this button across frames; default its place in the frame
 
 ---@class beat.ui.IconButtonStyles
 ---@field base wonderland.StyleBuilder
@@ -47,7 +49,12 @@ function iconButton.view(ctx, props)
 
 	local styles = cache.of(ctx, iconButtonStyles, "iconButton", props.size) --[[@as beat.ui.IconButtonStyles]]
 
-	return div():style(styles.base):hover(styles.hover):onClick(props.onClick):children(content)
+	-- The mark is drawn in the colour of what is in the button: a glyph that is text, a picture that
+	-- is not takes the colour the button around it uses.
+	local element = div():style(styles.base):hover(styles.hover):onClick(props.onClick):children(content)
+	ripple.attach(element, props.key, colour)
+
+	return element
 end
 
 return { view = iconButton.view }

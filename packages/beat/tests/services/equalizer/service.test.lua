@@ -137,6 +137,35 @@ test.it("stops at eight custom presets and refuses a taken name", function()
 	finish(dir)
 end)
 
+test.it("keeps the panel's preset list between frames and follows a saved preset", function()
+	local equalizer, _, _, _, _, dir = start({})
+	local bands = require("beat.app.services.equalizer.bands")
+	local builtins = #bands.presets
+
+	local first = equalizer:presets()
+	test.equal(#first, builtins)
+	test.equal(equalizer:presets(), first, "the list is kept while nothing changes")
+	test.equal(equalizer:find("flat"), first[1], "a lookup reads the kept list")
+
+	equalizer:create()
+	local list = equalizer:presets()
+	test.equal(#list, builtins + 1, "a saved preset joins the list")
+	test.notEqual(list, first, "and the list is rebuilt once")
+
+	local custom = list[#list]
+	test.equal(custom.name, "Custom")
+	equalizer:rename("Custom", "Warm")
+	equalizer:presets()
+	test.equal(custom.name, "Warm", "a rename is read through the kept wrapper")
+	equalizer:setGain(1, 4)
+	equalizer:presets()
+	test.equal(custom.gains[1], 4, "an edited preset's gains are read through it")
+
+	equalizer:delete("Warm")
+	test.equal(#equalizer:presets(), builtins, "a deleted preset leaves the list")
+	finish(dir)
+end)
+
 -- The sample a person would copy from AutoEq's page: one OFF filter that must not play, a low
 -- shelf, a high shelf and a peaking band.
 local SAMPLE_PROFILE = [[
@@ -258,5 +287,15 @@ test.it("says so when no system file dialog exists", function()
 	test.falsy(settings.values.equalizerProfile)
 	test.equal(toasts.shown[1].text, "No system file dialog is available on this machine")
 
+	finish(dir)
+end)
+
+test.it("polls an open profile dialog at a quarter second", function()
+	local equalizer, _, _, _, _, dir = start({})
+	equalizer.pick = { file = os.tmpname() .. "-beat-profile-pending", platform = "test", kind = "file" }
+
+	local changed, busy = equalizer:step(0)
+	test.falsy(changed)
+	test.equal(busy, 0.25, "the open dialog is checked, not drawn for")
 	finish(dir)
 end)

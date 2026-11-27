@@ -192,7 +192,7 @@ function tile.view(app, props)
 			}
 		)
 	if props.onMenu ~= nil then root:onContextMenu(props.onMenu) end
-	return root
+	return ui.ripple(root, nil, theme:color("text"))
 end
 
 --- The first tile of the listener's own row: an empty square to fill, which opens the dialog

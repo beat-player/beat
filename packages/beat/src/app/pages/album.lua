@@ -45,6 +45,7 @@ end
 ---@field subtitleAction table
 ---@field playAction table
 ---@field shuffleAction table
+---@field shuffleMenu table # The same modes, started on this album
 ---@field rate fun(stars: number): table
 ---@field cover fun(size: number): wonderland.Element
 ---@field trackAction fun(track: beat.Track, at: number): table
@@ -105,6 +106,7 @@ local function buildUi(app, album)
 		subtitleAction = { type = "navigate", page = { kind = "artist", id = artistId } },
 		playAction = { type = "playAlbum", id = id },
 		shuffleAction = { type = "playAlbum", id = id, shuffle = true },
+		shuffleMenu = { type = "open", overlay = "menu", menu = "shuffle", source = "album", id = id },
 		rate = |stars| -> { type = "rateAlbum", id = id, stars = stars },
 		trackAction = trackAction,
 		trackIndex = trackIndex
@@ -136,6 +138,7 @@ local function buildUi(app, album)
 		ratings = nil,
 		phoneHero = true,
 		shuffleAction = found.shuffleAction,
+		shuffleMenu = found.shuffleMenu,
 		rating = nil,
 		onRate = nil,
 		tracks = album.tracks,

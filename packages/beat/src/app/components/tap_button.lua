@@ -15,6 +15,7 @@ local buttonProps = { size = 0, onClick = nil }
 ---@field hit number # The box that answers a thumb, around the mark
 ---@field onClick any # The message a click sends
 ---@field active boolean? # Draws the glyph in the text colour rather than muted
+---@field key string? # Keeps the press mark on this button across frames; default its place in the frame
 
 ---@param ctx beat.ui.Context
 ---@param props beat.components.TapButtonProps
@@ -23,6 +24,7 @@ function tapButton.view(ctx, props)
 	local colour = props.active ? (ctx:color("text")) : (ctx:color("muted"))
 	local glyphSize = math.max(18, math.floor(props.size * 0.8 + 0.5))
 	buttonProps.size, buttonProps.onClick = props.hit, props.onClick
+	buttonProps.key = props.key
 	buttonProps.content = ui.icon(ctx, { name = props.name, size = glyphSize, colour = colour })
 	return ui.iconButton(ctx, buttonProps)
 end

@@ -58,6 +58,23 @@ public final class PlaybackService extends Service {
 		notification = null;
 	}
 
+	/**
+	 * Takes the service out of the foreground and stops it, notification and all: the app is
+	 * leaving, so nothing is left for the system to restart. `START_NOT_STICKY` keeps a deliberate
+	 * stop from being a crash to come back from.
+	 */
+	static void stop() {
+		PlaybackService service = running;
+		notification = null;
+		if (service == null) return;
+		if (Build.VERSION.SDK_INT >= 24) {
+			service.stopForeground(Service.STOP_FOREGROUND_REMOVE);
+		} else {
+			service.stopForeground(true);
+		}
+		service.stopSelf();
+	}
+
 	@Override
 	public void onCreate() {
 		super.onCreate();

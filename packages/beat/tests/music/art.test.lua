@@ -1,5 +1,7 @@
 local test = require("lde-test")
 local ffi = require("ffi")
+local fs = require("fs")
+local path = require("path")
 local image = require("image")
 local Library = require("beat.music.library")
 local artwork = require("beat.music.artwork")
@@ -96,6 +98,64 @@ test.it("uses the picture inside a track for its album cover", function()
 		test.equal(fitted.width, fitted.height)
 		fitted:close()
 	end
+end)
+
+test.it("makes a cached cover again when its file was deleted", function()
+	local dir = os.tmpname() .. "-beat-art-rewrite"
+	fs.mkdirAll(dir)
+	local cover = path.join(dir, "cover.png")
+	local picture = solid(80, 40, 10, 120, 200)
+	test.truthy(fs.write(cover, assert(picture:encode("png"))))
+	picture:close()
+
+	local file = path.join(dir, "cache", "cover.jpg")
+	local album = {
+		id = 1,
+		key = "Album\0Artist",
+		title = "Album",
+		artist = "Artist",
+		tracks = { { path = path.join(dir, "1.flac"), modified = 7 } },
+		coverPath = cover,
+		coverCache = file,
+		modified = 7
+	}
+
+	local gone, _, err = artwork.forAlbum(album, 32)
+	test.equal(gone, nil, "a cleaned cache has nothing to load: " .. tostring(err))
+
+	local source = assert(artwork.source(album))
+	local remade, writeErr = artwork.rewriteCache(source, file, artwork.CACHE_SIZE)
+	test.equal(remade, file)
+	test.truthy(fs.isfile(file), "the cover is written where the album names it: " .. tostring(writeErr))
+
+	local fitted = artwork.forAlbum(album, 32)
+	test.truthy(fitted ~= nil, "the remade cache loads again")
+	if fitted ~= nil then
+		test.equal(fitted.width, fitted.height)
+		fitted:close()
+	end
+
+	fs.rmdir(dir)
+end)
+
+test.it("names the track with the picture, or the picture beside the tracks, as an album's source", function()
+	local track = { path = "/music/a.flac", hasPicture = true, modified = 5 }
+	local embedded = artwork.source({ coverTrack = track, coverPath = nil, tracks = { track } })
+	test.truthy(embedded ~= nil)
+	test.equal(embedded.path, "/music/a.flac")
+	test.equal(embedded.hasPicture, true)
+
+	local folder = artwork.source({
+		coverPath = "/music/cover.jpg",
+		modified = 9,
+		tracks = { { path = "/music/b.flac", modified = 9 } }
+	})
+	test.truthy(folder ~= nil)
+	test.equal(folder.coverPath, "/music/cover.jpg")
+	test.equal(folder.hasPicture, false)
+	test.equal(folder.path, "/music/b.flac")
+
+	test.equal(artwork.source({ tracks = {} }), nil, "an album with no picture has no source")
 end)
 
 test.it("does not read the music folder when an album has no cached cover", function()

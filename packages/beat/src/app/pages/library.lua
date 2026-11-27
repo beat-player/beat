@@ -4,6 +4,7 @@ local ui = require("beat-ui")
 local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
+local libraryEmpty = require("beat.app.components.library_empty")
 local metrics = require("beat.app.components.helpers.metrics")
 local styles = require("beat.app.components.helpers.styles")
 
@@ -206,18 +207,13 @@ function libraryPage.view(app, page, window)
 	local ctx = app:ui(window)
 	local library = app.services.library.current
 	if library == nil then
-		return ui.emptyState(
-			ctx,
-			{
-				title = "Awkward. Nothing's here.",
-				actionLabel = "Choose a folder",
-				action = { type = "chooseFolder" },
-				icon = "😬"
-			}
-		)
+		return libraryEmpty.view(app, ctx)
+	end
+	local albums = app.services.library:sorted(app.services.settings.values.sort)
+	if #albums == 0 then
+		return libraryEmpty.view(app, ctx)
 	end
 	local content = metrics.contentWidth(app, window.width)
-	local albums = app.services.library:sorted(app.services.settings.values.sort)
 	local mobile = metrics.mobile(app, window.width)
 
 	local list = app.services.settings.values.view == "list"
@@ -295,18 +291,6 @@ function libraryPage.view(app, page, window)
 	)
 
 	local header = div():style(kept.header):children(titleBlock, controls)
-
-	if #albums == 0 then
-		return ui.emptyState(
-			ctx,
-			{
-				title = "Awkward. Nothing's here.",
-				actionLabel = "Choose a folder",
-				action = { type = "chooseFolder" },
-				icon = "😬"
-			}
-		)
-	end
 
 	local cardHeight = albumCard.height(app, cardWidth)
 	local rowHeight = list ? (theme:px(64)) : cardHeight + (theme:space(12))

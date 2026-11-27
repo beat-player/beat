@@ -356,7 +356,7 @@ function accentPicker.view(app, overlay, window)
 
 	return div()
 		:style(sty():fill():offset(0, 0):z(110):column():align("center"):justify("center"):bg(theme:color("overlay")))
-		:onClick({ type = "dismiss" }):children({ panel })
+		:children({ panel })
 end
 
 return accentPicker

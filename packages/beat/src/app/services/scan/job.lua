@@ -1,11 +1,13 @@
--- A scan on threads of this process: the folder is walked a slice at a time, split into
--- directory-balanced shards, and handed to four inspector threads that read the files and push
--- tracks back through a channel. The window keeps drawing, playing and searching while the
--- inspectors wait on a slow filesystem, and nothing about the scan is written to disk.
+-- A scan on threads of this process: the folder is walked on a thread of its own and sent back a
+-- batch of entries at a time, split into directory-balanced shards, and handed to four inspector
+-- threads that read the files and push tracks back through channels. The window keeps drawing,
+-- playing and searching while a slow filesystem is read, and nothing about the scan is written to
+-- disk.
 --
--- The walk and the shards stay on this thread, so the folder list and the channel are never read
--- from a thread that does not own them. An inspector gets its shard, the records the library
--- already has for it, and the channel's address as copies made when the thread starts.
+-- The app's thread owns the manifest and the shards: the walk thread sends entries through a
+-- channel and waits when the app is behind, so neither table is read from a thread that does not
+-- own it. An inspector gets its shard, the records the library already has for it, and the
+-- channel's address as copies made when the thread starts.
 local json = require("json")
 local threading = require("threading")
 local Log = require("beat.log")
@@ -17,9 +19,19 @@ local time = require("wonderland.time")
 -- round trip, so more in flight is more of the network busy at the same time.
 local WORKERS = 4
 
--- Seconds of folder walking one poll takes. The walk allocates a directory listing per folder, so
--- it is taken in slices of a frame rather than all at once on a large library.
-local ENUMERATE_BUDGET = 0.004
+-- Seconds one slice of the folder walk spends reading directory metadata before the walk thread
+-- looks for a cancel. The walk itself runs on a thread of its own: on a large library or a network
+-- mount a directory listing per folder is more than a frame may hold.
+local WALK_SLICE = 0.02
+
+-- How many entry batches the walk may queue ahead of the app before it waits. The app takes one
+-- a tick, and a batch is the copy the old main-thread walk made each tick; letting the walk rush
+-- far ahead would keep a second copy of a large manifest in the channel.
+local WALK_BACKLOG = 3
+
+-- Seconds between progress messages while the walk runs: enough for the card's count to move, far
+-- fewer than a message a frame.
+local WALK_PROGRESS = 0.2
 
 -- A directory with thousands of files is split into units; those are rare, and the atomic cover
 -- cache write keeps two inspectors safe if they do race for the same album.
@@ -38,6 +50,16 @@ local NOT_UTF8 = "skipped: its name is not UTF-8"
 ---@param value string
 local function sendable(value)
 	return (pcall(json.encode, value))
+end
+
+--- Whether an entry path can travel through the library cache. A path with no byte outside ASCII
+--- is always JSON-safe; only one with high bytes needs the encode check. Most paths are ASCII, so
+--- this keeps the per-entry test a byte scan rather than an encode.
+---@param value string
+---@return boolean
+local function sendablePath(value)
+	if value:find("[\128-\255]") == nil then return true end
+	return sendable(value)
 end
 
 --- A name that can be shown, with every byte that kept it from being UTF-8 replaced.
@@ -172,8 +194,11 @@ ScanJob.__index = ScanJob
 
 ---@class beat.ScanJob
 ---@field root string
----@field scanner beat.Scanner? # The folder walk, until the walk is done
----@field entrySource beat.Scanner? # The finished walk, while its entries are still being listed
+---@field walker threading.Handle? # The thread walking the folder, until it has finished
+---@field walkEvents threading.Channel? # Entry batches and progress from the walk
+---@field walkControl threading.Channel? # A cancel for the walk
+---@field walkDone boolean # Whether the walk has handed over its last entry
+---@field walkReported boolean # Whether the walk's final message has been read
 ---@field entries beat.ScanEntry[]? # Entries built so far, until they are split into shards
 ---@field shards beat.ScanEntry[][]? # The shards still to be given an inspector
 ---@field shardCursor number
@@ -194,8 +219,11 @@ function ScanJob.new(root)
 	return setmetatable(
 		{
 			root = root,
-			scanner = nil,
-			entrySource = nil,
+			walker = nil,
+			walkEvents = nil,
+			walkControl = nil,
+			walkDone = false,
+			walkReported = false,
 			entries = nil,
 			shards = nil,
 			shardCursor = 0,
@@ -228,7 +256,8 @@ local function knownByPath(records)
 	return known
 end
 
---- A scan of `root` on threads of this process. The folder is walked by the polls that follow.
+--- A scan of `root` on threads of this process. The folder walk and the file inspections run on
+--- threads of their own; the polls that follow take what they send a batch at a time.
 ---@param root string
 ---@param known table[]? # Records from the library already loaded, for files a scan can skip
 ---@return beat.ScanJob
@@ -237,48 +266,205 @@ function ScanJob.start(root, known)
 
 	local job = ScanJob.new(root)
 	job.known = knownByPath(known)
-	job.scanner = Scanner.new(root, { library = false })
+	job:startWalk()
 	return job
 end
 
---- Takes the next slice of the finished walk's files into entries. When the last slice is in,
---- the entries are split into shards; each poll starts one inspector from there.
----@param self beat.ScanJob
-function ScanJob:takeEntryChunk()
-	local source = self.entrySource
-	---@cast source -nil
-	local entries = self.entries
-	---@cast entries -nil
+--- The folder walk, on a thread of its own: `readdir` and the per-folder bookkeeping happen
+--- there, and the app is sent an entry batch at a time. A cancelled walk is a `true` on the
+--- control channel: it stops at the next directory boundary, closes the folder it is reading and
+--- says nothing more.
+---@param root string
+---@param eventsAddress string
+---@param controlAddress string
+function ScanJob.walk(root, eventsAddress, controlAddress)
+	local threading = require("threading")
+	local events = threading.channelFromAddress(eventsAddress)
+	local control = threading.channelFromAddress(controlAddress)
+	local scanner = Scanner.new(root, { library = false })
+	local clock = time.now
 
-	local taken = source:takeEntries(ENTRY_CHUNK)
-	for _, entry in ipairs(taken) do
-		if sendable(entry.path) then
-			entries[#entries + 1] = entry
-		else
-			self.enumSkipped += 1
-			self.enumErrors[#self.enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8 }
+	---@return boolean cancelled
+	local function cancelled()
+		if control:count() == 0 then return false end
+		control:pop()
+		scanner:cancel()
+		return true
+	end
+
+	--- A batch into the app's manifest. The cache's UTF-8 check stays on the app's thread: this is
+	--- still the walk thread, and the main state's json is the one that says what can travel.
+	local function pushEntries()
+		local batch = scanner:takeEntries(ENTRY_CHUNK)
+		if #batch > 0 then events:push({ type = "entries", entries = batch }) end
+	end
+
+	--- Waits for the app to catch up when too many batches are queued, answering true when the
+	--- visit is a cancel.
+	---@return boolean cancelled
+	local function waitForRoom()
+		while events:count() >= WALK_BACKLOG do
+			if cancelled() then return true end
+			threading.sleep(2)
+		end
+		return false
+	end
+
+	local lastProgress = clock()
+	while scanner.phase == "enumerate" do
+		scanner:enumerateStep(WALK_SLICE, clock)
+		if cancelled() then return end
+
+		local now = clock()
+		if now - lastProgress >= WALK_PROGRESS then
+			lastProgress = now
+			events:push({
+				type = "progress",
+				files = #scanner.files,
+				skipped = scanner.skipped,
+				current = scanner.current
+			})
+		end
+
+		if #scanner.files - scanner.entryIndex + 1 >= ENTRY_CHUNK then
+			if waitForRoom() then return end
+			pushEntries()
 		end
 	end
 
-	if #taken == ENTRY_CHUNK then return end
+	-- The last, partial batches, then the counts and failures the inspectors start from.
+	while scanner.entryIndex <= #scanner.files do
+		if waitForRoom() then return end
+		pushEntries()
+	end
 
-	self.entrySource = nil
-	self.entries = nil
-	self.files = #entries
-	self.latest.files = self.files
-	self.latest.skipped = self.enumSkipped
+	local found = scanner.errors
+	events:push({
+		type = "done",
+		skipped = scanner.skipped,
+		errors = found
+	})
+end
 
-	if self.files == 0 then
+--- Starts the walk thread. A walk that cannot start fails the scan the way an inspector that
+--- cannot start does, rather than leaving a job that waits forever for entries.
+---@param self beat.ScanJob
+function ScanJob:startWalk()
+	local events = threading.channel()
+	local control = threading.channel()
+	local root = self.root
+	local eventsAddress, controlAddress = events:address(), control:address()
+	local ok, handle = pcall(threading.spawn, function()
+		require("beat.app.services.scan.job").walk(root, eventsAddress, controlAddress)
+	end)
+	if not ok then
+		events:close()
+		control:close()
 		self.done = true
-		self.latest.phase = "done"
-		self.latest.errors = self.enumErrors
+		self.error = "could not start the scan: " .. tostring(handle)
+		self.latest.current = nil
+		Log.write("error", self.error)
 		return
 	end
 
-	-- The shards are handed out one per poll: starting four threads and copying four shards in
-	-- one tick is a frame's worth of work on a large library, and a scan start should not drop one.
-	self.shards = shard(entries, math.min(WORKERS, self.files))
-	self.shardCursor = 0
+	self.walker = handle
+	self.walkEvents = events
+	self.walkControl = control
+	self.entries = {}
+	self.walkDone = false
+	self.walkReported = false
+end
+
+--- Takes what the walk has sent: entry batches into the manifest, progress into the card, and the
+--- last message into the shards. One entry batch a poll is the bound the old main-thread walk had;
+--- progress and the final message are small and are taken whenever they come.
+---@param self beat.ScanJob
+---@return boolean changed
+function ScanJob:pollWalk()
+	local channel = self.walkEvents
+	if channel == nil then return false end
+
+	local changed = false
+	while true do
+		local message = channel:pop()
+		if message == nil then break end
+
+		local kind = message.type
+		if kind == "entries" then
+			local entries = self.entries
+			---@cast entries -nil
+			local batch = message.entries
+			for at = 1, #batch do
+				local entry = batch[at]
+				if sendablePath(entry.path) then
+					entries[#entries + 1] = entry
+				else
+					self.enumSkipped += 1
+					self.enumErrors[#self.enumErrors + 1] = { path = printable(entry.path), message = NOT_UTF8 }
+				end
+			end
+			changed = true
+			break
+		elseif kind == "progress" then
+			local latest = self.latest
+			local files, skipped, current = message.files, message.skipped, message.current
+			if latest.files ~= files or latest.skipped ~= skipped or latest.current ~= current then
+				latest.phase = "enumerate"
+				latest.files = files or latest.files
+				latest.skipped = skipped or latest.skipped
+				latest.current = current
+				changed = true
+			end
+		elseif kind == "done" then
+			self.walkDone = true
+			self.walkReported = true
+			self.enumSkipped += message.skipped or 0
+			local found = message.errors
+			if found ~= nil then
+				local printableErrors = printableFailures(found)
+				for at = 1, #printableErrors do self.enumErrors[#self.enumErrors + 1] = printableErrors[at] end
+			end
+
+			local entries = self.entries or {}
+			self.entries = nil
+			self.files = #entries
+			self.latest.phase = "inspect"
+			self.latest.files = self.files
+			self.latest.inspected = 0
+			self.latest.tracks = 0
+			self.latest.skipped = self.enumSkipped
+			self.latest.current = nil
+
+			if self.files == 0 then
+				self.done = true
+				self.latest.phase = "done"
+				self.latest.errors = self.enumErrors
+			else
+				-- The shards are handed out one per poll: starting four threads and copying four
+				-- shards in one tick is a frame's worth of work on a large library.
+				self.shards = shard(entries, math.min(WORKERS, self.files))
+				self.shardCursor = 0
+			end
+			changed = true
+			break
+		end
+	end
+
+	-- A walk thread that ended without its final message raised outside its own pcall: that is a
+	-- failure of the scan, not a walk still going, and waiting for entries that will never come
+	-- would leave the job running forever.
+	if not self.walkReported then
+		local walker = self.walker
+		if walker ~= nil and channel:count() == 0 and walker:done() then
+			self.walkReported = true
+			self.done = true
+			self.error = "the scan walk ended without finishing"
+			self.latest.current = nil
+			changed = true
+		end
+	end
+
+	return changed
 end
 
 --- Starts the next shard's inspector, if one is left. One per poll keeps the thread starts and
@@ -365,30 +551,19 @@ end
 ---@param self beat.ScanJob
 ---@return boolean changed
 function ScanJob:updateProgress()
-	local latest = self.latest
-	local phase, files, inspected, tracks, skipped, current
+	-- While the walk runs its own messages are the progress: `pollWalk` writes the count and the
+	-- folder it is reading into `latest` as they arrive.
+	if not self.walkDone then return false end
 
-	local scanner = self.scanner
-	if scanner ~= nil then
-		phase = "enumerate"
-		files = #scanner.files
-		inspected = 0
-		tracks = 0
-		skipped = scanner.skipped
-		current = scanner.current
-	else
-		phase = "inspect"
-		files = self.files
-		inspected = 0
-		tracks = 0
-		skipped = self.enumSkipped
-		current = nil
-		for _, worker in ipairs(self.workers) do
-			inspected += worker.inspected
-			tracks += worker.tracks
-			skipped += worker.skipped
-			current = worker.current or current
-		end
+	local latest = self.latest
+	local phase = "inspect"
+	local files = self.files
+	local inspected, tracks, skipped, current = 0, 0, self.enumSkipped, nil
+	for _, worker in ipairs(self.workers) do
+		inspected += worker.inspected
+		tracks += worker.tracks
+		skipped += worker.skipped
+		current = worker.current or current
 	end
 
 	if latest.phase == phase
@@ -415,7 +590,7 @@ end
 ---@param self beat.ScanJob
 ---@return boolean finished
 function ScanJob:checkFinished()
-	if self.done or self.scanner ~= nil or self.entrySource ~= nil or self.shards ~= nil then return false end
+	if self.done or not self.walkReported or self.shards ~= nil then return false end
 
 	for _, worker in ipairs(self.workers) do
 		if worker.events:count() > 0 or not worker.joined then return false end
@@ -457,7 +632,10 @@ function ScanJob:checkFinished()
 	self.latest.tracks = tracks
 	self.latest.skipped = skipped
 	self.latest.errors = errors
-	artworkCache.prune(self.root, self.usedCovers)
+	-- A completed scan's covers are pruned off the main thread: the scan's last tick has a
+	-- library to finish and a cache to save, and a readdir plus a delete per stale cover is not
+	-- work for a frame. A cancelled or failed scan never gets here.
+	artworkCache.pruneAsync(self.root, self.usedCovers)
 	return true
 end
 
@@ -478,36 +656,17 @@ function ScanJob:poll(limit)
 	local changed = self.changed
 	self.changed = false
 
-	local scanner = self.scanner
-	if scanner ~= nil then
-		scanner:enumerateStep(ENUMERATE_BUDGET, time.now)
-		if scanner.phase ~= "enumerate" then
-			self.scanner = nil
-			self.entrySource = scanner
-			self.entries = {}
-			self.enumSkipped = scanner.skipped
-			self.enumErrors = printableFailures(scanner.errors)
-			self.files = #scanner.files
-			self.latest.phase = "inspect"
-			self.latest.files = self.files
-			self.latest.inspected = 0
-			self.latest.tracks = 0
-			self.latest.skipped = self.enumSkipped
-			self.latest.current = nil
-			changed = true
-		end
-	end
-
-	if self.entrySource ~= nil then
-		self:takeEntryChunk()
-		changed = true
-	end
-
+	-- One a tick: a rescan copies a shard's known records to its thread here, and two of those in
+	-- one tick is work the frame budget does not have. This runs before the walk is polled so the
+	-- tick that takes the walk's last message only builds the shards; the first inspector's copy
+	-- and thread start wait for the next tick.
 	if self.shards ~= nil then
-		-- One a tick: a rescan copies a shard's known records to its thread here, and two of those
-		-- in one tick is work the frame budget does not have.
 		self:startNextInspector()
 		changed = true
+	end
+
+	if not self.walkDone then
+		if self:pollWalk() then changed = true end
 	end
 
 	local events = {}
@@ -585,6 +744,8 @@ end
 ---@param self beat.ScanJob
 ---@return boolean
 function ScanJob:hasPending()
+	local walkEvents = self.walkEvents
+	if walkEvents ~= nil and walkEvents:count() > 0 then return true end
 	for _, worker in ipairs(self.workers) do
 		if worker.events:count() > 0 then return true end
 	end
@@ -601,14 +762,18 @@ function ScanJob:cancel()
 
 	self.done = true
 	self.changed = true
-	if self.scanner ~= nil then self.scanner:cancel() end
-	self.scanner = nil
-	self.entrySource = nil
 	self.entries = nil
 	self.shards = nil
 
 	local handles = {}
 	local channels = {}
+	if self.walker ~= nil then
+		handles[#handles + 1] = self.walker
+		channels[#channels + 1] = self.walkEvents
+		channels[#channels + 1] = self.walkControl
+		self.walkControl:push(true)
+		self.walker, self.walkEvents, self.walkControl = nil, nil, nil
+	end
 	for _, worker in ipairs(self.workers) do
 		if not worker.joined then
 			worker.joined = true
@@ -626,6 +791,18 @@ end
 
 ---@param self beat.ScanJob
 function ScanJob:close()
+	if self.walker ~= nil then
+		pcall(self.walker.join, self.walker)
+		self.walker = nil
+	end
+	if self.walkEvents ~= nil then
+		self.walkEvents:close()
+		self.walkEvents = nil
+	end
+	if self.walkControl ~= nil then
+		self.walkControl:close()
+		self.walkControl = nil
+	end
 	for _, worker in ipairs(self.workers) do
 		if not worker.joined then
 			worker.joined = true
@@ -635,8 +812,6 @@ function ScanJob:close()
 		worker.control:close()
 	end
 	self.workers = {}
-	self.scanner = nil
-	self.entrySource = nil
 	self.entries = nil
 	self.shards = nil
 end

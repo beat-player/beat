@@ -98,10 +98,18 @@ test.it("adds a folder without duplicating it and leaves the queue alone", funct
 		App:act({ type = "libraryAddFolder", path = "/downloads/Album" })
 		test.equal(#library.tracks, 1, "the old track under the folder is dropped before the scan")
 		App:tick(10, window)
+		-- The cache is written in slices over the ticks after the folder lands, not in the one
+		-- that adds its tracks: wait for the save instead of assuming one tick was enough.
+		local now = 10
+		while App.services.scan.saving ~= nil and now < 20 do
+			now += 1 / 60
+			App:tick(now, window)
+		end
 	end)
 	ScanJob.start = realStart
 	if not ok then error(err, 0) end
 
+	test.equal(App.services.scan.saving, nil, "the cache write finished")
 	test.equal(job.closed, true)
 	test.equal(#library.tracks, 3, "the two new tracks joined the one outside the folder")
 	local titles = {}
@@ -117,6 +125,14 @@ test.it("adds a folder without duplicating it and leaves the queue alone", funct
 	if cached ~= nil then
 		test.equal(#cached.tracks, 3, "the cache has the replaced folder")
 	end
+
+	-- The result is reported after the write, not before it: the toast the listener sees is the
+	-- one the save's completion sends.
+	local said = false
+	for _, toast in ipairs(App.services.toasts.list) do
+		if toast.text == "Added 2 tracks to the library" then said = true end
+	end
+	test.truthy(said, "the added folder is reported once its cache is written")
 end)
 
 test.it("keeps the library when the folder scan fails", function()

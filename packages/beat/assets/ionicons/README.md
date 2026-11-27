@@ -9,10 +9,11 @@ Apache License 2.0: `skip_previous` and `skip_next` for the transport buttons, a
 for Playlists. The skip icons' view box is cropped to the glyph so they are drawn at the size of
 the Ionicons beside them.
 
-`packages/beat-ui/src/assets/fonts/Ionicons.ttf` is generated from these files: Inkscape converts
-the outline icons' strokes to filled paths, then the files are packed as a font. beat-ui's build
-script embeds the face as a Lua module, so a compiled binary carries it. To regenerate it, from the
-repository root, with Inkscape on the PATH:
+`packages/beat-ui/src/assets/fonts/Ionicons.ttf` is generated from these files: the icons that paint
+a stroke (the `-outline` marks and `list.svg`) are converted to filled paths by Inkscape first, and
+filled icons are packed as they are. beat-ui's build script embeds the face as a Lua module, so a
+compiled binary carries it. To regenerate it, from the repository root, with Inkscape on the PATH
+(only needed while a stroke-painted icon is in the set):
 
 ```sh
 npm install --no-save svgicons2svgfont svg2ttf

@@ -72,6 +72,9 @@ function volume.view(app, overlay, window)
 			sty()
 				:w(opts.width):h(opts.height):offset(opts.x, opts.y):row():align("center"):gap(gap):pad(0, padding, 0, padding)
 				:radius(theme:radius("md")):bg(theme:color("elevated")):border(theme:px(1), theme:color("border"))
+				-- Over the cover the shell puts under an anchored popup, as every panel popped out
+				-- of a control is (see `beat.components.popup`), so the slider is the pointer's.
+				:z(130)
 		):onClick({ type = "keep" })
 		:children(
 			{

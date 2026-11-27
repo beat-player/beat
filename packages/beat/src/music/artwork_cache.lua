@@ -4,6 +4,7 @@
 -- so switching roots cannot make one scan prune another's art.
 local fs = require("fs")
 local path = require("path")
+local threading = require("threading")
 local md5 = require("beat.music.md5")
 
 local artworkCache = {}
@@ -62,6 +63,41 @@ function artworkCache.prune(root, used)
 	end
 
 	return removed
+end
+
+-- Prunes still running, joined when the next one starts so their thread state is given back. A
+-- prune is a readdir and a delete per stale cover: work the scan's last tick, with a library to
+-- finish and a cache to save, should not hold a frame for.
+---@type threading.Handle[]
+local pruning = {}
+
+local function reapPruning()
+	for at = #pruning, 1, -1 do
+		local handle = pruning[at]
+		if handle:done() then
+			pcall(handle.join, handle)
+			table.remove(pruning, at)
+		end
+	end
+end
+
+--- Prunes the covers a completed scan did not use, on a thread of its own. The answer is the
+--- thread's handle, which the next prune joins; a caller that must wait for it (a test, shutdown)
+--- can join it itself and read how many files went.
+---@param root string
+---@param used table<string, boolean>
+---@return threading.Handle? handle
+---@return string? err
+function artworkCache.pruneAsync(root, used)
+	reapPruning()
+
+	local ok, handle = pcall(threading.spawn, function()
+		return require("beat.music.artwork_cache").prune(root, used)
+	end)
+	if not ok then return nil, tostring(handle) end
+
+	pruning[#pruning + 1] = handle
+	return handle
 end
 
 return artworkCache

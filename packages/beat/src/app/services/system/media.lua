@@ -1,6 +1,7 @@
 -- What the phone shows of beat outside the app: the lock screen's player, the media controls in the
 -- notification shade, and what a headset's buttons and a watch control. All of it is one Android
--- media session and its notification.
+-- media session and its notification. The player's X comes back as a command like the rest: it
+-- stops the sound, takes the notification and the session away, and leaves the app.
 --
 -- A media session answers its controls through a Java callback class, and a NativeActivity APK has
 -- no Java of its own, so the class (android/beat/MediaBridge.java) is a dex that is written to the
@@ -24,13 +25,18 @@ local FOCUS_PAUSE = 6
 local FOCUS_RESUME = 7
 local FOCUS_LOSS = 8
 local VOLUME_ZERO = 9
+-- The player's X, and a swipe on a paused notification: stop, drop the session, leave the app.
+local CLOSE = 10
 
 -- How far the playhead may be from where the session's last report puts it before it is told
 -- again: the system moves its own copy on at the playback speed, so only a seek or a stall drifts.
 local DRIFT = 1.5
 
--- The longest the Java command queue is left alone while a track is loaded.
+-- How long the Java command queue is left alone while a track is loaded. Playing is polled often
+-- enough for a button or a focus change to feel like a press; a paused player has nothing moving
+-- on screen, so four times a second is plenty.
 local COMMAND_INTERVAL = 0.1
+local PAUSED_COMMAND_INTERVAL = 0.25
 
 -- The bridge the process loaded, kept across the app being set up again: a second MediaBridge
 -- would be a second session, and a second player on the lock screen.
@@ -42,6 +48,7 @@ local shared = nil
 ---@field library beat.LibraryService
 ---@field settings beat.SettingsService
 ---@field bridge ffi.cdata*? # The MediaBridge, as a global reference
+---@field emit fun(message: table) # Sends a message the way a click does; the app answers it after this step
 ---@field failed boolean # Loading the bridge failed once; it is not tried every tick
 ---@field sentTrackId number? # The track the last report named; nil when none was sent
 ---@field sentDuration number # The whole seconds the last report's duration was compared by
@@ -53,15 +60,16 @@ local shared = nil
 ---@field pausedByFocus boolean # This service paused playback for a transient loss, so the gain resumes it
 local Media = {}
 Media.__index = Media
-Media.needs = { "playback", "library", "settings" }
+Media.needs = { "playback", "library", "settings", "emit" }
 
----@param deps { playback: beat.PlaybackService, library: beat.LibraryService, settings: beat.SettingsService }
+---@param deps { playback: beat.PlaybackService, library: beat.LibraryService, settings: beat.SettingsService, emit: fun(message: table) }
 ---@return beat.MediaService
 function Media.new(deps)
 	return setmetatable({
 		playback = deps.playback,
 		library = deps.library,
 		settings = deps.settings,
+		emit = deps.emit,
 		bridge = nil,
 		failed = false,
 		sentTrackId = nil,
@@ -171,6 +179,15 @@ local function takeCommands(self)
 		elseif command == VOLUME_ZERO then
 			-- The media volume fell to nothing: pause, and turning it back up does not resume.
 			if pauseForOtherAudio and playing then playback:pause() end
+		elseif command == CLOSE then
+			-- The X on the player, or a paused notification swiped away: stop the sound, take the
+			-- notification and the session down now, and leave. The loop ending is what ends the
+			-- activity; `leave` is the app's own way out, the one the confirm dialog uses.
+			self.pausedByFocus = false
+			if playing then playback:pause() end
+			self:release()
+			self.emit({ type = "leave" })
+			return
 		elseif command <= -2 then
 			playback.player:seek((-2 - command) / 1000)
 		end
@@ -198,10 +215,11 @@ function Media:step(now)
 
 	-- The controls are a Java queue polled through JNI, and only a session with something in it can
 	-- use them: with no track the app is not the phone's player. Four times a second is enough for
-	-- a button or a focus change to be felt as a press.
+	-- a button or a focus change to be felt as a press while paused; ten while it plays.
 	local player = self.playback.player
 	local track = player:current()
-	if track ~= nil and now - self.lastCommandAt >= COMMAND_INTERVAL then
+	local commandInterval = player:isPlaying() and COMMAND_INTERVAL or PAUSED_COMMAND_INTERVAL
+	if track ~= nil and now - self.lastCommandAt >= commandInterval then
 		self.lastCommandAt = now
 		takeCommands(self)
 		track = player:current()
@@ -244,7 +262,7 @@ function Media:step(now)
 			playing = playing
 		})
 	end
-	return false, false
+	return false, player:isPlaying() and COMMAND_INTERVAL or PAUSED_COMMAND_INTERVAL
 end
 
 --- The app is going: the lock screen should not keep a player for a process that has gone.
@@ -252,6 +270,22 @@ function Media:flush()
 	if self.bridge == nil then return end
 	self.sentTrackId = nil
 	report(self, { active = false })
+end
+
+--- Takes the notification, the foreground service and the media session down before the app leaves.
+--- A report is posted to Android's main thread and runs after the tick that made it; the tick that
+--- handles the X is the one the loop ends in, so it would never run and the notification would be
+--- left behind. The bridge is therefore asked to do it and waits until it is done.
+function Media:release()
+	if self.bridge == nil then return end
+	self.sentTrackId = nil
+	---@diagnostic disable-next-line: missing-module
+	local android = require("androidapi") --[[@as beat.AndroidApi]]
+	local jni = android.jni
+	local _, err = jni.frame(function()
+		jni.call(self.bridge, "java/lang/Runnable", "run", "()V", "void")
+	end)
+	if err ~= nil then require("beat.log").write("warn", "media session release failed: " .. tostring(err)) end
 end
 
 --- The setting is the bridge's to act on: every report carries it, and a change is reported on

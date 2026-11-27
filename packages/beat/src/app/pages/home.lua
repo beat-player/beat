@@ -1,39 +1,14 @@
 -- The first screen: what is playing, what was just added, and a way into the library while it is
 -- still being read.
 local wonderland = require("wonderland")
-local path = require("path")
 local ui = require("beat-ui")
-local format = require("beat.app.components.helpers.format")
 local albumCard = require("beat.app.components.album_card")
 local cover = require("beat.app.components.cover")
-local playingBars = require("beat.app.components.playing_bars")
+local libraryEmpty = require("beat.app.components.library_empty")
 local metrics = require("beat.app.components.helpers.metrics")
 local styles = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
-
--- The bar a scan fills: the only one home draws, so its numbers are kept here and the draw that
--- reads them is made once. A function declared in the view is one that closes an upvalue on every
--- frame the bar is in.
-local meterState = { value = 0, trackColour = "", fillColour = "", radius = 0 }
-
----@param canvas wonderland.Canvas
-local function drawMeter(canvas)
-	canvas:rect(0, 0, canvas.width, canvas.height, meterState.trackColour, meterState.radius)
-	canvas:rect(0, 0, canvas.width * meterState.value, canvas.height, meterState.fillColour, meterState.radius)
-end
-
---- A bar whose fill follows a value, drawn to a canvas: the fill is a shape, not a style.
----@param width number
----@param height number
----@param fraction number
----@param trackColour string
----@param fillColour string
-local function meter(width, height, fraction, trackColour, fillColour)
-	meterState.value = math.max(0, math.min(1, fraction))
-	meterState.trackColour, meterState.fillColour, meterState.radius = trackColour, fillColour, height / 2
-	return div():style(sty():w(width):h(height)):canvas(drawMeter)
-end
 
 -- The headings, which say the same thing on every frame.
 local RECENTLY_LISTENED = { title = "Recently listened" }
@@ -138,43 +113,7 @@ function home.view(app, page, window)
 	local library = app.services.library.current
 	local scan = app.services.scan
 	if library == nil or (scan.job ~= nil and #library.tracks == 0) then
-		if scan.job ~= nil then
-			local progress = scan.job:progress()
-			local current = progress.current
-			local currentName = nil
-			if type(current) == "string" then currentName = path.basename(current) end
-			local scanning = {
-				playingBars.view(app, { playing = true }),
-				text(progress.phase == "enumerate" ? "Finding your music" : "Reading your music")
-					:style(theme:s():text(theme:type("xl")):weight("bold"):fg(theme:color("text"))),
-				text(format.count(progress.tracks, "track") .. " · " .. progress.inspected .. " / " .. progress.files)
-					:style(theme:s():text(theme:type("sm")):fg(theme:color("muted"))),
-				meter(theme:px(420), theme:px(4), scan:fraction(), theme:color("text", 0.1), theme:color("accent"))
-			}
-			if currentName ~= nil then
-				scanning[#scanning + 1] = text(tostring(currentName))
-					:style(theme:s():w(theme:px(520)):text(theme:type("xs")):fg(theme:color("faint")):ellipsis())
-			end
-			if progress.skipped > 0 then
-				scanning[#scanning + 1] = text(format.count(progress.skipped, "file") .. " skipped")
-					:style(theme:s():text(theme:type("xs")):fg(theme:color("danger")))
-			end
-			scanning[#scanning + 1] = ui.button(
-				ctx,
-				{ label = "Cancel scan", onClick = { type = "cancelScan" }, height = theme:px(30), width = theme:px(110) }
-			)
-			return div():style(sty():fill():column():align("center"):justify("center"):gap(theme:px(14))):children(scanning)
-		end
-
-		return ui.emptyState(
-			ctx,
-			{
-				title = "Your library is empty",
-				copy = "Choose a folder and every track in it appears here.",
-				actionLabel = "Choose a folder",
-				action = { type = "chooseFolder" }
-			}
-		)
+		return libraryEmpty.view(app, ctx)
 	end
 
 	local content = metrics.contentWidth(app, window.width)

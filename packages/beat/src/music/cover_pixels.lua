@@ -61,19 +61,41 @@ end
 --- The cached cover of one album, fitted for this screen, as pixels the window frees once it has
 --- uploaded them and the colour its page tints with.
 ---
+--- A cached file that is gone -- a cleaned cache directory, a file a prune removed -- is made
+--- again here from the picture the album was scanned from, on this worker and not on the frame's
+--- thread, and written back where the album expects it. A genuinely coverless album fails the one
+--- attempt and the window remembers that rather than asking again every frame.
+---
 --- The fitted image is copied once, straight into the buffer that crosses, and closed at once:
 --- the decode's own buffer is let go of while the worker still has it rather than left for the
 --- collector of a state that never runs again. Failed work is last on purpose -- an answer that
 --- cannot be copied back must not leave a buffer nobody has the address of.
 ---@param coverCache string
 ---@param size number
+---@param source { path: string, hasPicture: boolean, coverPath: string?, modified: number? }?
 ---@return number? width
 ---@return number? height
 ---@return string? address
 ---@return { r: number, g: number, b: number }? colour
-function coverPixels.decode(coverCache, size)
+function coverPixels.decode(coverCache, size, source)
 	local artwork = require("beat.music.artwork")
-	local fitted, colour = artwork.forAlbum({ coverCache = coverCache } --[[@as beat.Album]], size)
+	-- A cache file that is unreadable can raise from the decoder rather than answer nil, and it is
+	-- just as worth making again as one that is gone, so the load is guarded.
+	local loaded, fitted, colour = pcall(artwork.forAlbum, { coverCache = coverCache } --[[@as beat.Album]], size)
+	if not loaded then fitted, colour = nil, nil end
+
+	if fitted == nil and source ~= nil then
+		-- The cache is missing or broken while the picture it was made from is still there. The
+		-- rewrite is bounded by one read of that picture, and a second cover asking for another
+		-- size finds the file the first one made.
+		local wrote, file = pcall(artwork.rewriteCache, source, coverCache, artwork.CACHE_SIZE)
+		if wrote and file ~= nil then
+			local remade
+			remade, fitted, colour = pcall(artwork.forAlbum, { coverCache = coverCache } --[[@as beat.Album]], size)
+			if not remade then fitted, colour = nil, nil end
+		end
+	end
+
 	if fitted == nil then return nil end
 
 	local width, height = fitted.width, fitted.height

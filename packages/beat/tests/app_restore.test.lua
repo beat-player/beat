@@ -4,6 +4,7 @@
 local test = require("lde-test")
 local fs = require("fs")
 local json = require("json")
+local threading = require("threading")
 local paths = require("beat.paths")
 local Library = require("beat.music.library")
 local Queue = require("beat.app.services.playback.queue")
@@ -88,10 +89,11 @@ test.it("opens the album the last launch was on, even after a rescan reorders it
 	App.services.library.current = rescanned
 	App.services.library:save()
 	App:init()
+	App.services.library:load()
 
 	local restored = App.services.library.current
-	test.truthy(restored ~= nil, "the library cache is read before the page is chosen")
-	test.equal(App.page.kind, "album", "the launch opens the album page")
+	test.truthy(restored ~= nil, "the library cache is read")
+	test.equal(App.page.kind, "album", "the launch opens the album page once the library is in")
 	local album = restored:album(App.page.id)
 	test.truthy(album ~= nil, "the page names an album the new library has")
 	test.equal(album.key, wanted.key, "the saved key found the album, not the id from the old scan")
@@ -114,11 +116,73 @@ test.it("falls back to home when the saved album is gone", function()
 	App.services.library.current = fixture("/gone-fixtures", { 1 })
 	App.services.library:save()
 	App:init()
+	App.services.library:load()
 
 	local restored = App.services.library.current
 	test.truthy(restored ~= nil)
 	test.equal(App.page.kind, "home", "a page for an album the scan dropped is not opened")
 	test.equal(#App.history, 0, "home is the first page, so there is nothing under it")
+	App.services.playback.player:close()
+end)
+
+test.it("draws before the cached library is read, then restores the page and the queue", function()
+	freshConfig()
+	App:init({ scan = false })
+	local library = fixture("/deferred-fixtures")
+	useLibrary(library)
+	local wanted = library.albums[1]
+	App:go({ kind = "album", id = wanted.id })
+
+	local queue = Queue.new(library.tracks, 2, { source = "album" })
+	local bytes = json.encode({ version = 1, queue = queue:pack(), seconds = 12 })
+	test.truthy(fs.write(paths.file("session.json"), bytes), "the old session file is written")
+
+	App:init()
+	local service = App.services.library
+	test.equal(service:isLoading(), true, "the cache is not parsed in App:init")
+	test.equal(App.page.kind, "home", "the shell shows home until the saved album can be resolved")
+	test.equal(App.services.scan.job, nil, "no scan runs while the cache is being read")
+	test.equal(App.services.playback.player.queue, nil, "the session waits for the library")
+
+	local home = require("beat.app.pages.home")
+	test.truthy(home.view(App, App.page, { width = 1200, height = 800 }) ~= nil, "home draws its empty state")
+
+	-- The first ticks read the cache on a worker, a batch of records at a time.
+	local ticks = 0
+	while service:isLoading() and ticks < 1000 do
+		local _, busy = service:step(0)
+		if busy then threading.sleep(1) end
+		ticks += 1
+	end
+	test.equal(service:isLoading(), false, "the cache is in after a few ticks")
+	test.truthy(service.current ~= nil, "the launch has its library")
+	test.equal(App.page.kind, "album", "the saved page is opened once the library is in")
+	test.equal(App.page.id, wanted.id)
+	test.equal(App.services.scan.job, nil, "the loaded cache is not scanned again")
+
+	local restored = assert(App.services.playback.player.queue)
+	test.equal(#restored.tracks, #library.tracks, "the session is restored after the library")
+	test.equal(assert(restored:current()).path, library.tracks[2].path)
+	test.equal(App.services.playback.player:position(), 12, "it starts where the old session stopped")
+	App.services.playback.player:close()
+end)
+
+test.it("keeps the library, its tags and its queue when the app is built again", function()
+	freshConfig()
+	App:init({ scan = false })
+	local library = fixture("/restart-fixtures")
+	useLibrary(library)
+	local taxonomy = App.services.collections.taxonomy
+	local queue = Queue.new(library.tracks, 1, { source = "album" })
+	App.services.playback.player.queue = queue
+	App.services.playback.player.startAt = 42
+
+	App:restart()
+
+	test.equal(App.services.library.current, library, "the rebuilt app keeps the library it had")
+	test.equal(App.services.collections.taxonomy, taxonomy, "its tags are not read back from disk")
+	test.equal(App.services.playback.player.queue, queue, "and the queue it was playing from")
+	test.equal(App.services.playback.player:position(), 42, "where it was in that queue")
 	App.services.playback.player:close()
 end)
 
@@ -133,6 +197,7 @@ test.it("loads the queue from an old session that has no page in it", function()
 	test.truthy(fs.write(paths.file("session.json"), bytes), "the old session file is written")
 
 	App:init()
+	App.services.library:load()
 	local restored = App.services.playback.player.queue
 	test.truthy(restored ~= nil, "the launch restores the session")
 	test.equal(#restored.tracks, #library.tracks)

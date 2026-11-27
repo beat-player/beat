@@ -111,6 +111,7 @@ ui.button(ctx, {
 	width = ctx:px(120), -- optional; the label's own width when absent
 	height = ctx:px(36),  -- optional
 	icon = "play",        -- optional glyph before the label
+	key = "player.play",  -- optional; see "Press marks" below
 })
 ```
 
@@ -138,6 +139,7 @@ ui.iconButton(ctx, {
 	onClick = { type = "navigate", page = { kind = "settings" } },
 	active = false, -- optional
 	-- content = element, -- optional: draw this instead of a glyph
+	key = "chrome.settings", -- optional; see "Press marks" below
 })
 ```
 
@@ -242,6 +244,7 @@ ui.listRow(ctx, {
 	justify = "start", -- optional: "start", "center" or "space-between"
 	active = false,    -- optional current-destination fill
 	radius = "sm",     -- optional radius name
+	key = "sidebar.home", -- optional; see "Press marks" below
 })
 ```
 
@@ -262,6 +265,35 @@ ui.rating(ctx, {
 
 Five stars. A click on star n asks for n stars; a click on the star at the current rating asks for
 0, which takes the rating away. It keeps no state: what it draws is `value`.
+
+### `ui.ripple` (since 0.1.3)
+
+```lua
+ui.ripple(element, "my-plugin.card", ctx:color("text"))
+```
+
+Gives an element of the plugin's own the press mark the built-in controls show: a circle that grows
+from where the press landed and fades inside the element's rounded box. `ui.button`, `ui.iconButton`
+and `ui.listRow` call it themselves; this is for a control drawn by hand. The second argument is the
+key the mark is kept by -- a string that is the same on every frame, so a press that opens a page
+does not leave its mark on whatever takes the control's place; `nil` means the element's place in
+the frame, which is right for a control that is not part of a list. The third is the colour the mark
+is drawn in, usually the control's text colour or, on a filled control, the ink that reads on it.
+
+The element's canvas is what draws the mark, so an element that draws shapes of its own cannot also
+show one: put the mark on a plain element around them.
+
+### Press marks
+
+Every component that answers a press shows one. A finger gets a mark at 12% of the ink and a mouse
+the same mark at 6%, so a phone and a desk behave alike without a pointer leaving a bright trail
+behind it. With the app's reduced-motion setting on, the circle is replaced by the control's box lit
+for a moment and faded.
+
+A component's mark is kept by the `key` prop, or by the element's place in the frame when it has
+none. A control that is still on screen after the press should be named: a navigation row keeps its
+mark while the page it opened slides in, where an unnamed one is dropped, so a mark cannot land on
+an unrelated control that took its place in a new page.
 
 ## What stays in beat
 

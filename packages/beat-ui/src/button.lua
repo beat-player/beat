@@ -9,6 +9,7 @@ local wonderland = require("wonderland")
 local icon = require("beat-ui.icon")
 local cache = require("beat-ui.cache")
 local measure = require("beat-ui.measure")
+local ripple = require("beat-ui.ripple")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
@@ -21,6 +22,7 @@ local button = {}
 ---@field width number? # A fixed width; default the label's own width
 ---@field height number? # Default px(36)
 ---@field icon string? # An icon name drawn before the label
+---@field key string? # Keeps the press mark on this button across frames; default its place in the frame
 
 ---@class beat.ui.ButtonStyles
 ---@field base wonderland.StyleBuilder
@@ -103,6 +105,12 @@ function button.view(ctx, props)
 	-- The icon and the label are handed over one at a time: a button is built on every frame of
 	-- the screens it is on, and a table it is only a list of is a table that frame does not need.
 	local element = div():style(styles.base):hover(styles.hover):onClick(props.onClick)
+
+	-- The press mark is the ink of what the button says, except on the filled action, where the
+	-- accent is the fill and its ink is the only thing a mark can be seen in.
+	local tint = variant == "primary" and ctx.accentInk or ctx:color("text")
+	ripple.attach(element, props.key, tint)
+
 	if props.icon ~= nil then
 		element:children(icon.view(ctx, { name = props.icon, size = ctx:px(16), colour = styles.colour }))
 	end

@@ -6,8 +6,15 @@ local format = {}
 -- The words a number already became, kept once it is known: a view asks for the same track's time
 -- and the same album's length on every frame it is built, and a string built again is a string
 -- the frame did not need. A duration and a count are few and repeat across the library.
+--
+-- A clock is keyed by the second it shows, not by the playhead: the player's position moves by a
+-- fraction of a second every frame, and a table keyed by that fraction is one permanent entry and
+-- one new string per frame for as long as the track plays. It is bounded as well: a session long
+-- enough to fill it starts the table over rather than holding every second it ever showed.
+local CLOCK_LIMIT = 512
 ---@type table<number, string>
 local clocks = {}
+local clockCount = 0
 ---@type table<number, string>
 local durations = {}
 ---@type table<string, table<number, string>>
@@ -18,10 +25,10 @@ local counts = {}
 function format.clock(seconds)
 	if seconds == nil or seconds <= 0 then return "--:--" end
 
-	local known = clocks[seconds]
+	local whole = math.floor(seconds + 0.5)
+	local known = clocks[whole]
 	if known ~= nil then return known end
 
-	local whole = math.floor(seconds + 0.5)
 	local minutes = math.floor(whole / 60)
 	local rest = whole % 60
 	local text
@@ -31,8 +38,19 @@ function format.clock(seconds)
 	else
 		text = string.format("%d:%02d", minutes, rest)
 	end
-	clocks[seconds] = text
+	if clockCount >= CLOCK_LIMIT then
+		clocks = {}
+		clockCount = 0
+	end
+	clocks[whole] = text
+	clockCount = clockCount + 1
 	return text
+end
+
+--- How many clocks the table holds, so a test can watch it stay inside its bound.
+---@return number
+function format.clockCacheSize()
+	return clockCount
 end
 
 ---@param seconds number

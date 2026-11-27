@@ -4,6 +4,7 @@
 -- and the process ending is what forgets it. The indexes exist so a screen can ask for an album
 -- by id without walking the list, not so a later launch can skip the walk.
 local path = require("path")
+local time = require("wonderland.time")
 local names = require("beat.music.names")
 local searchFold = require("beat.music.search_fold")
 local searchMatch = require("beat.music.search_match")
@@ -98,6 +99,7 @@ local searchMatch = require("beat.music.search_match")
 ---@field nextArtistId number
 ---@field version number
 ---@field ready boolean
+---@field finishing beat.LibraryFinish? # What is left of a closing sort that ran out of its slice
 local Library = {}
 Library.__index = Library
 
@@ -296,9 +298,22 @@ end
 ---@param entry { path: string, dir: string, name: string, ext: string, modifyTime: number?, key: string? }
 ---@param cover string?
 ---@param coverCache string?
+--- Drops a closing sort a change made stale: the album and artist orders it was building are
+--- copies made before the new track arrived, and filing it under them would drop it from the order
+--- altogether. The next slice starts a sort over the lists as they are now, which is cheaper than
+--- sorting the whole library inside the add.
+---@param self beat.Library
+local function abandonSort(self)
+	if self.finishing ~= nil then
+		self.finishing = nil
+		self.ready = false
+	end
+end
+
 ---@return beat.Track
 ---@return boolean gainedCover # Whether this was the album's first cached cover
 function Library:add(info, entry, cover, coverCache)
+	abandonSort(self)
 	local tags = info.tags or {}
 	local base = names.stripExtension(entry.name)
 	local title = hasText(tags.title) and tags.title or names.stripTrackPrefix(base)
@@ -381,6 +396,7 @@ end
 ---@return beat.Track
 ---@return boolean gainedCover # Whether this was the album's first cached cover
 function Library:addCached(record)
+	abandonSort(self)
 	local file = record.path
 	assert(type(file) == "string", "a cached track needs its path")
 	local title = textOf(record.title)
@@ -466,6 +482,7 @@ end
 ---@param folder string
 ---@return boolean removed # False when the folder held no track, so nothing changed
 function Library:removeUnder(folder)
+	abandonSort(self)
 	local fold = path.separator == "\\"
 	local base = path.normalize(folder)
 	if fold then base = base:lower() end
@@ -553,60 +570,126 @@ local function trackOrder(a, b)
 	return a.path < b.path
 end
 
---- Folded titles and artists, one entry per album, for a sort to compare instead of folding the
---- same two names on every comparison. A comparator is called some thousands of times for the
---- albums of a library, and folding inside it lowers both names each time.
----@param albums beat.Album[]
----@return table<beat.Album, string> titles
----@return table<beat.Album, string> artists
-local function foldedAlbums(albums)
-	local titles, artists = {}, {}
-	for _, album in ipairs(albums) do
-		titles[album] = names.fold(album.title)
-		artists[album] = names.fold(album.artist)
-	end
-	return titles, artists
+-- The names the closing sort is reading, folded once instead of inside every comparison. They are
+-- module state rather than upvalues of a comparator made per sort: a `finishStep` resumes on a
+-- later tick, and the comparator it left mid-sort has to find the same maps.
+local finishTitles, finishArtists, finishArtistNames = {}, {}, {}
+
+local function byFinishName(a, b)
+	local at, bt = finishTitles[a], finishTitles[b]
+	if at ~= bt then return at < bt end
+	return finishArtists[a] < finishArtists[b]
 end
 
---- Closes the scan: sorts what was found and fills in the values a screen reads for an album --
---- the first track that carries a picture, the first that names a folder picture. The album's
---- length and track count are summed where they are read instead of being kept up to date here.
-function Library:finish()
-	for _, album in ipairs(self.albums) do
-		table.sort(album.tracks, trackOrder)
-		local coverTrack, coverPath = album.coverTrack, album.coverPath
-		for _, track in ipairs(album.tracks) do
-			if coverTrack == nil and track.hasPicture then coverTrack = track end
-			if coverPath == nil then coverPath = track.coverPath end
+local function byFinishArtist(a, b)
+	return finishArtistNames[a] < finishArtistNames[b]
+end
+
+--- What a `finishStep` has left to do: the phase it stopped in, the index it stopped at, and what
+--- the phases after it read.
+---@class beat.LibraryFinish
+---@field phase string
+---@field at number
+---@field titles table<beat.Album, string>
+---@field artists table<beat.Album, string>
+---@field orderedAlbums beat.Album[]
+---@field orderedArtists beat.Artist[]
+---@field artistNames table<beat.Artist, string>
+
+--- Closes the scan a share of a frame at a time: sorts what was found and fills in the values a
+--- screen reads for an album -- the first track that carries a picture, the first that names a
+--- folder picture. The album's length and track count are summed where they are read instead of
+--- being kept up to date here. The budget is an absolute time (as `wonderland.time.now` reads);
+--- `math.huge` finishes the whole thing, which is what `finish` does for a caller that needs the
+--- library sorted now.
+---
+--- The per-album pass is the expensive one -- a library of a few thousand tracks is a few hundred
+--- small sorts, each folding two titles per comparison -- so every album is its own step. The
+--- folded names and per-artist lists are built the same way, and the two `table.sort` calls that
+--- order albums and artists are a few hundred entries each: they run in the slice that reaches them.
+---@param deadline number
+---@return boolean done # False when the budget ran out and another call should continue
+function Library:finishStep(deadline)
+	local state = self.finishing
+	if state == nil then
+		state = {
+			phase = "tracks",
+			at = 1,
+			titles = {},
+			artists = {},
+			orderedAlbums = {},
+			orderedArtists = {},
+			artistNames = {}
+		}
+		self.finishing = state --[[@as beat.LibraryFinish]]
+	end
+	---@cast state beat.LibraryFinish
+
+	if state.phase == "tracks" then
+		local albums = self.albums
+		for at = state.at, #albums do
+			local album = albums[at]
+			table.sort(album.tracks, trackOrder)
+			local coverTrack, coverPath = album.coverTrack, album.coverPath
+			for _, track in ipairs(album.tracks) do
+				if coverTrack == nil and track.hasPicture then coverTrack = track end
+				if coverPath == nil then coverPath = track.coverPath end
+			end
+			album.coverTrack = coverTrack
+			album.coverPath = coverPath
+			if time.now() >= deadline then
+				state.at = at + 1
+				return false
+			end
 		end
-		album.coverTrack = coverTrack
-		album.coverPath = coverPath
+		state.phase = "albumNames"
+		state.at = 1
 	end
 
-	local titles, artists = foldedAlbums(self.albums)
-	local function byName(a, b)
-		local at, bt = titles[a], titles[b]
-		if at ~= bt then return at < bt end
-		return artists[a] < artists[b]
+	if state.phase == "albumNames" then
+		local albums, titles, artists = self.albums, state.titles, state.artists
+		for at = state.at, #albums do
+			local album = albums[at]
+			titles[album] = names.fold(album.title)
+			artists[album] = names.fold(album.artist)
+			if time.now() >= deadline then
+				state.at = at + 1
+				return false
+			end
+		end
+		finishTitles, finishArtists = titles, artists
+		local ordered = state.orderedAlbums
+		for _, album in ipairs(albums) do ordered[#ordered + 1] = album end
+		table.sort(ordered, byFinishName)
+		self.albums = ordered
+		state.phase = "artists"
+		state.at = 1
 	end
-	local orderedAlbums = {}
-	for _, album in ipairs(self.albums) do orderedAlbums[#orderedAlbums + 1] = album end
-	table.sort(orderedAlbums, byName)
-	self.albums = orderedAlbums
 
-	local orderedArtists = {}
-	for _, artist in ipairs(self.artists) do
-		local albums = {}
-		for _, album in pairs(artist.albums) do albums[#albums + 1] = album end
-		table.sort(albums, byName)
-		artist.albums = albums
-		table.sort(artist.tracks, trackOrder)
-		orderedArtists[#orderedArtists + 1] = artist
+	if state.phase == "artists" then
+		finishTitles, finishArtists = state.titles, state.artists
+		local artists = self.artists
+		local orderedArtists, artistNames = state.orderedArtists, state.artistNames
+		for at = state.at, #artists do
+			local artist = artists[at]
+			local albums = {}
+			for _, album in pairs(artist.albums) do albums[#albums + 1] = album end
+			table.sort(albums, byFinishName)
+			artist.albums = albums
+			table.sort(artist.tracks, trackOrder)
+			orderedArtists[#orderedArtists + 1] = artist
+			artistNames[artist] = names.fold(artist.name)
+			if time.now() >= deadline then
+				state.at = at + 1
+				return false
+			end
+		end
+		state.phase = "artistOrder"
 	end
-	local namesFolded = {}
-	for _, artist in ipairs(orderedArtists) do namesFolded[artist] = names.fold(artist.name) end
-	table.sort(orderedArtists, |a, b| -> namesFolded[a] < namesFolded[b])
-	self.artists = orderedArtists
+
+	finishArtistNames = state.artistNames
+	table.sort(state.orderedArtists, byFinishArtist)
+	self.artists = state.orderedArtists
 
 	self.ready = true
 	self.sweep = nil
@@ -616,6 +699,14 @@ function Library:finish()
 	-- album that showed it, and the table itself is tens of kilobytes of hash. A later folder add
 	-- fills it again, from the folder it adds, which is the only strings it has to dedupe.
 	self.strings = {}
+	self.finishing = nil
+	return true
+end
+
+--- Closes the scan now, for a caller that needs the sorted library before it continues: a test, a
+--- cache read on this thread, a service being closed.
+function Library:finish()
+	self:finishStep(math.huge)
 end
 
 ---@param id number

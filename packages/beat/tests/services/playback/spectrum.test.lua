@@ -68,3 +68,47 @@ test.it("puts a pure tone in the band whose bins contain it", function()
 	test.equal(bestAt, expected)
 	test.truthy(best > 0.9)
 end)
+
+test.it("holds the last bands until a whole fresh window arrives after showing again", function()
+	local N = 1024
+	local samples = ffi.new("int16_t[?]", N)
+	for at = 0, N - 1 do
+		samples[at] = math.floor(math.sin(2 * math.pi * 32 * at / N) * 20000)
+	end
+
+	local spectrum = Spectrum.new()
+	spectrum:feed(samples, N, 1)
+	test.truthy(spectrum:step(1))
+
+	local held = {}
+	local brightest = 0
+	for band, value in ipairs(spectrum:values()) do
+		held[band] = value
+		if value > brightest then brightest = value end
+	end
+	test.truthy(brightest > 0, "something is shown before the window goes away")
+
+	-- The window was hidden and the tap stopped; feeding resumes at frame N and the app is told
+	-- where the new timeline starts. Half a window is not yet a whole window of fresh audio.
+	spectrum:resume(2)
+	test.falsy(spectrum:step(2.001, N), "the frozen timeline is not analysed before the feed moves")
+
+	local half = ffi.new("int16_t[?]", N / 2)
+	for at = 0, N / 2 - 1 do half[at] = samples[at] end
+	spectrum:feed(half, N / 2, 1, N)
+	spectrum:sync(N + N / 2, N)
+
+	local changed = spectrum:step(2.01, N + N / 2)
+	test.falsy(changed, "a partial window is not analysed")
+	for band, value in ipairs(spectrum:values()) do
+		test.equal(value, held[band], "and the last bands are held")
+	end
+
+	-- The rest of the window: now the newest whole window is all fresh audio.
+	local rest = ffi.new("int16_t[?]", N / 2)
+	for at = 0, N / 2 - 1 do rest[at] = samples[N / 2 + at] end
+	spectrum:feed(rest, N / 2, 1, N + N / 2)
+
+	local moved = spectrum:step(2.02, N + N)
+	test.truthy(moved, "the first whole fresh window moves the meter")
+end)

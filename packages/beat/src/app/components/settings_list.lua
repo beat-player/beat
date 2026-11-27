@@ -4,6 +4,7 @@
 -- side, the control goes under the words instead. The controls a row usually holds are here too:
 -- a segmented choice, an on/off switch and a small badge.
 local wonderland = require("wonderland")
+local ui = require("beat-ui")
 local measure = require("beat.app.components.helpers.measure")
 local styles = require("beat.app.components.helpers.styles")
 
@@ -32,6 +33,8 @@ local settingsList = {}
 ---@field description wonderland.StyleBuilder?
 ---@field words wonderland.StyleBuilder
 ---@field element wonderland.StyleBuilder
+---@field content wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder?
 ---@field hover wonderland.StyleBuilder?
 
 ---@class beat.components.SettingsListStyles
@@ -112,7 +115,7 @@ function settingsList.group(app, props)
 	end
 	local separator = kept.separator
 	if separator == nil then
-		separator = sty():w(width - theme:px(32)):h(1):bg(theme:color("border"))
+		separator = sty():wrel(1.0):h(1):margin(0, theme:px(16), 0, theme:px(16)):bg(theme:color("border"))
 		kept.separator = separator
 	end
 	separator = assert(separator)
@@ -122,8 +125,11 @@ function settingsList.group(app, props)
 	local group = groups[0]
 	if group == nil or group.boxHeight ~= boxHeight then
 		group = { boxHeight = boxHeight }
+		-- The inset is the rows' own horizontal padding rather than the card's: a row that can be
+		-- hovered or pressed is then as wide as the card's inside and its highlight covers the
+		-- padding too, instead of stopping at the text.
 		group.box = sty()
-			:column():w(width):h(boxHeight):pad(0, theme:px(16), 0, theme:px(16)):radius(theme:radius("md"))
+			:column():w(width):h(boxHeight):radius(theme:radius("md"))
 			:bg(theme:color("surface")):border(theme:px(1), theme:color("border"))
 		groups[0] = group
 	end
@@ -170,7 +176,9 @@ end
 ---@return beat.components.SettingsItem
 local function buildRow(app, props, item)
 	local theme = app.services.appearance.theme
-	local inner = props.width - theme:px(32)
+	-- The room a row has for its words and control: the card's inside, less the horizontal
+	-- padding the row itself carries, so a highlight on the row can cover that padding too.
+	local inner = props.width - theme:px(34)
 	local labelSize = theme:type("base")
 	local descriptionSize = theme:type("sm")
 	local labelHeight = math.floor(labelSize * 1.35)
@@ -194,6 +202,7 @@ local function buildRow(app, props, item)
 	end
 	local shape = (props.control ~= nil and 1 or 0) + (props.description ~= nil and 2 or 0) + (stacked and 4 or 0)
 	if props.dim then shape += 8 end
+	if props.onClick ~= nil then shape += 16 end
 	local byControl = rowsCache[shape]
 	if byControl == nil then
 		byControl = {}
@@ -219,11 +228,22 @@ local function buildRow(app, props, item)
 					and (theme:s():w(textWidth):h(descriptionHeight):text(descriptionSize):fg(descriptionColour):ellipsis())
 				or nil,
 			words = sty():column():w(textWidth):h(textHeight):gap(theme:px(2)),
+			-- A row without a click owns its inset, and sits across the card on its own.
 			element = stacked
+					and (sty():column():wrel(1.0):h(height):pad(padY, theme:px(16), padY, theme:px(16)):gap(theme:px(10)))
+				or (sty():row():wrel(1.0):h(height):pad(0, theme:px(16), 0, theme:px(16)):gap(gap):align("center"):justify("space-between")),
+			-- A row that can be clicked puts the same inset inside a box as wide as the card's
+			-- inside, so hovering or pressing lights the padding as well as the words. Its radius
+			-- is the card's: a row's highlight runs into the rounded corners it meets.
+			content = stacked
 					and (sty():column():w(inner):h(height):pad(padY, 0, padY, 0):gap(theme:px(10)))
 				or (sty():row():w(inner):h(height):gap(gap):align("center"):justify("space-between")),
+			row = props.onClick ~= nil
+					and (sty():wrel(1.0):h(height):pad(0, theme:px(16), 0, theme:px(16)):radius(theme:radius("md")))
+				or nil,
 			hover = props.onClick ~= nil
-					and (sty():w(inner):h(height):radius(theme:radius("sm")):bg(theme:color("hover", 0.5)))
+					and (sty():wrel(1.0):h(height):pad(0, theme:px(16), 0, theme:px(16)):radius(theme:radius("md"))
+						:bg(theme:color("hover", 0.5)))
 				or nil
 		}
 		byHeight[controlHeight] = s
@@ -263,24 +283,18 @@ local function buildRow(app, props, item)
 
 	local element
 	local control = props.control
-	if stacked and control ~= nil then
-		element = div():style(s.element):children(words, control)
-	else
-		element = div():style(s.element):children(words)
-		if control ~= nil then element:children(control) end
-	end
-
 	if props.onClick ~= nil then
-		local boxes = styles.of(theme, "settingsRowBox", props.width) --[[@as table<number, { box: wonderland.StyleBuilder, hover: wonderland.StyleBuilder }>]]
-		local box = boxes[s.height]
-		if box == nil then
-			box = {
-				box = sty():w(inner):h(s.height):radius(theme:radius("sm")),
-				hover = sty():w(inner):h(s.height):radius(theme:radius("sm")):bg(theme:color("hover", 0.5))
-			}
-			boxes[s.height] = box
-		end
-		element = div():style(box.box):hover(box.hover):onClick(props.onClick):children(element)
+		local content = div():style(s.content):children(words)
+		if control ~= nil then content:children(control) end
+		element = ui.ripple(
+			div():style(assert(s.row)):hover(assert(s.hover)):onClick(props.onClick):children(content),
+			nil,
+			theme:color("text")
+		)
+	else
+		local plain = div():style(s.element):children(words)
+		if control ~= nil then plain:children(control) end
+		element = plain
 	end
 	item = item or {}
 	item.element, item.height = element, s.height

@@ -78,7 +78,7 @@ function sortMenu.view(app, overlay, window)
 			sty()
 				:fill():offset(0, 0):z(70):column():align("end")
 				:pad(((theme:px(window.width < 560 ? 156 : 138))), metrics.pad(app), 0, 0)
-		):onClick({ type = "dismiss" }):children({ panel })
+		):children({ panel })
 end
 
 return sortMenu

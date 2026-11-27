@@ -219,3 +219,72 @@ test.it("offers a nightly only when its commit comes after the installed one", f
 	unknown:checked({ status = 200, body = body }, true)
 	test.equal(unknown.status, "upToDate", "a commit GitHub has not seen is left alone")
 end)
+
+--- A service in the middle of a download, with only what its step reads.
+---@param open boolean # Whether the dialog is on screen
+---@param total number? # The file's length, when the server gave one
+local function downloading(open, total)
+	return setmetatable(
+		{
+			status = "downloading",
+			progressTotal = total,
+			checkedAutomatically = true,
+			createdAt = 0,
+			dirty = false,
+			app = {
+				overlay = function(_, name) return open and { name = name } or nil end
+			}
+		},
+		{ __index = update }
+	)
+end
+
+test.it("ticks the indeterminate bar at the frame rate and the determinate one four times a second", function()
+	local _, unknown = downloading(true, nil):step(100)
+	test.equal(unknown, 1 / 30, "a sliding band needs every frame")
+
+	local _, known = downloading(true, 30 * 1024 * 1024):step(100)
+	test.equal(known, 0.25, "a fill only moves when bytes arrive")
+
+	local _, closed = downloading(false, nil):step(100)
+	test.equal(closed, 0.25, "with no dialog there is nothing to slide")
+
+	local _, appless = setmetatable(
+		{ status = "downloading", checkedAutomatically = true, createdAt = 0, dirty = false },
+		{ __index = update }
+	):step(100)
+	test.equal(appless, 0.25, "a service without an app still ticks the download")
+end)
+
+test.it("keeps the bytes the transfer reports beside its fraction", function()
+	local key = "beat.app.services.update.install"
+	local saved = package.loaded[key]
+	local service = setmetatable(
+		{
+			app = {},
+			offer = { url = "https://example.test/beat.zip", assetName = "beat.zip" },
+			status = "available",
+			dirty = false,
+			toasts = { show = function() end }
+		},
+		{ __index = update }
+	)
+	package.loaded[key] = {
+		selfPath = function() return "/opt/beat/beat" end,
+		---@param _app beat.App
+		---@param _asset table
+		---@param callbacks { onProgress: fun(fraction: number?, received: number?, total: number?) }
+		apply = function(_app, _asset, callbacks)
+			callbacks.onProgress(0.42, 12.6 * 1024 * 1024, 30 * 1024 * 1024)
+		end
+	}
+
+	local ok, err = pcall(service.apply, service)
+	package.loaded[key] = saved
+
+	test.truthy(ok, tostring(err))
+	test.equal(service.status, "downloading")
+	test.equal(service.progress, 0.42)
+	test.equal(service.progressReceived, 12.6 * 1024 * 1024)
+	test.equal(service.progressTotal, 30 * 1024 * 1024)
+end)

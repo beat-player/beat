@@ -100,6 +100,7 @@ end
 ---@field playIcon string
 ---@field loading boolean? # Whether the collection's hero play is waiting for a track to be heard
 ---@field shuffleAction any
+---@field shuffleMenu any? # The shuffle-mode menu a right-click or long press on the button opens
 ---@field addAction any? # The extra control, when the collection can grow by hand
 ---@field rating number? # The collection's own stars, 0 to 5, drawn beside the buttons
 ---@field onRate (fun(stars: number): any)? # The message for setting them; without it there are no header stars
@@ -270,9 +271,11 @@ function collection.view(app, props)
 	local playMark = props.loading
 			and spinner.view(app, theme:px(24), theme.accentInk)
 		or ui.icon(ctx, { name = props.playIcon, size = theme:px(24), colour = theme.accentInk })
+	local shuffle = ui.iconButton(ctx, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
+	if props.shuffleMenu ~= nil then shuffle:onContextMenu(props.shuffleMenu) end
 	local actions = {
 		div():style(style.play):onClick(props.playAction):children(playMark),
-		ui.iconButton(ctx, { name = "shuffle", size = theme:px(30), onClick = props.shuffleAction })
+		shuffle
 	}
 	if props.addAction ~= nil then
 		actions[#actions + 1] = ui.iconButton(ctx, { name = "add", size = theme:px(30), onClick = props.addAction })

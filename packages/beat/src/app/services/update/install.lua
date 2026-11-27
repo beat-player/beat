@@ -228,7 +228,7 @@ end
 --- a failed update leaves the old executable where it was.
 ---@param app beat.App
 ---@param asset { url: string, name: string? }
----@param callbacks { onProgress: (fun(fraction: number|nil))?, onDone: fun(ok: boolean, err: string?) }
+---@param callbacks { onProgress: (fun(fraction: number|nil, received: number|nil, total: number|nil))?, onDone: fun(ok: boolean, err: string?) }
 function install.apply(app, asset, callbacks)
 	callbacks = callbacks or {}
 
@@ -270,7 +270,7 @@ function install.apply(app, asset, callbacks)
 			if type(received) == "number" and type(total) == "number" and total > 0 then
 				fraction = math.max(0, math.min(1, received / total))
 			end
-			pcall(callbacks.onProgress, fraction)
+			pcall(callbacks.onProgress, fraction, received, total)
 		end,
 		onDone = function(downloaded, downloadErr)
 			if not downloaded then

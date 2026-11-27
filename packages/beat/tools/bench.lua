@@ -44,7 +44,7 @@ local source = os.getenv("BEAT_BENCH_CONFIG") or paths.directory()
 local config = os.tmpname() .. "-beat-bench"
 os.remove(config)
 fs.mkdirAll(config)
-for _, name in ipairs({ "library.json", "settings.json", "tags.json", "session.json" }) do
+for _, name in ipairs({ "library.json", "settings.json", "tags.json", "session.json", "plugin_files.json" }) do
 	local bytes = fs.read(path.join(source, name))
 	if bytes ~= nil then fs.write(path.join(config, name), bytes) end
 end
@@ -164,6 +164,83 @@ local firstAt = now()
 draw()
 local firstFrame = (now() - firstAt) * 1000
 
+-- The launch's cache is read after this frame, as it is in a window that draws before its first
+-- tick; a page shows its empty-scanning state until it is in. The ticker is driven here the way
+-- the window loop drives it -- a tick, then the frame it asks for -- so the load is measured per
+-- tick rather than as one synchronous call: what the launcher reports as jank is the tick plus
+-- its frame, and the split below says how much of a tick was the library getting through its
+-- share (the records it was reading, then the sort that closes them) and how much was the frame
+-- it asked for. The library the scenarios read is the one that load made.
+local libraryService = App.services.library
+local libraryLoad, loadTicks = 0, 0
+local loadTickMean, loadTickMax = 0, 0
+local loadIngestMean, loadIngestMax = 0, 0
+local loadFrameMean, loadFrameMax = 0, 0
+if libraryService:isLoading() then
+	local loadAt = now()
+	local sleep = require("threading").sleep
+	local step = libraryService.step
+	local ingest = 0
+	libraryService.step = function(self, at)
+		local began = now()
+		local changed, busy, repaint = step(self, at)
+		ingest = ingest + (now() - began) * 1000
+		return changed, busy, repaint
+	end
+	-- The load is not over when the last record is in: the sort that closes it runs a share of a
+	-- tick at a time afterwards, so the loop follows that too rather than reporting the ingest
+	-- alone. Those ticks draw nothing until the last slice, which is the one rebuild a page sees
+	-- the final order in.
+	while libraryService:isLoading() or libraryService.finishing do
+		ingest = 0
+		local tickBegan = now()
+		App:tick(now(), App.window)
+		local tickMs = (now() - tickBegan) * 1000
+		local frameBegan = now()
+		if App.window.shouldRedraw then
+			App.window.shouldRedraw = false
+			ui:frame(App.window)
+		end
+		local frameMs = (now() - frameBegan) * 1000
+		-- The ticker sleeps until the next frame, and the load's cost per tick depends on that:
+		-- a loop that ticks as fast as it can would take a batch every tick and measure a load a
+		-- quarter longer than the one a launch runs. Sleeping keeps the measurement the launcher's.
+		local spare = tickBegan + 1 / 60 - now()
+		if spare > 0 then sleep(spare * 1000) end
+		loadTicks = loadTicks + 1
+		loadTickMean = loadTickMean + (tickMs - loadTickMean) / loadTicks
+		loadTickMax = math.max(loadTickMax, tickMs)
+		loadIngestMean = loadIngestMean + (ingest - loadIngestMean) / loadTicks
+		loadIngestMax = math.max(loadIngestMax, ingest)
+		loadFrameMean = loadFrameMean + (frameMs - loadFrameMean) / loadTicks
+		loadFrameMax = math.max(loadFrameMax, frameMs)
+	end
+	libraryService.step = step
+	libraryLoad = (now() - loadAt) * 1000
+	App:refresh()
+end
+local heapAfterLoad = heapKiB()
+snapshot("library")
+
+print(string.format("require beat.app  %8.1f ms", (requiredAt - startedAt) * 1000))
+print(string.format("App:init          %8.1f ms", (initAt - requiredAt) * 1000))
+print(string.format("screen (gpu+font)%8.1f ms", screenMs))
+print(string.format("first frame       %8.1f ms", firstFrame))
+print(string.format(
+	"library load      %8.1f ms  %d ticks  mean %5.2f ms  worst %5.2f ms",
+	libraryLoad,
+	loadTicks,
+	loadTickMean,
+	loadTickMax
+))
+print(string.format(
+	"  of a tick       ingest mean %5.2f ms  worst %5.2f ms   frame mean %5.2f ms  worst %5.2f ms",
+	loadIngestMean,
+	loadIngestMax,
+	loadFrameMean,
+	loadFrameMax
+))
+
 -- Lets the cover service decode what the page asked for, as the ticker would between frames.
 local function settleCovers()
 	for _ = 1, 200 do
@@ -173,8 +250,7 @@ local function settleCovers()
 	draw()
 end
 
-local library = App.services.library.current
-assert(library ~= nil, "the bench needs a library cache in " .. source)
+local library = assert(libraryService.current, "the bench needs a library cache in " .. source)
 
 -- A stand-in for the audio player: a playhead that moves with the frame, and whatever the scenario
 -- writes into the spectrum's levels. Both the full suite and a focused `playing` run drive one.
@@ -447,12 +523,9 @@ end
 
 local totalMs = (now() - startedAt) * 1000
 
-print(string.format("require beat.app  %8.1f ms", (requiredAt - startedAt) * 1000))
-print(string.format("App:init          %8.1f ms", (initAt - requiredAt) * 1000))
-print(string.format("screen (gpu+font)%8.1f ms", screenMs))
-print(string.format("first frame       %8.1f ms", firstFrame))
 print(string.format("heap at start     %8.0f KiB", baseline))
 print(string.format("heap after init   %8.0f KiB", heapAfterInit))
+print(string.format("heap after load   %8.0f KiB", heapAfterLoad))
 print(string.format("library           %d tracks, %d albums", #library.tracks, #library.albums))
 print()
 print(string.format("%-28s %6s %10s %10s %10s", "scenario", "frames", "ms/frame", "view ms", "heap KiB"))

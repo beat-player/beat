@@ -29,3 +29,22 @@ test.it("prunes covers the completed scan did not use", function()
 	fs.delete(usedFile)
 	fs.rmdir(dir)
 end)
+
+test.it("prunes covers the completed scan did not use on a worker", function()
+	local root = os.tmpname() .. "-beat-covers-async"
+	local usedFile = artworkCache.file(root, "/music/a.jpg", 1, 512)
+	local unusedFile = artworkCache.file(root, "/music/b.jpg", 1, 512)
+	local dir = artworkCache.directory(root)
+	fs.mkdirAll(dir)
+
+	test.truthy(fs.write(usedFile, "used"))
+	test.truthy(fs.write(unusedFile, "unused"))
+
+	local handle = assert(artworkCache.pruneAsync(root, { [usedFile] = true }))
+	test.equal(handle:join(), 1, "the worker reports what it removed")
+	test.truthy(fs.isfile(usedFile))
+	test.falsy(fs.isfile(unusedFile))
+
+	fs.delete(usedFile)
+	fs.rmdir(dir)
+end)

@@ -44,6 +44,8 @@
 ---@field type "confirmLeave"
 ---@class beat.CancelLeaveMessage: beat.MessageFields
 ---@field type "cancelLeave"
+---@class beat.LeaveMessage: beat.MessageFields
+---@field type "leave"
 ---@class beat.ResetMessage: beat.MessageFields
 ---@field type "reset"
 ---@field page beat.Route
@@ -56,6 +58,7 @@
 ---@field id number
 ---@field restart boolean?
 ---@field shuffle boolean?
+---@field shuffleMode beat.ShuffleMode? # The grouped shuffle the album's shuffle menu chose
 ---@class beat.PlayTrackMessage: beat.MessageFields
 ---@field type "playTrack"
 ---@field trackId number
@@ -70,6 +73,7 @@
 ---@field type "playPlaylist"
 ---@field id number
 ---@field shuffle boolean?
+---@field shuffleMode beat.ShuffleMode? # The shuffle the playlist's menu chose
 ---@class beat.PlayPlaylistTrackMessage: beat.MessageFields
 ---@field type "playPlaylistTrack"
 ---@field playlistId number
@@ -84,9 +88,24 @@
 ---@class beat.PlaylistAddAlbumMessage: beat.MessageFields
 ---@field type "playlistAddAlbum"
 ---@field id number
+---@class beat.PlaylistAddTrackMessage: beat.MessageFields
+---@field type "playlistAddTrack"
+---@field id number
+---@class beat.PlaylistRemoveAlbumMessage: beat.MessageFields
+---@field type "playlistRemoveAlbum"
+---@field id number
 ---@class beat.AddToPlaylistMessage: beat.MessageFields
 ---@field type "addToPlaylist"
 ---@field playlistId number
+---@class beat.PlaylistRemoveMessage: beat.MessageFields
+---@field type "playlistRemove"
+---@field playlist number # The manual playlist the row was shown in
+---@field index number # The row the listener pointed at, 1-based as the page lists it
+---@class beat.PlaylistRestoreMessage: beat.MessageFields
+---@field type "playlistRestore"
+---@field playlist number
+---@field id number # The track to put back
+---@field index number? # The row it left, for the undo that names it
 ---@class beat.TogglePlayMessage: beat.MessageFields
 ---@field type "togglePlay"
 ---@class beat.PlayMessage: beat.MessageFields
@@ -110,6 +129,19 @@
 ---@field type "mute"
 ---@class beat.ShuffleMessage: beat.MessageFields
 ---@field type "shuffle"
+---@class beat.ShuffleModeMessage: beat.MessageFields
+---@field type "shuffleMode"
+---@field mode beat.ShuffleMode
+---@class beat.SkipGroupMessage: beat.MessageFields
+---@field type "skipGroup"
+---@field by "album"|"artist" # The group the skip leaves behind
+---@class beat.QueueRemoveMessage: beat.MessageFields
+---@field type "queueRemove"
+---@field index number # 1-based among the upcoming tracks, the overlay's rows; 0 is the current track
+---@class beat.QueueMoveMessage: beat.MessageFields
+---@field type "queueMove"
+---@field from number # 1-based among the upcoming tracks
+---@field to number
 ---@class beat.RepeatMessage: beat.MessageFields
 ---@field type "repeat"
 ---@class beat.TrackStartedMessage: beat.MessageFields
@@ -143,8 +175,8 @@
 ---@field value "all"|"any"
 ---@class beat.ClearTagFilterMessage: beat.MessageFields
 ---@field type "clearTagFilter"
----@class beat.ToggleTrackTagMessage: beat.MessageFields
----@field type "toggleTrackTag"
+---@class beat.ToggleItemTagMessage: beat.MessageFields
+---@field type "toggleItemTag"
 ---@field id number
 ---@class beat.HoverTagMessage: beat.MessageFields
 ---@field type "hoverTag"
@@ -255,6 +287,16 @@
 ---@field overlay "playlist_picker"
 ---@field kind "album"|"track"
 ---@field id number
+---@class beat.OpenTagPickerMessage: beat.MessageFields
+---@field type "open"
+---@field overlay "tag_picker"
+---@field kind "album"|"track"
+---@field id number
+---@class beat.OpenTagDialogMessage: beat.MessageFields
+---@field type "open"
+---@field overlay "tag_dialog"
+---@field kind "album"|"track"?
+---@field id number?
 ---@class beat.OpenCoverMessage: beat.MessageFields
 ---@field type "open"
 ---@field overlay "cover_view"
@@ -295,9 +337,12 @@
 ---@class beat.PlaylistDraftMatchMessage: beat.MessageFields
 ---@field type "playlistDraftMatch"
 ---@field value "all"|"any"
----@class beat.PlaylistAdderQueryMessage: beat.MessageFields
----@field type "playlistAdderQuery"
----@field value string
+---@class beat.PlaylistAdderModeMessage: beat.MessageFields
+---@field type "playlistAdderMode"
+---@field value "albums"|"tracks"
+---@class beat.PlaylistAdderRemoveTrackMessage: beat.MessageFields
+---@field type "playlistAdderRemoveTrack"
+---@field id number
 ---@class beat.EqualizerPresetMessage: beat.MessageFields
 ---@field type "equalizerPreset"
 ---@field id string
@@ -452,6 +497,7 @@
 --- | beat.SystemBackMessage
 --- | beat.ConfirmLeaveMessage
 --- | beat.CancelLeaveMessage
+--- | beat.LeaveMessage
 --- | beat.ResetMessage
 --- | beat.FocusMessage
 --- | beat.PlayAlbumMessage
@@ -462,7 +508,11 @@
 --- | beat.JumpTrackMessage
 --- | beat.QueueAlbumMessage
 --- | beat.PlaylistAddAlbumMessage
+--- | beat.PlaylistAddTrackMessage
+--- | beat.PlaylistRemoveAlbumMessage
 --- | beat.AddToPlaylistMessage
+--- | beat.PlaylistRemoveMessage
+--- | beat.PlaylistRestoreMessage
 --- | beat.TogglePlayMessage
 --- | beat.PlayMessage
 --- | beat.PauseMessage
@@ -473,6 +523,10 @@
 --- | beat.VolumeMessage
 --- | beat.MuteMessage
 --- | beat.ShuffleMessage
+--- | beat.ShuffleModeMessage
+--- | beat.SkipGroupMessage
+--- | beat.QueueRemoveMessage
+--- | beat.QueueMoveMessage
 --- | beat.RepeatMessage
 --- | beat.TrackStartedMessage
 --- | beat.TrackEndedMessage
@@ -486,7 +540,7 @@
 --- | beat.ToggleTagFilterMessage
 --- | beat.TagFilterMatchMessage
 --- | beat.ClearTagFilterMessage
---- | beat.ToggleTrackTagMessage
+--- | beat.ToggleItemTagMessage
 --- | beat.HoverTagMessage
 --- | beat.HoverPlaylistMessage
 --- | beat.ScrollMessage
@@ -523,6 +577,8 @@
 --- | beat.CancelFoldersMessage
 --- | beat.OpenMenuMessage
 --- | beat.OpenPlaylistPickerMessage
+--- | beat.OpenTagPickerMessage
+--- | beat.OpenTagDialogMessage
 --- | beat.OpenCoverMessage
 --- | beat.CreatePlaylistMessage
 --- | beat.CreateTagMessage
@@ -538,7 +594,8 @@
 --- | beat.PlaylistDraftMessage
 --- | beat.PlaylistDraftTagMessage
 --- | beat.PlaylistDraftMatchMessage
---- | beat.PlaylistAdderQueryMessage
+--- | beat.PlaylistAdderModeMessage
+--- | beat.PlaylistAdderRemoveTrackMessage
 --- | beat.EqualizerPresetMessage
 --- | beat.NewEqualizerPresetMessage
 --- | beat.EditEqualizerPresetMessage

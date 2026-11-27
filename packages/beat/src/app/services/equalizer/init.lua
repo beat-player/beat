@@ -26,6 +26,7 @@ local Picker = require("beat.app.services.scan.picker")
 ---@field pick beat.FolderPick? # The profile file dialog, while it is open
 ---@field bandTable treble.Equalizer.Band[]? # What the player was last given, preamp included
 ---@field curveValues number[]? # The response the panel draws, made with the bands
+---@field presetsCache beat.EqualizerService.PresetsCache? # The panel's list, kept until a saved preset changes
 local Equalizer = {}
 Equalizer.__index = Equalizer
 Equalizer.needs = { "settings", "playback", "toasts", "emit", "window" }
@@ -36,6 +37,10 @@ local CUSTOM_LIMIT = 8
 
 -- What a loaded file is allowed to hand the panel: the same cap the settings model used to apply.
 local LOAD_LIMIT = 32
+
+-- How often a dialog that is still open is asked for its answer. It is a file check, not a frame
+-- of work, and the native chooser is on a thread of its own.
+local PICK_INTERVAL = 0.25
 
 ---@param deps {
 --- settings: beat.SettingsService,
@@ -64,7 +69,8 @@ function Equalizer.new(deps)
 		window = deps.window,
 		pick = nil,
 		bandTable = nil,
-		curveValues = nil
+		curveValues = nil,
+		presetsCache = nil
 	}, Equalizer)
 
 	self:load()
@@ -132,14 +138,57 @@ end
 -- what the panel draws
 -- ────────────────────────────────────────────────────────────────
 
+-- Settings has no revision of its own, so the cached list keeps the settings records it was made
+-- from: the table, its length and each record's identity say whether a preset was added or removed,
+-- and a name or a gain edited in place is copied onto the wrapper before it is handed back. The
+-- panel reads this list on every frame, so the check costs comparisons and the rebuild only a
+-- changed list.
+local NO_CUSTOMS = {}
+
+---@class beat.EqualizerService.PresetsCache
+---@field customs table[]
+---@field count number
+---@field entries beat.EqualizerPreset[] # The saved presets' wrappers, by that order
+---@field list beat.EqualizerPreset[]
+
 --- The built-in shapes and the ones this person has saved, in the order the panel draws them.
 ---@return beat.EqualizerPreset[]
 function Equalizer:presets()
-	local list = {}
-	for _, preset in ipairs(bands.presets) do list[#list + 1] = preset end
-	for _, preset in ipairs(self.settings.values.equalizerCustomPresets or {}) do
-		list[#list + 1] = { id = preset.name, name = preset.name, gains = preset.gains, custom = true }
+	local customs = self.settings.values.equalizerCustomPresets
+	if type(customs) ~= "table" then customs = NO_CUSTOMS end
+	local count = #customs
+
+	local kept = self.presetsCache
+	if kept ~= nil and kept.customs == customs and kept.count == count then
+		local entries = kept.entries
+		local fresh = true
+		for at = 1, count do
+			local source = customs[at]
+			local entry = entries[at]
+			if entry.source ~= source then
+				fresh = false
+				break
+			end
+			-- A rename or an edit changes the record in place: the wrapper points at what it now
+			-- holds rather than making the panel rebuild its list.
+			entry.id = source.name
+			entry.name = source.name
+			entry.gains = source.gains
+		end
+		if fresh then return kept.list end
 	end
+
+	local list = {}
+	local builtins = bands.presets
+	for at = 1, #builtins do list[#list + 1] = builtins[at] end
+	local entries = {}
+	for at = 1, count do
+		local preset = customs[at]
+		local entry = { id = preset.name, name = preset.name, gains = preset.gains, custom = true, source = preset }
+		list[#list + 1] = entry
+		entries[#entries + 1] = entry
+	end
+	self.presetsCache = { customs = customs, count = count, entries = entries, list = list }
 	return list
 end
 
@@ -257,8 +306,9 @@ function Equalizer:importText(text)
 	self:store(profile)
 end
 
---- Opens the system file dialog. The answer is read in `step`, like the folder picker's: the call
---- is modal, so there is no frame between the dialog opening and its answer.
+--- Opens the system file dialog. The answer is read in `step`, like the folder picker's: on
+--- Linux the chooser runs on a worker thread, and on the other platforms the modal call has
+--- already returned by the time this function does.
 function Equalizer:pickProfile()
 	if self.pick ~= nil then return end
 	self.pick = Picker.startFile(self.window(), {
@@ -279,6 +329,7 @@ end
 --- not have reports through the status `poll` gives, the same way a folder pick does.
 ---@param _now number
 ---@return boolean? changed
+---@return number? busy
 function Equalizer:step(_now)
 	if self.pick == nil then return nil end
 	local chosen, status = Picker.poll(self.pick)
@@ -293,7 +344,8 @@ function Equalizer:step(_now)
 		end
 		return true
 	end
-	return nil
+	-- Still open: a file check four times a second, not a frame of work.
+	return nil, PICK_INTERVAL
 end
 
 -- ────────────────────────────────────────────────────────────────

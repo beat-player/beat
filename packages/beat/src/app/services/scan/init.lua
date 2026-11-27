@@ -10,18 +10,41 @@ local path = require("path")
 local time = require("wonderland.time")
 local Log = require("beat.log")
 local platform = require("beat.platform")
+local LibraryCache = require("beat.app.services.library.cache")
 
 -- How much of a scan's output one tick takes into the library. A fast local scan can produce a
 -- whole library in a fraction of a second: taking it a fixed handful of tracks a tick makes the
 -- scan last as many frames as the library has tracks, and taking all of it in one tick holds a
 -- frame for as long as the reading and adding take. A share of a frame per tick keeps both ends
 -- bounded, and the batch cap keeps one add loop from growing without limit on a slow machine.
-local INGEST_BUDGET = 0.004
-local INGEST_BATCH = 128
+local INGEST_BUDGET = 0.002
+-- Messages one poll may decode. With the budget checked between polls, the batch is what bounds
+-- how far a single poll can run past it: a message is a track with its tags, and a hundred is
+-- several milliseconds before the clock is asked again.
+local INGEST_BATCH = 32
+
+-- Seconds of cache writing one tick takes after a scan finishes. The library's whole cache is
+-- encoded and written then; doing it in the tick that finishes the scan holds a frame for as long
+-- as the library is large, so it is spread over the ticks that follow.
+local SAVE_BUDGET = 0.002
+
+-- A save has nothing on screen depending on it: it takes a slice every thirtieth of a second
+-- rather than making the ticker run at the display's rate for as long as it lasts.
+local SAVE_TICK = 0.03
+
+-- While a scan runs, the page behind it is rebuilt at most this often. A scan adds tracks every
+-- tick, and a scan of a fast local folder produces thousands a second: rebuilding the view sixty
+-- times a second for a progress count nobody can read is work with no picture to show for it.
+-- Endings -- the last track, the folder chosen, a failure -- are reported at once.
+local SCAN_REBUILD_INTERVAL = 1 / 8
 
 -- Showing a permission dialog leaves the app waiting for a person, not for a frame: asking the
 -- system whether access was granted is a JNI call, and once a second is plenty.
 local ACCESS_INTERVAL = 1
+
+-- How often a folder dialog that is still open is asked for its answer. The chooser runs on a
+-- worker thread on Linux, so this is a file check, not a UI-thread wait.
+local PICK_INTERVAL = 0.25
 
 ---@class beat.ScanSummary
 ---@field tracks number
@@ -42,6 +65,10 @@ local ACCESS_INTERVAL = 1
 ---@field errors { path: string, message: string }[]
 ---@field awaitingAccess boolean? # Asked the system for access to the music folder; the scan starts once it is granted
 ---@field accessCheckedAt number? # When `canReadMusic` was last asked while waiting for access
+---@field saving beat.LibraryCacheWriter? # The cache being written after a scan, a slice a tick
+---@field savingFor "scan"|"add"? # Which finished job the write belongs to
+---@field pendingAdd { tracks: number, skipped: number }? # What the folder add says once its cache is written
+---@field reportedAt number? # When the running scan last asked for a rebuilt view
 ---@field settings beat.SettingsService
 ---@field library beat.LibraryService
 ---@field covers beat.CoversService
@@ -79,6 +106,10 @@ function Scan.new(deps)
 			skipped = 0,
 			errors = {},
 			accessCheckedAt = nil,
+			saving = nil,
+			savingFor = nil,
+			pendingAdd = nil,
+			reportedAt = nil,
 			settings = deps.settings,
 			library = deps.library,
 			covers = deps.covers,
@@ -141,6 +172,11 @@ function Scan:start(root)
 	Picker.cancel(self.pick)
 	self.pick = nil
 	if self.job ~= nil then self.job:cancel() end
+	-- A cache write of the library this scan replaces has no reader left: drop it rather than let
+	-- it rename its temp file over the cache the new scan will write.
+	self:abortSave()
+	self.pendingAdd = nil
+	self.reportedAt = nil
 
 	local current = self.library.current
 	local known = nil
@@ -280,6 +316,73 @@ function Scan:addTrack(event, errors)
 	end
 end
 
+--- A cache write still settling is dropped: a newer save replaces it, and two writers on one temp
+--- file would interleave. The library's next save writes whatever the scan has made by then. A
+--- pending folder add's result is left alone: the save about to start is the one that reports it.
+function Scan:abortSave()
+	local writer = self.saving
+	if writer ~= nil then writer:abort() end
+	self.saving = nil
+	self.savingFor = nil
+end
+
+--- Starts writing the library's cache, a slice a tick. `kind` says what to do once the disk has
+--- it: a full scan only logs a failure, while a folder add reports to the page and the listener.
+---@param kind "scan"|"add"
+function Scan:startSave(kind)
+	self:abortSave()
+	local library = self.library.current
+	if library == nil then return end
+
+	local writer, err = LibraryCache.openSave(library)
+	if writer == nil then
+		self.savingFor = kind
+		self:saveFailed(err)
+		return
+	end
+
+	self.saving = writer
+	self.savingFor = kind
+end
+
+--- The page shows the folder add's result once the cache agrees: the listener is told once, after
+--- the write, and the toasts say what the folder brought.
+function Scan:finishAdd()
+	local added = self.pendingAdd
+	self.pendingAdd = nil
+	self.emit({ type = "libraryChanged" })
+	if added == nil then return end
+
+	local tracks = added.tracks
+	self.toasts:show("Added " .. tracks .. " track" .. (tracks == 1 and "" or "s") .. " to the library")
+	if added.skipped > 0 then
+		self.toasts:show(added.skipped .. " files could not be read", "error")
+	end
+end
+
+--- The cache writer finished. A full scan has nothing left to say; a folder add tells the page
+--- and the listener only now, because they read the cache and the library must be on disk first.
+function Scan:saveFinished()
+	local kind = self.savingFor
+	self.saving = nil
+	self.savingFor = nil
+	if kind == "add" then self:finishAdd() end
+end
+
+---@param err string?
+function Scan:saveFailed(err)
+	local kind = self.savingFor
+	self.saving = nil
+	self.savingFor = nil
+	if kind == "add" then
+		self.toasts:show(err or "Could not save the library", "error")
+		-- The folder is in the library whether or not the disk took it: the page still shows it.
+		self:finishAdd()
+	else
+		Log.write("error", "library cache could not be written: " .. tostring(err))
+	end
+end
+
 Scan.on = {
 	--- A root chosen for the first time, or one a page asked for: the library it reads replaces
 	--- whatever was showing.
@@ -348,6 +451,9 @@ Scan.on = {
 --- rows.
 function Scan:step(now)
 	local changed = false
+	-- What the page must be built again for at once: something a person is waiting on, not a
+	-- scan's progress, which is coalesced below.
+	local urgent = false
 
 	if self.awaitingAccess then
 		local checkedAt = self.accessCheckedAt
@@ -358,6 +464,7 @@ function Scan:step(now)
 				self.accessCheckedAt = nil
 				self:resume(true)
 				changed = true
+				urgent = true
 			end
 		end
 	end
@@ -375,6 +482,7 @@ function Scan:step(now)
 			end
 			self:nextPick()
 			changed = true
+			urgent = true
 		elseif status ~= nil then
 			local request = self.pickRequest
 			self.pick = nil
@@ -387,6 +495,7 @@ function Scan:step(now)
 			end
 			self:nextPick()
 			changed = true
+			urgent = true
 		end
 	end
 
@@ -400,7 +509,13 @@ function Scan:step(now)
 			if progress.phase == "done" then
 				---@cast library.current -nil
 				library:finish()
-				library:save()
+				-- A scan can have made good on a cover this page had found missing -- a cache
+				-- directory that was cleaned, say -- so the placeholders left over are asked for
+				-- again rather than kept for the rest of the session.
+				self.covers:retryFailed()
+				-- The cache is written over the ticks that follow: finishing a scan has a summary
+				-- to show, and encoding and writing every track here is the hitch that follows one.
+				self:startSave("scan")
 				self.skipped = progress.skipped
 				self.errors = progress.errors
 				self.summary = {
@@ -428,6 +543,7 @@ function Scan:step(now)
 			self.job = nil
 			self.islandOpen = false
 			changed = true
+			urgent = true
 		end
 	end
 
@@ -441,14 +557,9 @@ function Scan:step(now)
 			if progress.phase == "done" then
 				---@cast library.current -nil
 				library:finish()
-				local saved, saveErr = library:save()
-				if not saved then self.toasts:show(saveErr or "Could not save the library", "error") end
-				self.emit({ type = "libraryChanged" })
-				local tracks = tonumber(progress.tracks) or 0
-				self.toasts:show("Added " .. tracks .. " track" .. (tracks == 1 and "" or "s") .. " to the library")
-				if (progress.skipped or 0) > 0 then
-					self.toasts:show(progress.skipped .. " files could not be read", "error")
-				end
+				self.covers:retryFailed()
+				self.pendingAdd = { tracks = tonumber(progress.tracks) or 0, skipped = progress.skipped or 0 }
+				self:startSave("add")
 			elseif addJob.error ~= nil then
 				self.toasts:show(addJob.error or "Could not add the folder", "error")
 			else
@@ -458,6 +569,21 @@ function Scan:step(now)
 			self.addJob = nil
 			self.addFolderPath = nil
 			changed = true
+			urgent = true
+		end
+	end
+
+	-- The cache write after a finished job, a slice a tick. Nothing on screen moves while it runs;
+	-- its completion is what a folder add's page waits for.
+	local saving = self.saving
+	if saving ~= nil then
+		local status, err = saving:step(SAVE_BUDGET)
+		if status == "done" then
+			self:saveFinished()
+			urgent = true
+		elseif status == "failed" then
+			self:saveFailed(err)
+			urgent = true
 		end
 	end
 
@@ -467,9 +593,43 @@ function Scan:step(now)
 		changed = true
 	end
 
-	if self.job ~= nil or self.addJob ~= nil or self.pick ~= nil then return changed, true end
-	if self.awaitingAccess == true then return changed, ACCESS_INTERVAL end
-	return changed, false
+	if self.job == nil and self.addJob == nil and self.pick == nil and self.saving == nil then
+		self.reportedAt = nil
+		if self.awaitingAccess == true then return urgent or changed, ACCESS_INTERVAL end
+		return urgent or changed, false
+	end
+
+	-- A scan wants the display's rate to take what its threads have made; the page behind it is
+	-- rebuilt eight times a second instead of sixty. A folder dialog waits for a person and a
+	-- cache write waits for the disk, so both leave the tick idle between looks and slices.
+	local report = urgent
+	if not report and changed then
+		local at = self.reportedAt
+		report = at == nil or now - at >= SCAN_REBUILD_INTERVAL
+	end
+	if report then self.reportedAt = now end
+
+	if self.job ~= nil or self.addJob ~= nil then return report, true end
+	if self.saving ~= nil then return report, SAVE_TICK end
+	return report, PICK_INTERVAL
+end
+
+--- The window is going: a cache write still in progress is finished now rather than dropped.
+--- The app does not come back to a launch that has to scan the whole folder again for nothing.
+function Scan:flush()
+	local writer = self.saving
+	if writer == nil then return end
+
+	while true do
+		local status, err = writer:step(math.huge)
+		if status == "done" then
+			self:saveFinished()
+			return
+		elseif status == "failed" then
+			self:saveFailed(err)
+			return
+		end
+	end
 end
 
 --- The app is being set up again, so nothing will read this job's events any more: tell the
@@ -485,6 +645,8 @@ function Scan:close()
 		self.addJob:cancel()
 		self.addJob = nil
 	end
+	self:abortSave()
+	self.pendingAdd = nil
 	Picker.cancel(self.pick)
 	self.pick = nil
 	self.pickRequest = nil

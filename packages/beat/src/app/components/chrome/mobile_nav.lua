@@ -77,11 +77,11 @@ local iconProps = {}
 -- The five destinations the app always has, in the order they appear. They are plain records, so
 -- the bar walks them rather than making a list of them again per frame.
 local OWN_ITEMS = {
-	{ kind = "home", icon = "home", label = "Home", message = GO_HOME },
-	{ kind = "library", icon = "library", label = "Library", message = GO_LIBRARY },
-	{ kind = "playlists", icon = "playlists", label = "Playlists", message = GO_PLAYLISTS },
-	{ kind = "search", icon = "search", label = "Search", message = GO_SEARCH },
-	{ kind = "more", icon = "more", label = "More", message = OPEN_MORE }
+	{ kind = "home", icon = "home", label = "Home", message = GO_HOME, key = "mobileNav.home" },
+	{ kind = "library", icon = "library", label = "Library", message = GO_LIBRARY, key = "mobileNav.library" },
+	{ kind = "playlists", icon = "playlists", label = "Playlists", message = GO_PLAYLISTS, key = "mobileNav.playlists" },
+	{ kind = "search", icon = "search", label = "Search", message = GO_SEARCH, key = "mobileNav.search" },
+	{ kind = "more", icon = "more", label = "More", message = OPEN_MORE, key = "mobileNav.more" }
 }
 
 -- A plugin's destination as the bar sees it, made once per registration: only the page it opens
@@ -94,7 +94,13 @@ local pluginItems = setmetatable({}, { __mode = "k" })
 local function pluginItem(entry)
 	local item = pluginItems[entry]
 	if item == nil then
-		item = { page = entry.page, icon = entry.icon, label = entry.title, message = navMessage(entry) }
+		item = {
+			page = entry.page,
+			icon = entry.icon,
+			label = entry.title,
+			message = navMessage(entry),
+			key = "mobileNav.page." .. tostring(entry.page.kind) .. "." .. tostring(entry.page.id or "")
+		}
 		pluginItems[entry] = item
 	end
 	return item
@@ -166,7 +172,11 @@ local function tabElement(app, ctx, theme, set, item, page)
 	end
 	-- Search already showing asks for its field rather than for the page again.
 	local action = item.kind == "search" and app.page.kind == "search" and FOCUS_SEARCH or item.message
-	return div():style(set.tab):hover(set.hover):onClick(action):children(mark, text(item.label):style(labelStyle))
+	return ui.ripple(
+		div():style(set.tab):hover(set.hover):onClick(action):children(mark, text(item.label):style(labelStyle)),
+		item.key,
+		colour
+	)
 end
 
 --- The bar's tabs, added to it one at a time. The loop is its own function so the trace that

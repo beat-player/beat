@@ -236,6 +236,41 @@ test.it("writes a library larger than one batch and reads every track back", fun
 	fs.delete(paths.file("library.json"))
 end)
 
+test.it("writes a library a slice at a time and an aborted save leaves the old cache", function()
+	local library = Library.new(ROOT)
+	for i = 1, 3 do
+		local info, entry = file("0" .. i .. " - Slice", "Kanye West")
+		library:add(info, entry)
+	end
+	library:finish()
+
+	test.equal(LibraryCache.save(library), true)
+	local cache = paths.file("library.json")
+	local before = assert(fs.read(cache))
+
+	local writer = assert(LibraryCache.openSave(library))
+	-- A zero budget still packs and writes one record before it asks the clock: a save spread over
+	-- frames moves forward even when the frame has nothing left to give.
+	test.equal(writer:step(0), "more")
+	test.truthy(fs.isfile(cache .. ".tmp"), "the partial cache is a temp file, not the cache")
+
+	writer:abort()
+	test.falsy(fs.isfile(cache .. ".tmp"), "an aborted save takes its temp file with it")
+	test.equal(fs.read(cache), before, "and leaves the previous cache exactly as it was")
+
+	local whole = assert(LibraryCache.openSave(library))
+	local status
+	repeat
+		status = whole:step(0)
+	until status ~= "more"
+	test.equal(status, "done")
+
+	local loaded = assert(LibraryCache.load(ROOT))
+	test.equal(#loaded.tracks, 3)
+	test.deepEqual(packed(loaded), packed(library), "a sliced save writes what the blocking one did")
+	fs.delete(cache)
+end)
+
 test.it("hands a scan records for the tracks a cache could vouch for", function()
 	---@type table
 	local deps = {

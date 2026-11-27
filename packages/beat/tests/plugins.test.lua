@@ -407,6 +407,15 @@ test.it("loads a bundle from the plugins folder and keeps the host's copy of a b
 	test.equal(type(require("json").encode), "function", "beat's json is still beat's")
 	test.equal(require("json").tampered, nil, "the bundle's bundled copy of json did not replace it")
 	test.equal(private.host, require("json"), "the plugin sees the host module too")
+
+	-- The answer for every module the bundle asked is kept beside the settings, under the file's
+	-- stamp, so the next launch does not look for each of them on disk again.
+	local kept = fs.read(paths.file("plugin_files.json"))
+	test.truthy(kept ~= nil, "the module answers are kept in the config directory")
+	test.truthy(kept:find("probe.lua", 1, true) ~= nil, "under the bundle file's stamp")
+	App:init({ scan = false })
+	test.equal(assert(entry("probe")).state, "loaded", "a launch with the answers loads the bundle again")
+	test.equal(require("json").tampered, nil, "and the host's copy is still the one in use")
 end)
 
 test.it("keeps starting when a plugin file raises, and lets a broken file be switched off", function()

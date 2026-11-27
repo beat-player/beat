@@ -16,7 +16,7 @@ local style = require("wonderland.style")
 local canRender = true
 do
 	local ok = pcall(function()
-		wonderland.headless.new(function() return wonderland.div() end, { width = 8, height = 8 }):close()
+		wonderland.headless.new(|| -> wonderland.div(), { width = 8, height = 8 }):close()
 	end)
 	canRender = ok
 end
@@ -29,7 +29,7 @@ os.remove(configDirectory)
 fs.mkdirAll(configDirectory)
 
 local realDirectory = paths.directory
-paths.directory = function() return configDirectory end
+paths.directory = || -> configDirectory
 
 test.afterAll(function()
 	paths.directory = realDirectory
@@ -107,19 +107,19 @@ local function fakeAudio(state)
 		staging = nil,
 		enqueue = function() end,
 		requeue = function() end,
-		playedFrames = function() return 0 end,
+		playedFrames = || -> 0,
 		adopt = function() return 0, 0, nil end,
 		releaseHeard = function() end,
 		reportError = function() end,
-		openStream = function() return true end,
-		needsNewStream = function() return false end,
+		openStream = || -> true,
+		needsNewStream = || -> false,
 		applyVolume = function() end,
 		fill = function() end,
 		writeStaged = function() end,
-		isFeeding = function() return false end,
+		isFeeding = || -> false,
 		update = function() end,
 		pump = function() end,
-		next = function() return true end,
+		next = || -> true,
 		play = function() state.playing = true end,
 		pause = function() state.playing = false end,
 		stop = function() state.playing = false end,
@@ -128,10 +128,10 @@ local function fakeAudio(state)
 			state.seeks = state.seeks or {}
 			state.seeks[#state.seeks + 1] = seconds
 		end,
-		position = function() return state.at or 0 end,
-		duration = function() return state.duration or 0 end,
-		isPlaying = function() return state.playing or false end,
-		isFinished = function() return false end,
+		position = || -> state.at or 0,
+		duration = || -> state.duration or 0,
+		isPlaying = || -> state.playing or false,
+		isFinished = || -> false,
 		setEqualizer = function(_, bands) state.applied = bands end,
 		setVolume = function() end
 	}
@@ -292,23 +292,54 @@ test.it("logs an error toast where the app keeps its files", function()
 	test.truthy(contents and contents:find("a test failure") ~= nil, "and it names the error")
 end)
 
-test.it("keeps an error toast under the pointer", function()
+test.it("keeps an error toast the pointer moves over", function()
 	App:init({ scan = false })
 	local now = wonderland.time.now()
 
 	App.services.toasts:show("still here", "error")
 	local toast = App.services.toasts.list[#App.services.toasts.list]
-	toast.rect = { x = 100, y = 100, width = 320, height = 48 }
 	toast.expires = now - 1
 
-	local oldWindow, oldLayout = App.window, App.layoutPlugin
-	App.window = { width = 1200, height = 720 }
-	App.layoutPlugin = { contexts = { [App.window] = { pointer = { x = 110, y = 110, pressed = false } } } }
-	App:tick(now, App.window)
-	App.window, App.layoutPlugin = oldWindow, oldLayout
+	local toasts = App.services.toasts
+	toasts.on.toastHold(toasts, { type = "toastHold", at = toast.at })
 
-	test.equal(#App.services.toasts.list, 1, "the toast was not removed")
-	test.greater(App.services.toasts.list[1].expires, now, "its expiry moved forward")
+	local oldWindow = App.window
+	App.window = { width = 1200, height = 720 }
+	App:tick(now, App.window)
+	App.window = oldWindow
+
+	test.equal(#toasts.list, 1, "the toast was not removed")
+	test.greater(toasts.list[1].expires, now, "its expiry moved forward")
+end)
+
+test.skipIf(not canRender)("sends a hold from the toast the pointer moves over", function()
+	App:init({ scan = false })
+	App.services.toasts:show("look here")
+	local toast = App.services.toasts.list[#App.services.toasts.list]
+	toast.expires = 0
+
+	local held
+	local screen = wonderland.headless.new(function(window, assets)
+		App.window = window
+		App.assets = assets
+		App.services.covers:use(assets)
+		return require("beat.app.shell").view(App, window)
+	end, { width = 1200, height = 720, onMessage = function(message)
+		if type(message) == "table" and message.type == "toastHold" then held = message end
+		App:act(message)
+	end })
+	screen:draw()
+
+	local theme = App.services.appearance.theme
+	local width = math.min(320, screen.window.width - theme:space(16))
+	local x = math.max(theme:space(8), screen.window.width - width - theme:space(24))
+	screen:event({ name = "mouseMove", window = screen.window, x = x + width / 2, y = theme:px(76) + 20 })
+
+	test.truthy(held ~= nil, "the toast's own handler answered the pointer")
+	test.equal(held.at, toast.at)
+	test.greater(toast.expires, 0, "and its hold message kept the toast")
+
+	screen:close()
 end)
 
 test.it("ticks at the smallest rate a service asks for", function()
@@ -322,10 +353,7 @@ test.it("ticks at the smallest rate a service asks for", function()
 	App.serviceOrder = { { step = function() return false, true, false end } }
 	test.equal(App:tick(11, window), 1 / 60, "true asks for the display's rate")
 
-	App.serviceOrder = {
-		{ step = function() return false, 2, false end },
-		{ step = function() return false, 0.25, false end }
-	}
+	App.serviceOrder = { { step = function() return false, 2, false end }, { step = function() return false, 0.25, false end } }
 	test.equal(App:tick(12, window), 0.25, "the smallest request wins")
 
 	App.serviceOrder = { { step = function() return false, false, false end } }
@@ -340,7 +368,7 @@ test.it("ticks at the smallest rate a service asks for", function()
 	App.services.playback.player:close()
 end)
 
-test.it("gives the covers back when hidden and builds the screen again when shown", function()
+test.it("keeps the covers through a short hide and gives them back after thirty seconds", function()
 	App:init({ scan = false })
 	local window = { width = 1200, height = 720, visible = true, shouldRedraw = false }
 	App:tick(10, window)
@@ -356,15 +384,64 @@ test.it("gives the covers back when hidden and builds the screen again when show
 	window.visible = false
 	window.shouldRedraw = false
 	App:tick(11, window)
-	test.equal(released, 1, "the hidden window's covers gave their GPU textures back")
-	test.truthy(window.shouldRedraw, "the frame that named the released pictures is owed a rebuild")
+	test.equal(released, 0, "a window that was just hidden keeps its pictures")
+
+	App:tick(40, window)
+	test.equal(released, 0, "and still has them after twenty-nine seconds")
+
+	App:tick(41, window)
+	test.equal(released, 1, "half a minute away gives the GPU textures back")
 
 	window.visible = true
 	window.shouldRedraw = false
-	App:tick(12, window)
+	App:tick(42, window)
 	test.truthy(window.shouldRedraw, "coming back asks for a full frame")
 
 	covers.releaseAll = realRelease
+	App.wasHidden = nil
+	App.services.playback.player:close()
+end)
+
+test.it("makes every ticker of a window shown again due at once", function()
+	local UI = require("wonderland.plugin.ui")
+	local window, other = {}, {}
+	local mine = { window = window, due = 50 }
+	local elsewhere = { window = other, due = 50 }
+	local cancelled = { window = window, due = 50, cancelled = true }
+	UI.resume({ tickers = { mine, elsewhere, cancelled } }, window)
+
+	test.equal(mine.due, 0, "the window that came back is due at once")
+	test.equal(elsewhere.due, 50, "another window's ticker is left as it was")
+	test.equal(cancelled.due, 50, "and a cancelled one is not woken")
+end)
+
+test.it("wakes the ticker and resumes playback on the show edge", function()
+	App:init({ scan = false })
+	local window = { width = 1200, height = 720, visible = true, shouldRedraw = false }
+	App:tick(10, window)
+
+	window.visible = false
+	App:tick(11, window)
+
+	local player = App.services.playback.player
+	-- The player is where the background flag shows: a hidden tick leaves it set, and the show
+	-- tick is what clears it. The meter's resume flag is what says it will not analyse the stale
+	-- ring before the tap has fed a window of the new timeline.
+	player.background = true
+	local spectrum = App.services.playback.spectrum
+	spectrum.resumePending = nil
+
+	local realTicker = App.ticker
+	App.ticker = { due = 50, cancel = function() end }
+
+	window.visible = true
+	App:tick(12, window)
+
+	test.equal(player.background, false, "the audio thread is told it is in the foreground again")
+	test.truthy(spectrum.resumePending, "the meter resyncs its timeline on the show edge")
+	test.equal(App.ticker.due, 0, "the ticker is woken at once, not up to a second later")
+
+	App.ticker = realTicker
 	App.wasHidden = nil
 	App.services.playback.player:close()
 end)
@@ -592,10 +669,7 @@ test.skipIf(not canRender)("draws smart and own playlist tiles at phone width", 
 	local opened = find(|message| -> message.type == "navigate" and message.page ~= nil and message.page.kind == "playlist" and message.page.id == -1)
 	test.truthy(opened ~= nil, "a smart playlist tile opens its page on a phone")
 
-	test.falsy(
-		find(|message| -> message.type == "playPlaylist"),
-		"a tile has no playback controls of its own; the playlist's page does"
-	)
+	test.falsy(find(|message| -> message.type == "playPlaylist"), "a tile has no playback controls of its own; the playlist's page does")
 
 	-- The own lists sit below the five smart tiles, so the page is taken to its end the way a
 	-- wheel does before the tile is looked for.
@@ -946,6 +1020,67 @@ test.it("creates tags and playlists from the app actions", function()
 	test.equal(#App.services.collections.taxonomy:playlistTracks(manual, library), 4, "a track is added by hand")
 end)
 
+test.it("tags the item a picker was opened for and toggles its rows", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	local taxonomy = Taxonomy.new()
+	App.services.collections.taxonomy = taxonomy
+	App.services.collections.save = function() end
+	local collections = App.services.collections
+	local track = library.albums[1].tracks[1]
+
+	-- The empty state's button and the create row lead to the same dialog, carrying the picker's
+	-- item with them; the tag it makes is already on that item when it closes.
+	App:act({ type = "open", overlay = "tag_picker", kind = "track", id = track.id })
+	local picker = assert(App:overlay("tag_picker"))
+	test.equal(#taxonomy:visibleTags(), 0, "the picker opens empty")
+	App:act(picker.state.newTag)
+	test.falsy(App:overlay("tag_picker"), "the new-tag dialog replaces the picker")
+	test.truthy(App:overlay("tag_dialog"))
+	App:act({ type = "tagDraft", value = "Focus" })
+	App:act({ type = "createTag" })
+	local focus = assert(taxonomy:visibleTags()[1])
+	test.equal(focus.name, "Focus")
+	test.truthy(taxonomy:isTagged(names.trackKey(track), focus.id), "the new tag lands on the track the picker was for")
+	test.falsy(App:overlay("tag_dialog"), "creating it closes the dialog")
+
+	-- A tag row is a toggle: one press takes the tag off the item and the next puts it back.
+	App:act({ type = "open", overlay = "tag_picker", kind = "track", id = track.id })
+	App:act({ type = "toggleItemTag", id = focus.id })
+	test.falsy(taxonomy:isTagged(names.trackKey(track), focus.id), "a press takes the tag off the track")
+	App:act({ type = "toggleItemTag", id = focus.id })
+	test.truthy(taxonomy:isTagged(names.trackKey(track), focus.id), "the next press puts it back")
+	App:close("tag_picker")
+
+	-- An album is tagged on every track it holds, and its check means all of them.
+	local album = library.albums[2]
+	App:act({ type = "open", overlay = "tag_picker", kind = "album", id = album.id })
+	picker = assert(App:overlay("tag_picker"))
+	App:act(picker.state.newTag)
+	App:act({ type = "tagDraft", value = "Live" })
+	App:act({ type = "createTag" })
+	local live = assert(taxonomy:visibleTags()[2])
+	for at = 1, #album.tracks do
+		test.truthy(taxonomy:isTagged(names.trackKey(album.tracks[at]), live.id), "the new tag lands on the whole album")
+	end
+
+	-- Toggling the album's row takes the tag off all of it, and adding it back puts it on all.
+	App:act({ type = "open", overlay = "tag_picker", kind = "album", id = album.id })
+	App:act({ type = "toggleItemTag", id = live.id })
+	test.falsy(collections:itemHasTag("album", album.id, live.id), "the whole album loses the tag")
+	for at = 1, #album.tracks do
+		test.falsy(taxonomy:isTagged(names.trackKey(album.tracks[at]), live.id))
+	end
+	-- One tagged track is not an album that has the tag: a press completes the album rather than
+	-- taking the tag off the track it was already on.
+	taxonomy:setTag(names.trackKey(album.tracks[1]), live.id, true)
+	test.falsy(collections:itemHasTag("album", album.id, live.id), "a partly tagged album is not checked")
+	App:act({ type = "toggleItemTag", id = live.id })
+	test.truthy(collections:itemHasTag("album", album.id, live.id), "a press tags the rest of the album")
+	App:close("tag_picker")
+end)
+
 test.it("makes a playlist around the item from an empty picker", function()
 	App:init({ scan = false })
 	local library = fixture()
@@ -961,10 +1096,7 @@ test.it("makes a playlist around the item from an empty picker", function()
 	local made = assert(App.services.collections.taxonomy.playlists[1])
 	test.equal(made.name, "Track 2", "it takes the track's name")
 	test.equal(#App.services.collections.taxonomy:playlistTracks(made, library), 1, "the track is in it")
-	test.equal(
-		names.trackKey(assert(App.services.collections.taxonomy:playlistTracks(made, library)[1])),
-		names.trackKey(track)
-	)
+	test.equal(names.trackKey(assert(App.services.collections.taxonomy:playlistTracks(made, library)[1])), names.trackKey(track))
 
 	App:act({ type = "open", overlay = "playlist_picker", kind = "album", id = library.albums[3].id })
 	App:act({ type = "newPlaylistWithItem" })
@@ -1358,29 +1490,7 @@ test.skipIf(not canRender)("draws every row of a phone album", function()
 	App.services.settings.values.root = "/beat-fixtures"
 	local library = Library.new("/beat-fixtures")
 	for trackAt = 1, 4 do
-		library:add(
-			{
-				format = "WAV",
-				sampleRate = 44100,
-				channels = 2,
-				duration = 180,
-				hasPicture = false,
-				tags = {
-					title = "Phone Song " .. trackAt,
-					artist = "Phone Artist",
-					album = "Phone Album",
-					albumArtist = "Phone Artist",
-					track = trackAt
-				}
-			},
-			{
-				path = "/beat-fixtures/Phone/" .. trackAt .. ".wav",
-				dir = "/beat-fixtures/Phone",
-				name = trackAt .. ".wav",
-				ext = "wav"
-			},
-			nil
-		)
+		library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "Phone Song " .. trackAt, artist = "Phone Artist", album = "Phone Album", albumArtist = "Phone Artist", track = trackAt } }, { path = "/beat-fixtures/Phone/" .. trackAt .. ".wav", dir = "/beat-fixtures/Phone", name = trackAt .. ".wav", ext = "wav" }, nil)
 	end
 	library:finish()
 	App.services.library.current = library
@@ -1508,16 +1618,10 @@ test.skipIf(not canRender)("gives a longer album the height its tracks need", fu
 	App.services.settings.values.sidebarCollapsed = false
 	local library = Library.new("/beat-fixtures")
 	for trackAt = 1, 2 do
-		library:add(
-			{ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "Short " .. trackAt, artist = "Artist", album = "Short Album", albumArtist = "Artist", track = trackAt } },
-			{ path = "/beat-fixtures/Short/" .. trackAt .. ".wav", dir = "/beat-fixtures/Short", name = trackAt .. ".wav", ext = "wav" }
-		)
+		library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = "Short " .. trackAt, artist = "Artist", album = "Short Album", albumArtist = "Artist", track = trackAt } }, { path = "/beat-fixtures/Short/" .. trackAt .. ".wav", dir = "/beat-fixtures/Short", name = trackAt .. ".wav", ext = "wav" })
 	end
 	for trackAt = 1, 60 do
-		library:add(
-			{ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = string.format("Long %02d", trackAt), artist = "Artist", album = "Long Album", albumArtist = "Artist", track = trackAt } },
-			{ path = "/beat-fixtures/Long/" .. trackAt .. ".wav", dir = "/beat-fixtures/Long", name = trackAt .. ".wav", ext = "wav" }
-		)
+		library:add({ format = "WAV", sampleRate = 44100, channels = 2, duration = 180, hasPicture = false, tags = { title = string.format("Long %02d", trackAt), artist = "Artist", album = "Long Album", albumArtist = "Artist", track = trackAt } }, { path = "/beat-fixtures/Long/" .. trackAt .. ".wav", dir = "/beat-fixtures/Long", name = trackAt .. ".wav", ext = "wav" })
 	end
 	library:finish()
 
@@ -1583,10 +1687,7 @@ test.skipIf(not canRender)("gives a longer album the height its tracks need", fu
 	local metrics = require("beat.app.components.helpers.metrics")
 	local viewport = metrics.viewportHeight(App, screen.window.width, screen.window.height)
 	local contentHeight = limit + viewport - theme:space(20) - theme:space(32)
-	test.truthy(
-		columnHeight() >= contentHeight - 1,
-		"the rendered column is as tall as the long album's tracks need"
-	)
+	test.truthy(columnHeight() >= contentHeight - 1, "the rendered column is as tall as the long album's tracks need")
 
 	App:act({ type = "scroll", key = App:pageKey(), to = 1000000 })
 	screen:draw()
@@ -1681,30 +1782,53 @@ test.it("adds tracks from a background scan as they arrive", function()
 	App.services.playback.player:close()
 end)
 
+test.it("coalesces a running scan's rebuilt views instead of one every tick", function()
+	App:init({ scan = false })
+	App.services.settings.values.root = "/beat-fixtures"
+	App.services.library.current = Library.new("/beat-fixtures")
+
+	local progress = { phase = "inspect", files = 100, inspected = 0, tracks = 0, skipped = 0, errors = {}, current = nil }
+	local job = scriptedJob({}, progress)
+	-- A scan whose threads move every tick: ingest is what a running scan reports.
+	function job:poll(limit)
+		self.changed = true
+		return {}, true
+	end
+	App.services.scan.job = job
+
+	local reports = 0
+	for tick = 1, 12 do
+		if App.services.scan:step(tick / 60) then reports += 1 end
+	end
+
+	test.truthy(reports >= 1, "the page is shown the scan's progress")
+	test.truthy(reports <= 3, "a scan's progress is rebuilt at most eight times a second")
+
+	App.services.scan.job = nil
+	App.services.playback.player:close()
+end)
+
+test.it("leaves the ticker idle while a folder dialog is open", function()
+	App:init({ scan = false })
+	local file = os.tmpname() .. "-beat-pending-pick"
+	fs.delete(file)
+	App.services.scan.pick = { file = file }
+
+	local changed, busy = App.services.scan:step(1)
+	test.falsy(changed, "nothing moved while the dialog waits")
+	test.equal(busy, 0.25, "the dialog is looked at four times a second, not sixty")
+
+	fs.delete(file)
+	App.services.scan.pick = nil
+	App.services.playback.player:close()
+end)
+
 test.it("adds a reused track from a background scan without reading it", function()
 	App:init({ scan = false })
 	App.services.settings.values.root = "/beat-fixtures"
 	App.services.library.current = Library.new("/beat-fixtures")
 
-	local job = scriptedJob({
-		{
-			type = "reused",
-			record = {
-				path = "/beat-fixtures/2.wav",
-				key = "single\0/beat-fixtures/2.wav",
-				title = "Second",
-				artist = "Artist",
-				album = "Second",
-				albumArtist = "Artist",
-				duration = 180,
-				format = "WAV",
-				sampleRate = 44100,
-				channels = 2,
-				hasPicture = false,
-				modified = 0
-			}
-		}
-	}, { phase = "inspect", files = 1, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/2.wav" })
+	local job = scriptedJob({ { type = "reused", record = { path = "/beat-fixtures/2.wav", key = "single\0/beat-fixtures/2.wav", title = "Second", artist = "Artist", album = "Second", albumArtist = "Artist", duration = 180, format = "WAV", sampleRate = 44100, channels = 2, hasPicture = false, modified = 0 } } }, { phase = "inspect", files = 1, inspected = 1, tracks = 1, skipped = 0, errors = {}, current = "/beat-fixtures/2.wav" })
 	job.changed = true
 
 	test.truthy(App.services.scan:ingest(job, nil), "the reused record changed the library")
@@ -1784,6 +1908,41 @@ test.it("drops the album order it kept when the library changes", function()
 	App.services.playback.player:close()
 end)
 
+test.it("keeps the album order it built until the library's version changes", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	local service = App.services.library
+
+	local first = service:sorted("title")
+	test.truthy(service:sorted("title") == first, "the same version is not sorted again")
+	local version = library.version
+
+	-- What a scan's ingest does: raise the version. The order is not dropped per track; the next
+	-- frame that asks for it builds the new one once, and keeps it until the next change.
+	library:add(
+		{
+			format = "FLAC",
+			sampleRate = 44100,
+			channels = 2,
+			duration = 180,
+			hasPicture = false,
+			tags = { title = "Late", artist = "Solo", album = "Late Album", albumArtist = "Solo", track = 1 }
+		},
+		{ path = "/beat-fixtures/Solo/Late Album/1.flac", dir = "/beat-fixtures/Solo/Late Album", name = "1.flac", ext = "flac" },
+		nil
+	)
+	test.truthy(library.version > version)
+	test.truthy(service.sortedAlbums == first, "an add does not drop the order")
+
+	local second = service:sorted("title")
+	test.equal(#second, 4, "the new album is in the order")
+	test.truthy(second ~= first)
+	test.truthy(service:sorted("title") == second, "and that version is not sorted twice")
+	test.equal(service.sortedVersion, library.version)
+	App.services.playback.player:close()
+end)
+
 test.it("sets the logo as the window icon", function()
 	App:init({ scan = false })
 	local got
@@ -1822,11 +1981,7 @@ test.it("opens and confirms a custom accent colour", function()
 	App:act({ type = "pickHsv", h = 0.25 })
 	App:act({ type = "pickHsv", s = 0.5 })
 	App:act({ type = "pickHsv", v = 1 })
-	test.equal(
-		assert(App:overlay("accent_picker")).state.draft,
-		"#bfff80",
-		"choosing a hue, saturation and brightness only changes the draft"
-	)
+	test.equal(assert(App:overlay("accent_picker")).state.draft, "#bfff80", "choosing a hue, saturation and brightness only changes the draft")
 
 	App:act({ type = "confirmAccent" })
 	test.equal(App.services.settings.values.accent, "#bfff80")
@@ -1858,6 +2013,118 @@ test.it("opens an album context menu and dispatches its actions", function()
 	App.services.playback.player = real
 
 	App.services.playback.player:close()
+end)
+
+test.it("opens the shuffle menu from the player and applies a mode", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	local player = App.services.playback.player
+	player:playTracks(library.albums[1].tracks, 1)
+
+	App:act({ type = "open", overlay = "menu", menu = "shuffle", x = 20, y = 20 })
+	test.truthy(App:overlay("menu"), "the shuffle button's right click opens a menu")
+	local state = assert(App:overlay("menu")).state
+	test.equal(state.menu, "shuffle")
+	test.equal(#state.messages, 3, "the three modes, without the off row")
+	test.equal(state.messages[1].mode, "tracks")
+	test.equal(state.messages[2].mode, "albums")
+	test.equal(state.messages[3].mode, "artists")
+
+	App:act({ type = "shuffleMode", mode = "albums" })
+	test.equal(assert(player.queue).shuffleMode, "albums")
+	test.equal(App:overlay("menu"), nil, "choosing a mode closes the menu")
+	player:close()
+end)
+
+test.it("starts a playlist in the shuffle mode its menu chose", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	App.services.collections.taxonomy = Taxonomy.new()
+	App.services.collections.save = function() end
+	local playlist = assert(App.services.collections.taxonomy:addPlaylist("Mix", false))
+	App.services.collections.taxonomy:setPlaylistAlbum(playlist, library.albums[1])
+
+	App:act({ type = "open", overlay = "menu", menu = "shuffle", source = "playlist", id = playlist.id, x = 20, y = 20 })
+	local overlay = assert(App:overlay("menu"))
+	test.equal(#overlay.state.messages, 3, "the menu has the three shuffle modes")
+	for _, message in ipairs(overlay.state.messages) do
+		test.equal(message.type, "playPlaylist")
+		test.equal(message.id, playlist.id)
+		test.equal(message.shuffle, true)
+		test.truthy(message.shuffleMode ~= "off", "there is no off row")
+	end
+	test.equal(overlay.state.messages[2].shuffleMode, "albums", "the second row is the album shuffle")
+
+	local capturedMode, capturedSource
+	local real = App.services.playback.player
+	local capture = PlayerService.new()
+	capture.playTracks = function(...)
+		local _, _, _, opts = ...
+		capturedMode = opts and opts.shuffleMode
+		capturedSource = opts and opts.source
+	end
+	App.services.playback.player = capture
+	App:act(overlay.state.messages[2])
+	App.services.playback.player = real
+
+	test.equal(capturedMode, "albums", "the chosen row's mode reaches the queue")
+	test.equal(capturedSource, "playlist:" .. tostring(playlist.id))
+	test.equal(App:overlay("menu"), nil, "choosing a mode closes the page's menu")
+	real:close()
+end)
+
+test.it("starts an album in the shuffle mode its menu chose", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	local album = library.albums[1]
+
+	App:act({ type = "open", overlay = "menu", menu = "shuffle", source = "album", id = album.id, x = 20, y = 20 })
+	local overlay = assert(App:overlay("menu"))
+	test.equal(#overlay.state.messages, 3, "the album's button opens the same three modes")
+
+	local capturedMode, capturedSource
+	local real = App.services.playback.player
+	local capture = PlayerService.new()
+	capture.playTracks = function(...)
+		local _, _, _, opts = ...
+		capturedMode = opts and opts.shuffleMode
+		capturedSource = opts and opts.source
+	end
+	App.services.playback.player = capture
+	App:act(overlay.state.messages[3])
+	App.services.playback.player = real
+
+	test.equal(capturedMode, "artists", "the chosen row's mode reaches the queue")
+	test.equal(capturedSource, "album")
+	test.equal(App:overlay("menu"), nil, "choosing a mode closes the album's menu")
+	real:close()
+end)
+
+test.it("opens the skip menu from the next button and skips the album playing", function()
+	App:init({ scan = false })
+	local library = fixture()
+	App.services.library.current = library
+	local queueTracks = {}
+	for _, album in ipairs(library.albums) do
+		for _, track in ipairs(album.tracks) do queueTracks[#queueTracks + 1] = track end
+	end
+	local player = App.services.playback.player
+	player:playTracks(queueTracks, 1)
+
+	App:act({ type = "open", overlay = "menu", menu = "skip", x = 20, y = 20 })
+	local overlay = assert(App:overlay("menu"))
+	test.equal(#overlay.state.messages, 2, "the menu offers the two groups")
+	test.equal(overlay.state.messages[1].type, "skipGroup")
+	test.equal(overlay.state.messages[1].by, "album")
+	test.equal(overlay.state.messages[2].by, "artist")
+
+	App:act(overlay.state.messages[1])
+	test.equal(assert(player.queue:current()).albumId, library.albums[2].id, "the next album begins")
+	test.equal(App:overlay("menu"), nil, "the menu closes as it acts")
+	player:close()
 end)
 
 test.it("stores equalizer presets and custom band gains", function()

@@ -5,33 +5,71 @@
 -- the metadata service's.
 local wonderland = require("wonderland")
 local ui = require("beat-ui")
+local styleCache = require("beat.app.components.helpers.styles")
 
 local div, text, sty = wonderland.div, wonderland.text, wonderland.sty
 
 ---@class beat.MetadataField
 ---@field key string # The treble.TagChanges field it writes
 ---@field label string
+---@field icon string # A glyph name from beat-ui's icon component
 ---@field number boolean? # Written as a whole number
 
+-- Each field leads with the mark of what it holds: a note for the title, a person for the artist,
+-- a disc for the album, a group for the album artist, a numbered list for the track and disc, a
+-- calendar for the year and a tag for the genre.
 ---@type beat.MetadataField[]
 local TRACK_FIELDS = {
-	{ key = "title", label = "Title" },
-	{ key = "artist", label = "Artist" },
-	{ key = "album", label = "Album" },
-	{ key = "albumArtist", label = "Album artist" },
-	{ key = "track", label = "Track", number = true },
-	{ key = "disc", label = "Disc", number = true },
-	{ key = "date", label = "Year" },
-	{ key = "genre", label = "Genre" }
+	{ key = "title", label = "Title", icon = "musicalNote" },
+	{ key = "artist", label = "Artist", icon = "person" },
+	{ key = "album", label = "Album", icon = "disc" },
+	{ key = "albumArtist", label = "Album artist", icon = "people" },
+	{ key = "track", label = "Track", icon = "listNumber", number = true },
+	{ key = "disc", label = "Disc", icon = "listNumber", number = true },
+	{ key = "date", label = "Year", icon = "calendar" },
+	{ key = "genre", label = "Genre", icon = "tag" }
 }
 
 ---@type beat.MetadataField[]
 local ALBUM_FIELDS = {
-	{ key = "album", label = "Album" },
-	{ key = "albumArtist", label = "Album artist" },
-	{ key = "date", label = "Year" },
-	{ key = "genre", label = "Genre" }
+	{ key = "album", label = "Album", icon = "disc" },
+	{ key = "albumArtist", label = "Album artist", icon = "people" },
+	{ key = "date", label = "Year", icon = "calendar" },
+	{ key = "genre", label = "Genre", icon = "tag" }
 }
+
+-- The glyph column every field row leads with, the same square and the same muted colour as a
+-- menu's rows. It is one size for the theme and the dialog redraws while it is open, so the box
+-- is made once per theme rather than once per row and frame.
+local ICON_SIZE = 16
+local ICON_GAP = 10
+
+---@type table<beat.Theme, wonderland.StyleBuilder>
+local iconBoxes = setmetatable({}, { __mode = "k" })
+
+---@param theme beat.Theme
+---@return wonderland.StyleBuilder
+local function iconBox(theme)
+	local box = iconBoxes[theme]
+	if box == nil then
+		local size = theme:px(ICON_SIZE)
+		box = sty():size(size, size):row():align("center"):justify("center")
+		iconBoxes[theme] = box
+	end
+	return box
+end
+
+---@param ctx beat.ui.Context
+---@param theme beat.Theme
+---@param name string
+---@return wonderland.Element
+local function iconColumn(ctx, theme, name)
+	return div():style(iconBox(theme)):children(ui.icon(ctx, {
+		name = name,
+		size = theme:px(ICON_SIZE),
+		colour = theme:color("muted")
+	}))
+end
 
 -- Each field's focus name, made once rather than per frame.
 ---@type table<string, string>
@@ -45,6 +83,7 @@ for _, field in ipairs(TRACK_FIELDS) do FOCUS[field.key] = "metadata:" .. field.
 ---@field fields beat.MetadataField[]
 ---@field initial table<string, string>
 ---@field draft table<string, string>
+---@field rewriteLabel string? # The line under an album's fields, made with the dialog
 
 ---@param value any
 ---@return string
@@ -113,7 +152,8 @@ function editor.new(app, params)
 				date = shown(album.year),
 				genre = shared(album.tracks, "genre")
 			},
-			draft = {}
+			draft = {},
+			rewriteLabel = #ids .. (#ids == 1 and " track" or " tracks") .. " will be rewritten"
 		}
 	else
 		return nil
@@ -188,6 +228,85 @@ end
 local SAVE = { type = "metadataSave" }
 local CANCEL = { type = "metadataCancel" }
 
+-- One draft handler per field, and one submit for the form: the dialog is built again on every
+-- keystroke, and a closure per field per frame is one the trace compiler closes each time.
+---@type table<string, fun(value: string): table>
+local inputHandlers = {}
+
+---@param key string
+---@return fun(value: string): table
+local function inputFor(key)
+	local handler = inputHandlers[key]
+	if handler == nil then
+		handler = |value| -> { type = "metadataDraft", field = key, value = value }
+		inputHandlers[key] = handler
+	end
+	return handler
+end
+
+---@return table
+local function submitSave()
+	return SAVE
+end
+
+--- What the dialog keeps for one width and height: its labels, the row each field sits in, the
+--- heading, the count line and the panel. Nothing but the window's size and the number of fields
+--- changes them, and the dialog is rebuilt while it is open.
+---@class beat.MetadataEditorStyles
+---@field width number
+---@field height number
+---@field windowWidth number
+---@field windowHeight number
+---@field heading wonderland.StyleBuilder
+---@field label wonderland.StyleBuilder
+---@field row wonderland.StyleBuilder
+---@field countLabel wonderland.StyleBuilder
+---@field actions wonderland.StyleBuilder
+---@field panel wonderland.StyleBuilder
+---@field overlay wonderland.StyleBuilder
+
+---@param theme beat.Theme
+---@param width number
+---@param height number
+---@param window wonderland.RenderWindow
+---@return beat.MetadataEditorStyles
+local function editorStyles(theme, width, height, window)
+	local byKey = styleCache.of(theme, "metadataEditor", width)
+	local record = byKey[0] --[[@as beat.MetadataEditorStyles?]]
+	if
+		record ~= nil
+		and record.height == height
+		and record.windowWidth == window.width
+		and record.windowHeight == window.height
+	then
+		return record
+	end
+
+	local padding = theme:px(16)
+	local rowHeight = theme:px(34)
+	local gap = theme:px(10)
+	local labelWidth = theme:px(96)
+	record = {
+		width = width,
+		height = height,
+		windowWidth = window.width,
+		windowHeight = window.height,
+		heading = theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text")),
+		label = theme:s():w(labelWidth):text(theme:type("sm")):fg(theme:color("muted")):ellipsis(),
+		row = sty():row():h(rowHeight):gap(gap):align("center"),
+		countLabel = theme:s():text(theme:type("xs")):fg(theme:color("faint")),
+		actions = sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"),
+		panel = sty()
+			:w(width):h(height):column():pad(padding):gap(gap):radius(theme:radius("md")):bg(theme:color("elevated"))
+			:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099"),
+		overlay = sty()
+			:size(window.width, window.height):offset(0, 0):z(132):column():align("center"):justify("center")
+			:bg(theme:color("overlay"))
+	}
+	byKey[0] = record
+	return record
+end
+
 ---@param app beat.App
 ---@param overlay beat.OverlayInstance<beat.MetadataEditorState>
 ---@param window wonderland.RenderWindow
@@ -200,56 +319,48 @@ function editor.view(app, overlay, window)
 	local padding = theme:px(16)
 	local rowHeight = theme:px(34)
 	local gap = theme:px(10)
+	local iconSize = theme:px(ICON_SIZE)
+	local iconGap = theme:px(ICON_GAP)
 	local labelWidth = theme:px(96)
-	local fieldWidth = width - padding * 2 - labelWidth - gap
+	local fieldWidth = width - padding * 2 - iconSize - iconGap - labelWidth - gap
+
+	local count = #state.fields
+	local height = padding * 2 + theme:px(28) + count * (rowHeight + gap) + theme:px(32) + gap
+		+ (state.kind == "album" and theme:px(18) + gap or 0)
+	local styles = editorStyles(theme, width, height, window)
 
 	local rows = {
-		text(state.heading):style(theme:s():text(theme:type("lg")):weight("bold"):fg(theme:color("text")))
+		text(state.heading):style(styles.heading)
 	}
-	local labelStyle = theme:s():w(labelWidth):text(theme:type("sm")):fg(theme:color("muted")):ellipsis()
-	local rowStyle = sty():row():h(rowHeight):gap(gap):align("center")
-	for _, field in ipairs(state.fields) do
+	for at = 1, count do
+		local field = state.fields[at]
 		local key = field.key
-		rows[#rows + 1] = div():style(rowStyle):children({
-			text(field.label):style(labelStyle),
+		rows[#rows + 1] = div():style(styles.row):children({
+			iconColumn(ctx, theme, field.icon),
+			text(field.label):style(styles.label),
 			ui.field(ctx, {
 				name = FOCUS[key],
 				value = state.draft[key],
 				placeholder = state.kind == "album" and key == "genre" and state.initial.genre == "" and "Mixed" or "",
 				width = fieldWidth,
-				oninput = |value| -> { type = "metadataDraft", field = key, value = value },
-				onsubmit = || -> SAVE
+				oninput = inputFor(key),
+				onsubmit = submitSave
 			})
 		})
 	end
 	if state.kind == "album" then
-		rows[#rows + 1] = text(#state.trackIds .. (#state.trackIds == 1 and " track" or " tracks") .. " will be rewritten")
-			:style(theme:s():text(theme:type("xs")):fg(theme:color("faint")))
+		rows[#rows + 1] = text(assert(state.rewriteLabel)):style(styles.countLabel)
 	end
 	rows[#rows + 1] = div()
-		:style(sty():row():h(theme:px(32)):gap(theme:px(8)):align("center"):justify("end"))
+		:style(styles.actions)
 		:children({
 			ui.button(ctx, { label = "Cancel", onClick = CANCEL, height = theme:px(30), width = theme:px(80) }),
 			ui.button(ctx, { label = "Save", onClick = SAVE, variant = "primary", height = theme:px(30), width = theme:px(74) })
 		})
 
-	local count = #state.fields
-	local height = padding * 2 + theme:px(28) + count * (rowHeight + gap) + theme:px(32) + gap
-		+ (state.kind == "album" and theme:px(18) + gap or 0)
-	local panel = div()
-		:style(
-			sty()
-				:w(width):h(height):column():pad(padding):gap(gap):radius(theme:radius("md")):bg(theme:color("elevated"))
-				:border(theme:px(1), theme:color("border")):shadow(0, theme:px(14), theme:px(36), "#00000099")
-		):onClick({ type = "keep" })
-		:children(rows)
+	local panel = div():style(styles.panel):onClick({ type = "keep" }):children(rows)
 
-	return div()
-		:style(
-			sty()
-				:size(window.width, window.height):offset(0, 0):z(132):column():align("center"):justify("center")
-				:bg(theme:color("overlay"))
-		):onClick({ type = "dismiss" }):children({ panel })
+	return div():style(styles.overlay):children({ panel })
 end
 
 return editor

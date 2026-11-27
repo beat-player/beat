@@ -184,6 +184,29 @@ function Metadata:close()
 	self.pool = nil
 end
 
+--- The app is leaving. A write that is nearly finished gets a moment: a file is rewritten whole,
+--- and a process that ends during one leaves its temporary behind and the library without the
+--- track's new tags. What does not finish inside the moment -- a read or a write on a mount that
+--- stopped answering -- is left to the process ending. The pool is not closed after this: closing
+--- it joins the worker, which is the wait this exists to avoid. A file whose write did finish is
+--- read again by the next scan, which compares its modified time.
+function Metadata:release()
+	local handle = self.handle
+	if handle ~= nil then
+		for _ = 1, 40 do
+			if handle:done() then break end
+			threading.sleep(5)
+		end
+		if handle:done() then pcall(handle.join, handle) end
+	end
+	self.handle = nil
+	self.running = nil
+	self.pool = nil
+	self.jobs = {}
+	self.nextJob = 1
+	self.task = nil
+end
+
 Metadata.on = {
 	--- Tags to write into some tracks' files. Jobs sent while others are being written join them.
 	---@param self beat.MetadataService

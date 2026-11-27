@@ -250,9 +250,17 @@ function settings.view(app, page, window)
 	-- The phone shell has bottom tabs, so a sidebar width means nothing there.
 	local sidebar, sidebarHeight
 	if not ctx.mobile then
+		-- A width is the option in force only while the sidebar is open: collapsing keeps the
+		-- chosen width for the next expansion, but the Collapse option is then the one shown as
+		-- chosen. (A single `and/or` here cannot say that: `or collapsed` makes every width
+		-- option chosen as well once the sidebar is collapsed.)
 		for at = 1, #SIDEBAR_OPTIONS do
 			local choice = SIDEBAR_OPTIONS[at]
-			choice.selected = choice.width ~= nil and values.sidebarWidth == choice.width or values.sidebarCollapsed
+			if choice.width ~= nil then
+				choice.selected = values.sidebarCollapsed ~= true and values.sidebarWidth == choice.width
+			else
+				choice.selected = values.sidebarCollapsed == true
+			end
 		end
 		local sidebarControl, sidebarControlWidth = segmentedControl(app, SIDEBAR_OPTIONS, stacked, inner)
 		sidebar, sidebarHeight = settingsList.group(app, {

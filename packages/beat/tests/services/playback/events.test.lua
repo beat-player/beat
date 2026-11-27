@@ -554,3 +554,80 @@ test.it("writes the session once a minute while hidden", function()
 	service:step(3)
 	test.truthy(service.sessionDueAt ~= nil, "a minute hidden is a stride")
 end)
+
+test.it("answers the shuffle mode and queue editing messages", function()
+	local service, messages = start()
+	local on = assert(Playback.on)
+	service:playAlbum(albumA.id, false)
+	service.player:addToQueue(albumB.tracks)
+	clear(messages)
+
+	on.shuffleMode(service, { type = "shuffleMode", mode = "artists" })
+	local queue = assert(service.player.queue)
+	test.equal(queue.shuffleMode, "artists")
+	test.equal(messages[#messages].type, "queueChanged", "the bar is told the shuffle changed")
+
+	clear(messages)
+	on.queueMove(service, { type = "queueMove", from = 1, to = 2 })
+	test.equal(messages[#messages].type, "queueChanged")
+	local upcoming = queue:upcoming(3)
+	test.equal(upcoming[1].id, 3, "the second row moved after the third")
+	test.equal(upcoming[2].id, 2)
+
+	clear(messages)
+	on.queueRemove(service, { type = "queueRemove", index = 1 })
+	test.equal(messages[#messages].type, "queueChanged")
+	test.equal(#queue.order, 3)
+	test.equal(queue:upcoming(1)[1].id, 2)
+	test.equal(assert(queue:current()).id, 1, "removing an upcoming track leaves the current one")
+end)
+
+test.it("answers a skip group message by moving to the next album and starting it", function()
+	local service, messages = start()
+	local on = assert(Playback.on)
+	service:playAlbum(albumA.id, false)
+	service.player:addToQueue(albumB.tracks)
+	clear(messages)
+
+	on.skipGroup(service, { type = "skipGroup", by = "album" })
+	local queue = assert(service.player.queue)
+	test.equal(assert(queue:current()).id, 3, "the first track of the next album")
+	local heard = kinds(messages)
+	test.truthy(#heard > 0, "the track transition was announced")
+	test.equal(heard[1], "trackEnded", "the track left behind ended first")
+	test.equal(heard[#heard], "trackStarted", "and the next album's track started")
+end)
+
+test.it("writes the shuffle mode and a reordered queue into the session", function()
+	local service = start()
+	local on = assert(Playback.on)
+	service:playAlbum(albumA.id, false)
+	service.player:addToQueue(albumB.tracks)
+	service:step(0)
+	service:step(1)
+
+	on.shuffleMode(service, { type = "shuffleMode", mode = "albums" })
+	service:step(2)
+	test.truthy(service.sessionDueAt ~= nil, "a new shuffle mode is worth writing")
+	service:step(3)
+	test.equal(service.sessionDueAt, nil)
+
+	local saved = assert(json.decode(assert(fs.read(paths.file("session.json"))))):unpack()
+	---@cast saved { queue: { shuffleMode: string, shuffle: boolean } }
+	test.equal(saved.queue.shuffleMode, "albums")
+	test.equal(saved.queue.shuffle, true)
+
+	local queue = assert(service.player.queue)
+	local moved = queue:upcoming(2)[1].id
+	on.queueMove(service, { type = "queueMove", from = 1, to = 2 })
+	service:step(4)
+	test.truthy(service.sessionDueAt ~= nil, "a reorder keeps the queue's length, and still writes")
+	service:step(5)
+	local again = assert(json.decode(assert(fs.read(paths.file("session.json"))))):unpack()
+	---@cast again { queue: { order: number[], position: number } }
+	test.equal(again.queue.position, 1, "the current track is still where it was")
+	-- The moved track is now the third of the queue: the current one, then the one it passed,
+	-- then it.
+	local current = service.player.queue
+	test.equal(current:upcoming(2)[2].id, moved, "the reordered queue is what the file kept")
+end)

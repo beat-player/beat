@@ -3,6 +3,7 @@
 -- has one -- so a move or a rename does not detach them.
 local fs = require("fs")
 local json = require("json")
+local threading = require("threading")
 local paths = require("beat.paths")
 local Taxonomy = require("beat.app.services.collections.taxonomy")
 local Log = require("beat.log")
@@ -10,6 +11,24 @@ local Log = require("beat.log")
 local TagStore = {}
 
 local VERSION = 2
+
+---@class beat.TagWrite
+---@field handle threading.Handle
+
+-- The write still in flight, if any. Tags and playlists are a small document, and a toggle is a
+-- human action: one write at a time is all there is, and a new save waits for the previous one
+-- rather than letting two write the same file. The wait is a few milliseconds of file write.
+---@type beat.TagWrite?
+local inFlight = nil
+
+--- Waits for a write still in flight. Not for a frame: a flush, a synchronous save, or a read
+--- that must see what the last save wrote are the callers.
+function TagStore.flush()
+	local write = inFlight
+	if write == nil then return end
+	inFlight = nil
+	pcall(write.handle.join, write.handle)
+end
 
 ---@param dir string?
 local function storeFile(dir)
@@ -43,6 +62,10 @@ end
 ---@param dir string?
 ---@return beat.Taxonomy
 function TagStore.load(dir)
+	-- A save just started on a thread has the newest tags: a reader that wants the file's truth
+	-- waits for it rather than reading the one it is about to replace.
+	TagStore.flush()
+
 	local file = storeFile(dir)
 	local bytes = fs.read(file)
 	if bytes == nil then return Taxonomy.new() end
@@ -63,32 +86,77 @@ function TagStore.load(dir)
 	return taxonomy
 end
 
+--- Makes the folder, keeps the version-1 backup and encodes the taxonomy: the part both the
+--- synchronous and threaded writes need. Nothing here touches the tail of the file.
 ---@param taxonomy beat.Taxonomy
 ---@param dir string?
----@return boolean
----@return string?
-function TagStore.save(taxonomy, dir)
+---@return string? file
+---@return string? encoded
+---@return string? err
+local function prepare(taxonomy, dir)
 	local folder = dir or paths.directory()
 	if not fs.isdir(folder) then
 		fs.mkdirAll(folder)
-		if not fs.isdir(folder) then return false, "cannot create " .. folder end
+		if not fs.isdir(folder) then return nil, nil, "cannot create " .. folder end
 	end
 
 	local file = storeFile(folder)
 	if not keepV1(file, paths.file("tags.v1.json", folder)) then
 		Log.write("error", "tags could not be backed up from " .. file)
-		return false, "cannot back up tags.json"
+		return nil, nil, "cannot back up tags.json"
 	end
 
 	local ok, encoded = pcall(json.encode, taxonomy:pack())
 	if not ok then
 		Log.write("error", "tags could not be encoded: " .. tostring(encoded))
-		return false, tostring(encoded)
+		return nil, nil, tostring(encoded)
 	end
+	return file, encoded
+end
+
+---@param taxonomy beat.Taxonomy
+---@param dir string?
+---@return boolean
+---@return string?
+function TagStore.save(taxonomy, dir)
+	-- A reader that saves must not race the write a toggle started: the synchronous form waits,
+	-- then writes, so what it leaves is the newest document.
+	TagStore.flush()
+
+	local file, encoded, err = prepare(taxonomy, dir)
+	if file == nil then return false, err end
+
 	if not fs.write(file, encoded) then
 		Log.write("error", "tags could not be written to " .. file)
 		return false, "cannot write tags.json"
 	end
+	return true
+end
+
+--- Writes the taxonomy on a thread of its own. The document is encoded here, where it is small,
+--- but the write and its syscall do not hold the frame that is drawing the check the listener just
+--- pressed. A read or a synchronous save waits for it; a process that is leaving flushes it.
+---@param taxonomy beat.Taxonomy
+---@param dir string?
+---@return boolean
+---@return string? err
+function TagStore.saveAsync(taxonomy, dir)
+	local file, encoded, err = prepare(taxonomy, dir)
+	if file == nil then return false, err end
+
+	-- One write at a time: the previous one is a small file write, and letting two write the same
+	-- path would leave whichever finished last, which is not necessarily the newest.
+	TagStore.flush()
+
+	local ok, handle = pcall(threading.spawn, function()
+		local write = require("fs").write
+		if not write(file, encoded) then
+			require("beat.log").write("error", "tags could not be written to " .. file)
+		end
+	end)
+	if not ok then return false, tostring(handle) end
+
+	inFlight = { handle = handle --[[@as threading.Handle]] }
 	return true
 end
 

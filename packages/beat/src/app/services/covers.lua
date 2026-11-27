@@ -7,6 +7,7 @@
 -- twice. While the list is moving, nothing is uploaded or started: the frames a finger is waiting
 -- for carry only the cheap placeholder, and the queue of visible covers is decoded once it settles.
 local threading = require("threading")
+local artwork = require("beat.music.artwork")
 local coverPixels = require("beat.music.cover_pixels")
 
 -- Covers stay across page changes: going home again, or back to an album, must not decode and
@@ -17,6 +18,13 @@ local coverPixels = require("beat.music.cover_pixels")
 -- turned back over the rows it just left finds their pictures still here: the bench's own scroll,
 -- and one that goes down and back up, ask for no cover it had already decoded.
 local CACHE_MARGIN = 4
+
+-- How long a window that is not showing keeps the pictures it was showing. A cover given back is
+-- a texture freed and a decode to pay for when it is asked for again -- tens of milliseconds on a
+-- phone, which is a screen that comes back with holes in it. A minimize or an app switch is
+-- usually shorter than this; a window left in the tray for half a minute is not coming back to
+-- the pictures it was on, so they are worth more as memory than as a cache.
+local HIDDEN_RELEASE = 30
 
 -- How many covers decode at once. A decode is tens of milliseconds on a phone -- longer than a
 -- frame -- which on the window's own thread is a list that stutters every time a row of albums
@@ -50,6 +58,9 @@ local olderFirst = |a, b| -> a.seen < b.seen
 ---@field frame number # The view being built, which is what says a cover is still on screen
 ---@field pool threading.Pool? # The threads covers decode on, made when the first one is needed
 ---@field decoding { job: beat.CoverJob, handle: threading.PoolHandle }[] # Covers on a worker, in the order they started
+---@field hiddenSince number? # When the window stopped showing, while it has not shown again
+---@field notShowing boolean? # Whether the window is not showing, release or no release
+---@field releasedWhileHidden boolean? # Whether the last hidden stretch gave the textures back
 local Covers = {}
 Covers.__index = Covers
 Covers.needs = { "scroll" }
@@ -62,13 +73,14 @@ Covers.needs = { "scroll" }
 --- the window copies no picture onto its heap. See `beat.music.cover_pixels`.
 ---@param coverCache string
 ---@param size number
+---@param source { path: string, hasPicture: boolean, coverPath: string?, modified: number? }?
 ---@return number? width
 ---@return number? height
 ---@return string? address
 ---@return { r: number, g: number, b: number }? colour
-local function decodeCover(coverCache, size)
+local function decodeCover(coverCache, size, source)
 	local pixels = require("beat.music.cover_pixels")
-	return pixels.decode(coverCache, size)
+	return pixels.decode(coverCache, size, source)
 end
 
 ---@param deps { scroll: beat.ScrollService }
@@ -85,7 +97,10 @@ function Covers.new(deps)
 		epoch = 0,
 		frame = 0,
 		pool = nil,
-		decoding = {}
+		decoding = {},
+		hiddenSince = nil,
+		notShowing = nil,
+		releasedWhileHidden = nil
 	}, Covers)
 end
 
@@ -236,6 +251,21 @@ end
 ---@return boolean changed
 ---@return boolean busy
 function Covers:step(now)
+	-- A hidden window keeps its pictures for a while: a quick minimize or app switch comes back
+	-- to the art it was showing instead of a page of placeholders while the decodes run. Only a
+	-- window hidden long enough gives the textures back.
+	local since = self.hiddenSince
+	if since ~= nil and now - since >= HIDDEN_RELEASE then
+		self.hiddenSince = nil
+		self.releasedWhileHidden = true
+		self:releaseAll()
+	end
+
+	-- A window that is not showing draws no cover: joining a decode would upload a texture nobody
+	-- sees and starting one spends a worker on the same. What was already decoding stays on its
+	-- worker; the first step after the window shows again joins and starts it.
+	if self.notShowing then return false, false end
+
 	local assets = self.assets
 	if assets == nil then return false, #self.jobs > 0 end
 	if self.scroll:isMoving(now) then return false, #self.jobs > 0 or #self.decoding > 0 end
@@ -279,15 +309,16 @@ function Covers:step(now)
 		local job = jobs[started + 1]
 		local cache = job.album.coverCache
 		if cache == nil then
-			-- Not cached yet: a placeholder until the next scan, not a worker to find that out.
-			-- It is still a store and a rebuild, so it waits its turn like a decoded cover.
+			-- Nothing has ever been cached for this album, so there is no file to make again and
+			-- no path to put one at: a placeholder until a scan reads the folder. Still a store
+			-- and a rebuild, so it waits its turn like a decoded cover.
 			if stored then break end
 			started += 1
 			if self:finish(job, assets, true, nil) then changed = true end
 			stored = true
 		else
 			pool = pool or self:workers()
-			local handle = pool:run(cache, job.size)
+			local handle = pool:run(cache, job.size, artwork.source(job.album) or {})
 			if handle == nil then break end
 			started += 1
 			decoding[#decoding + 1] = { job = job, handle = handle }
@@ -388,6 +419,42 @@ function Covers:forget(albumId)
 	for _, item in ipairs(self.decoding) do
 		if item.job.album.id == albumId then item.job.epoch = -1 end
 	end
+end
+
+--- Drops the remembered failures, so the next frame asks for those covers again. A scan that
+--- rebuilt a cache -- including one made after the cache directory was cleaned -- can make good on
+--- a cover this service had found missing; without this, a page that was open while it happened
+--- would keep the placeholder it stored for good.
+function Covers:retryFailed()
+	for albumId, bySize in pairs(self.entries) do
+		for size, entry in pairs(bySize) do
+			if entry.failed then
+				bySize[size] = nil
+				self.count -= 1
+			end
+		end
+		if next(bySize) == nil then self.entries[albumId] = nil end
+	end
+end
+
+--- The window stopped showing: when it started matters only after a while, so the pictures stay
+--- for now and a tick is what gives them back if the window stays away. See `HIDDEN_RELEASE`.
+---@param now number
+function Covers:hidden(now)
+	self.notShowing = true
+	if self.hiddenSince == nil then self.hiddenSince = now end
+end
+
+--- The window is showing again. Answers whether its last hidden stretch was long enough that the
+--- pictures were given back, which is a screen that has to be built rather than only drawn: the
+--- covers it shows are asked for again by the view, and decoded then.
+---@return boolean released
+function Covers:shown()
+	local released = self.releasedWhileHidden == true
+	self.notShowing = false
+	self.hiddenSince = nil
+	self.releasedWhileHidden = nil
+	return released
 end
 
 function Covers:releaseAll()
